@@ -45,11 +45,15 @@ func (e *ValidationError) Unwrap() error {
 
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+func IsValidID(id string) bool {
+	return !blank(id) && idPattern.MatchString(id)
+}
+
 func Validate(flow Flow) error {
 	if blank(flow.ID) {
 		return validationError(ErrorMissingFlowID, nil)
 	}
-	if !idPattern.MatchString(flow.ID) {
+	if !IsValidID(flow.ID) {
 		return validationError(ErrorInvalidFlowID, nil)
 	}
 	if blank(flow.Title) {
@@ -64,7 +68,7 @@ func Validate(flow Flow) error {
 		if blank(step.ID) {
 			return validationError(ErrorMissingStepID, nil)
 		}
-		if !idPattern.MatchString(step.ID) {
+		if !IsValidID(step.ID) {
 			return validationError(ErrorInvalidStepID, nil)
 		}
 		if _, ok := seen[step.ID]; ok {

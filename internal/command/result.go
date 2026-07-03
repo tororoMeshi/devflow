@@ -1,9 +1,12 @@
 package command
 
+import "github.com/8noki8/devflow/internal/transition"
+
 type CommandResult struct {
-	ExitCode int
-	Actions  []CommandAction
-	Flows    []FlowListItem
+	ExitCode    int
+	Actions     []CommandAction
+	Flows       []FlowListItem
+	Diagnostics []transition.Diagnostic
 }
 
 type CommandAction struct {
