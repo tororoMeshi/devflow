@@ -1597,6 +1597,9 @@ error_no_previous_step
 error_flow_already_running
 error_flow_has_no_steps
 error_approval_not_required
+error_invalid_flow_id
+error_invalid_step_id
+error_invalid_gate_result
 
 warning_skipped_required_approval
 warning_skipped_required_artifact
