@@ -156,6 +156,9 @@ func writeUsage(stderr io.Writer) {
 func writeResult(ctx command.Context, result command.CommandResult) {
 	writeActions(ctx.Stdout, result.Actions)
 	writeFlows(ctx.Stdout, result.Flows)
+	if result.Success != nil {
+		writeSuccess(ctx.Stdout, *result.Success)
+	}
 	if result.Status != nil {
 		writeStatus(ctx.Stdout, *result.Status)
 	}
@@ -163,6 +166,36 @@ func writeResult(ctx command.Context, result command.CommandResult) {
 		writePrompt(ctx.Stdout, *result.Prompt)
 	}
 	command.WriteDiagnostics(ctx, result.Diagnostics)
+}
+
+func writeSuccess(stdout io.Writer, success command.SuccessResult) {
+	if success.StartedFlowID != "" {
+		_, _ = fmt.Fprintf(stdout, "Started flow: %s\n", success.StartedFlowID)
+	}
+	if success.CurrentStepID != "" {
+		_, _ = fmt.Fprintf(stdout, "Current step: %s\n", success.CurrentStepID)
+	}
+	if success.CompletedStepID != "" {
+		_, _ = fmt.Fprintf(stdout, "Completed step: %s\n", success.CompletedStepID)
+	}
+	if success.ApprovedStepID != "" {
+		_, _ = fmt.Fprintf(stdout, "Approved step: %s\n", success.ApprovedStepID)
+	}
+	if success.MovedBackToID != "" {
+		_, _ = fmt.Fprintf(stdout, "Moved back to: %s\n", success.MovedBackToID)
+	}
+	if success.SkippedStepID != "" {
+		_, _ = fmt.Fprintf(stdout, "Skipped step: %s\n", success.SkippedStepID)
+	}
+	if success.NextStepID != "" {
+		_, _ = fmt.Fprintf(stdout, "Next step: %s\n", success.NextStepID)
+	}
+	if success.CompletedFlowID != "" {
+		_, _ = fmt.Fprintf(stdout, "Flow completed: %s\n", success.CompletedFlowID)
+	}
+	if success.FinishedFlowID != "" {
+		_, _ = fmt.Fprintf(stdout, "Finished flow: %s\n", success.FinishedFlowID)
+	}
 }
 
 func writeActions(stdout io.Writer, actions []command.CommandAction) {

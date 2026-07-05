@@ -37,7 +37,18 @@ func Start(ctx Context, flowID string) CommandResult {
 
 	return CommandResult{
 		ExitCode:    result.ExitCode,
+		Success:     startSuccess(result),
 		Diagnostics: result.Diagnostics,
+	}
+}
+
+func startSuccess(result transition.TransitionResult) *SuccessResult {
+	if result.ExitCode != 0 || result.State == nil {
+		return nil
+	}
+	return &SuccessResult{
+		StartedFlowID: result.State.FlowID,
+		CurrentStepID: result.State.CurrentStepID,
 	}
 }
 

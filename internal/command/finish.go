@@ -9,5 +9,5 @@ func Finish(ctx Context, reason string) CommandResult {
 	}
 
 	result := transition.ApplyFinish(active.State, reason)
-	return transitionCommandResult(ctx, result)
+	return transitionCommandResult(ctx, result, &SuccessResult{FinishedFlowID: active.Flow.ID})
 }

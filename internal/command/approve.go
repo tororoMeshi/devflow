@@ -9,5 +9,8 @@ func Approve(ctx Context, stepID string, note string) CommandResult {
 	}
 
 	result := transition.ApplyApprove(active.Flow, active.State, stepID, note)
-	return transitionCommandResult(ctx, result)
+	if stepID == "" {
+		stepID = active.State.CurrentStepID
+	}
+	return transitionCommandResult(ctx, result, &SuccessResult{ApprovedStepID: stepID})
 }

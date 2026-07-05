@@ -8,6 +8,7 @@ type CommandResult struct {
 	Flows       []FlowListItem
 	Status      *StatusResult
 	Prompt      *PromptResult
+	Success     *SuccessResult
 	Diagnostics []transition.Diagnostic
 }
 
@@ -76,4 +77,16 @@ type RequiredApprovalResult struct {
 
 type AfterCompletingResult struct {
 	Commands []string
+}
+
+type SuccessResult struct {
+	StartedFlowID   string
+	CurrentStepID   string
+	CompletedStepID string
+	NextStepID      string
+	CompletedFlowID string
+	ApprovedStepID  string
+	MovedBackToID   string
+	SkippedStepID   string
+	FinishedFlowID  string
 }

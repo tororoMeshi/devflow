@@ -9,5 +9,12 @@ func Back(ctx Context, reason string) CommandResult {
 	}
 
 	result := transition.ApplyBack(active.Flow, active.State, reason)
-	return transitionCommandResult(ctx, result)
+	return transitionCommandResult(ctx, result, backSuccess(result))
+}
+
+func backSuccess(result transition.TransitionResult) *SuccessResult {
+	if result.State == nil {
+		return nil
+	}
+	return &SuccessResult{MovedBackToID: result.State.CurrentStepID}
 }
