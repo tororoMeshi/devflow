@@ -67,6 +67,21 @@ func TestStoreLoad(t *testing.T) {
 			},
 		},
 		{
+			name: "loads v0.1.0 history without invalidated step IDs",
+			json: `{
+				"flow_id": "post-task-review",
+				"status": "running",
+				"current_step_id": "check_changes",
+				"back_history": [{"from_step_id":"summarize_changes","to_step_id":"check_changes","reason":"revise"}]
+			}`,
+			wantStatus: LoadOK,
+			wantState: &State{
+				FlowID: "post-task-review", Status: StatusRunning, CurrentStepID: "check_changes",
+				CompletedSteps: []string{}, SkippedSteps: map[string]SkippedStep{}, Approvals: map[string]ApprovalRecord{},
+				BackHistory: []BackHistory{{FromStepID: "summarize_changes", ToStepID: "check_changes", Reason: "revise"}},
+			},
+		},
+		{
 			name: "loads valid finished state",
 			json: `{
 				"flow_id": "post-task-review",

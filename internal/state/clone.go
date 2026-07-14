@@ -24,7 +24,13 @@ func (s State) Clone() State {
 		}
 	}
 	if s.BackHistory != nil {
-		next.BackHistory = append([]BackHistory(nil), s.BackHistory...)
+		next.BackHistory = make([]BackHistory, len(s.BackHistory))
+		for i, history := range s.BackHistory {
+			next.BackHistory[i] = history
+			if history.InvalidatedStepIDs != nil {
+				next.BackHistory[i].InvalidatedStepIDs = append([]string(nil), history.InvalidatedStepIDs...)
+			}
+		}
 	}
 
 	next.Normalize()

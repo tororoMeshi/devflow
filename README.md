@@ -59,6 +59,14 @@ printf 'review ok\n' > docs/code-review.md
 /tmp/devflow back --reason "確認に戻る"
 ```
 
+任意の上流工程へ戻る場合:
+
+```bash
+/tmp/devflow back --to check_changes --reason "要件確認からやり直す"
+```
+
+`back` は戻り先以降の完了、スキップ、承認状態を無効化します。成果物ファイルは削除しません。
+
 現在工程をスキップする場合:
 
 ```bash

@@ -1,6 +1,8 @@
 package command
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/8noki8/devflow/internal/state"
@@ -16,7 +18,7 @@ func TestBackMovesToPreviousStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Back(Context{ProjectRoot: root}, "revise")
+	got := Back(Context{ProjectRoot: root}, "", "revise")
 
 	assertCommandSuccess(t, got)
 	loaded := loadCommandState(t, root)
@@ -34,11 +36,11 @@ func TestBackRemovesOnlyDestinationStepFromCompletedSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Back(Context{ProjectRoot: root}, "revise")
+	got := Back(Context{ProjectRoot: root}, "", "revise")
 
 	assertCommandSuccess(t, got)
 	loaded := loadCommandState(t, root)
-	assertStringSlice(t, loaded.CompletedSteps, []string{"first", "third"})
+	assertStringSlice(t, loaded.CompletedSteps, []string{"first"})
 }
 
 func TestBackKeepsApprovalsAndSkippedSteps(t *testing.T) {
@@ -52,15 +54,12 @@ func TestBackKeepsApprovalsAndSkippedSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Back(Context{ProjectRoot: root}, "revise")
+	got := Back(Context{ProjectRoot: root}, "", "revise")
 
 	assertCommandSuccess(t, got)
 	loaded := loadCommandState(t, root)
-	if loaded.SkippedSteps["approval"].Reason != "skip approval" {
-		t.Fatalf("SkippedSteps = %#v", loaded.SkippedSteps)
-	}
-	if !loaded.Approvals["approval"].Approved || loaded.Approvals["approval"].Note != "ok" {
-		t.Fatalf("Approvals = %#v", loaded.Approvals)
+	if len(loaded.SkippedSteps) != 0 || len(loaded.Approvals) != 0 {
+		t.Fatalf("downstream state was not invalidated: %#v %#v", loaded.SkippedSteps, loaded.Approvals)
 	}
 }
 
@@ -72,7 +71,7 @@ func TestBackRecordsHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Back(Context{ProjectRoot: root}, "revise")
+	got := Back(Context{ProjectRoot: root}, "", "revise")
 
 	assertCommandSuccess(t, got)
 	loaded := loadCommandState(t, root)
@@ -83,6 +82,7 @@ func TestBackRecordsHistory(t *testing.T) {
 	if history.FromStepID != "third" || history.ToStepID != "second" || history.Reason != "revise" {
 		t.Fatalf("BackHistory[0] = %#v", history)
 	}
+	assertStringSlice(t, history.InvalidatedStepIDs, []string{"second", "third"})
 }
 
 func TestBackRejectsFirstStep(t *testing.T) {
@@ -94,7 +94,7 @@ func TestBackRejectsFirstStep(t *testing.T) {
 	}
 	before := readCommandFile(t, StatePath(root))
 
-	got := Back(Context{ProjectRoot: root}, "revise")
+	got := Back(Context{ProjectRoot: root}, "", "revise")
 
 	assertCommandFailure(t, got, transition.CodeNoPreviousStep)
 	assertCommandFileUnchanged(t, StatePath(root), before)
@@ -111,7 +111,7 @@ func TestBackRejectsEmptyReason(t *testing.T) {
 			}
 			before := readCommandFile(t, StatePath(root))
 
-			got := Back(Context{ProjectRoot: root}, reason)
+			got := Back(Context{ProjectRoot: root}, "", reason)
 
 			assertCommandFailure(t, got, transition.CodeEmptyReason)
 			assertCommandFileUnchanged(t, StatePath(root), before)
@@ -121,8 +121,77 @@ func TestBackRejectsEmptyReason(t *testing.T) {
 
 func TestBackRequiresActiveFlow(t *testing.T) {
 	assertActiveFlowRequiredByCommand(t, func(ctx Context) CommandResult {
-		return Back(ctx, "revise")
+		return Back(ctx, "", "revise")
 	})
+}
+
+func TestBackMovesToSpecifiedUpstreamStep(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
+	st := backSkipFinishState("final_approval")
+	st.CompletedSteps = []string{"first", "second", "third", "approval", "artifact", "final_approval"}
+	st.Approvals["final_approval"] = state.ApprovalRecord{Approved: true}
+	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Back(Context{ProjectRoot: root}, "second", "revise")
+
+	assertCommandSuccess(t, got)
+	loaded := loadCommandState(t, root)
+	if loaded.CurrentStepID != "second" {
+		t.Fatalf("CurrentStepID = %q, want second", loaded.CurrentStepID)
+	}
+	if len(loaded.CompletedSteps) != 1 || loaded.CompletedSteps[0] != "first" || len(loaded.Approvals) != 0 {
+		t.Fatalf("state = %#v", loaded)
+	}
+}
+
+func TestBackKeepsArtifactFile(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
+	st := backSkipFinishState("artifact")
+	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+		t.Fatal(err)
+	}
+	artifactPath := filepath.Join(root, "docs", "required.md")
+	content := []byte("artifact must remain\n")
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Back(Context{ProjectRoot: root}, "", "revise")
+
+	assertCommandSuccess(t, got)
+	after, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatalf("artifact was deleted: %v", err)
+	}
+	if string(after) != string(content) {
+		t.Fatalf("artifact content = %q, want %q", after, content)
+	}
+}
+
+func TestBackRejectsInvalidTargetWithoutSaving(t *testing.T) {
+	for _, target := range []string{"missing", "third", "final_approval"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
+			st := backSkipFinishState("third")
+			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+				t.Fatal(err)
+			}
+			before := readCommandFile(t, StatePath(root))
+
+			got := Back(Context{ProjectRoot: root}, target, "revise")
+
+			assertCommandFailure(t, got, transition.CodeInvalidBackTarget)
+			assertCommandFileUnchanged(t, StatePath(root), before)
+		})
+	}
 }
 
 func TestSkipRecordsSkippedStepAndMovesNext(t *testing.T) {

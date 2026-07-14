@@ -12,6 +12,7 @@ const (
 	CodeMissingRequiredApproval  = "error_missing_required_approval"
 	CodeEmptyReason              = "error_empty_reason"
 	CodeNoPreviousStep           = "error_no_previous_step"
+	CodeInvalidBackTarget        = "error_invalid_back_target"
 	CodeFlowAlreadyRunning       = "error_flow_already_running"
 	CodeFlowHasNoSteps           = "error_flow_has_no_steps"
 	CodeApprovalNotRequired      = "error_approval_not_required"

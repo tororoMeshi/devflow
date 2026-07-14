@@ -208,30 +208,28 @@ func TestApplyBack(t *testing.T) {
 		st.Approvals["approval"] = state.ApprovalRecord{Approved: true}
 		before := st.Clone()
 
-		got := ApplyBack(testFlow(), st, "revise")
+		got := ApplyBack(testFlow(), st, "", "revise")
 
 		assertStateNotMutated(t, before, st)
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
 			t.Fatalf("CurrentStepID = %q, want first", got.State.CurrentStepID)
 		}
-		assertStrings(t, got.State.CompletedSteps, []string{"second"})
+		assertStrings(t, got.State.CompletedSteps, []string{})
 		if len(got.State.BackHistory) != 1 {
 			t.Fatalf("BackHistory len = %d, want 1", len(got.State.BackHistory))
 		}
-		if _, ok := got.State.SkippedSteps["first"]; !ok {
-			t.Fatalf("skipped_steps was modified")
+		if len(got.State.SkippedSteps) != 0 || len(got.State.Approvals) != 0 {
+			t.Fatalf("downstream state was not invalidated: %#v %#v", got.State.SkippedSteps, got.State.Approvals)
 		}
-		if !got.State.Approvals["approval"].Approved {
-			t.Fatalf("approvals was modified")
-		}
+		assertStrings(t, got.State.BackHistory[0].InvalidatedStepIDs, []string{"first", "second", "approval"})
 	})
 
 	t.Run("fails when no previous step exists", func(t *testing.T) {
 		st := runningState()
 		before := st.Clone()
 
-		got := ApplyBack(testFlow(), st, "revise")
+		got := ApplyBack(testFlow(), st, "", "revise")
 
 		assertStateNotMutated(t, before, st)
 		assertFailure(t, got, CodeNoPreviousStep)
@@ -242,11 +240,81 @@ func TestApplyBack(t *testing.T) {
 		st.CurrentStepID = "second"
 		before := st.Clone()
 
-		got := ApplyBack(testFlow(), st, " ")
+		got := ApplyBack(testFlow(), st, "", " ")
 
 		assertStateNotMutated(t, before, st)
 		assertFailure(t, got, CodeEmptyReason)
 	})
+
+	t.Run("moves to specified upstream step", func(t *testing.T) {
+		st := runningState()
+		st.CurrentStepID = "approval"
+		st.CompletedSteps = []string{"first", "second", "approval"}
+		st.Approvals["approval"] = state.ApprovalRecord{Approved: true}
+		before := st.Clone()
+
+		got := ApplyBack(testFlow(), st, "first", "revise")
+
+		assertStateNotMutated(t, before, st)
+		assertSuccess(t, got)
+		assertStrings(t, got.State.BackHistory[0].InvalidatedStepIDs, []string{"first", "second", "approval"})
+	})
+
+	for _, target := range []string{"missing", "second", "approval"} {
+		t.Run("rejects invalid target "+target, func(t *testing.T) {
+			st := runningState()
+			st.CurrentStepID = "second"
+			before := st.Clone()
+
+			got := ApplyBack(testFlow(), st, target, "revise")
+
+			assertStateNotMutated(t, before, st)
+			assertFailure(t, got, CodeInvalidBackTarget)
+		})
+	}
+}
+
+func TestApplyBackInvalidatesFutureSkippedApprovalAndKeepsFinish(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*state.State)
+	}{
+		{name: "future skipped step", setup: func(st *state.State) {
+			st.SkippedSteps["approval"] = state.SkippedStep{Reason: "not needed"}
+		}},
+		{name: "future approval", setup: func(st *state.State) {
+			st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "pre-approved"}
+		}},
+		{name: "future step has no state", setup: func(st *state.State) {}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := runningState()
+			st.CurrentStepID = "second"
+			st.CompletedSteps = []string{"first", "second"}
+			st.Finish = &state.Finish{Reason: "keep this value"}
+			tt.setup(&st)
+
+			got := ApplyBack(testFlow(), st, "first", "revise")
+
+			assertSuccess(t, got)
+			want := []string{"first", "second"}
+			if tt.name != "future step has no state" {
+				want = append(want, "approval")
+			}
+			assertStrings(t, got.State.BackHistory[0].InvalidatedStepIDs, want)
+			if _, ok := got.State.SkippedSteps["approval"]; ok {
+				t.Fatalf("future skipped step was not invalidated")
+			}
+			if _, ok := got.State.Approvals["approval"]; ok {
+				t.Fatalf("future approval was not invalidated")
+			}
+			if got.State.Finish == nil || got.State.Finish.Reason != "keep this value" {
+				t.Fatalf("Finish = %#v, want preserved", got.State.Finish)
+			}
+		})
+	}
 }
 
 func TestApplySkip(t *testing.T) {

@@ -17,7 +17,7 @@ const usage = `Usage:
   devflow prompt
   devflow approve [--step <step>] [--note <note>]
   devflow done
-  devflow back --reason <reason>
+  devflow back [--to <step>] --reason <reason>
   devflow skip --reason <reason>
   devflow finish --reason <reason>
 `
@@ -89,12 +89,12 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 		}
 		result = command.Done(ctx)
 	case "back":
-		reason, ok := parseReasonArgs(args[1:])
+		toStepID, reason, ok := parseBackArgs(args[1:])
 		if !ok {
 			writeUsage(stderr)
 			return 1
 		}
-		result = command.Back(ctx, reason)
+		result = command.Back(ctx, toStepID, reason)
 	case "skip":
 		reason, ok := parseReasonArgs(args[1:])
 		if !ok {
@@ -147,6 +147,36 @@ func parseReasonArgs(args []string) (string, bool) {
 		return "", false
 	}
 	return args[1], true
+}
+
+func parseBackArgs(args []string) (string, string, bool) {
+	var toStepID string
+	var reason string
+	hasTo := false
+	hasReason := false
+	for i := 0; i < len(args); i++ {
+		if i+1 >= len(args) {
+			return "", "", false
+		}
+		switch args[i] {
+		case "--to":
+			if hasTo || args[i+1] == "" {
+				return "", "", false
+			}
+			toStepID = args[i+1]
+			hasTo = true
+		case "--reason":
+			if hasReason {
+				return "", "", false
+			}
+			reason = args[i+1]
+			hasReason = true
+		default:
+			return "", "", false
+		}
+		i++
+	}
+	return toStepID, reason, hasReason
 }
 
 func writeUsage(stderr io.Writer) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -87,6 +88,28 @@ func TestRunBackSkipFinishParseReason(t *testing.T) {
 		}
 	})
 
+	t.Run("back with explicit upstream target", func(t *testing.T) {
+		root := t.TempDir()
+		runSuccess(t, root, []string{"init"})
+		runSuccess(t, root, []string{"start", "post-task-review"})
+		runSuccess(t, root, []string{"done"})
+		runSuccess(t, root, []string{"done"})
+
+		runSuccess(t, root, []string{"back", "--reason", "revise", "--to", "check_changes"})
+
+		st := loadCLIState(t, root)
+		if st.CurrentStepID != "check_changes" {
+			t.Fatalf("CurrentStepID = %q, want check_changes", st.CurrentStepID)
+		}
+		if len(st.BackHistory) != 1 {
+			t.Fatalf("BackHistory = %#v", st.BackHistory)
+		}
+		wantInvalidated := []string{"check_changes", "summarize_changes", "check_quality"}
+		if !reflect.DeepEqual(st.BackHistory[0].InvalidatedStepIDs, wantInvalidated) {
+			t.Fatalf("InvalidatedStepIDs = %#v, want %#v", st.BackHistory[0].InvalidatedStepIDs, wantInvalidated)
+		}
+	})
+
 	t.Run("skip", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
@@ -118,6 +141,25 @@ func TestRunBackSkipFinishParseReason(t *testing.T) {
 			t.Fatalf("Finish = %#v", st.Finish)
 		}
 	})
+}
+
+func TestRunBackRejectsInvalidOptions(t *testing.T) {
+	for _, args := range [][]string{
+		{"back", "--to"},
+		{"back", "--to", "check_changes"},
+		{"back", "--reason", "revise", "--to", "check_changes", "--to", "summarize_changes"},
+		{"back", "--reason", "revise", "--unknown", "value"},
+	} {
+		root := t.TempDir()
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+
+		exitCode := run(args, root, &stdout, &stderr)
+
+		if exitCode == 0 || !strings.Contains(stderr.String(), "Usage:") {
+			t.Fatalf("args=%#v exitCode=%d stderr=%q", args, exitCode, stderr.String())
+		}
+	}
 }
 
 func TestRunRejectsMissingRequiredArgs(t *testing.T) {

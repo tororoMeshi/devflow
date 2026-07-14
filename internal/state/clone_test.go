@@ -15,7 +15,7 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 			"human_approval": {Approved: true, Note: "ok"},
 		},
 		BackHistory: []BackHistory{
-			{FromStepID: "human_approval", ToStepID: "write_review", Reason: "revise"},
+			{FromStepID: "human_approval", ToStepID: "write_review", Reason: "revise", InvalidatedStepIDs: []string{"write_review", "human_approval"}},
 		},
 		Finish: &Finish{Reason: "out of scope"},
 	}
@@ -25,7 +25,9 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	cloned.CompletedSteps[0] = "changed"
 	cloned.SkippedSteps["check_docs"] = SkippedStep{Reason: "changed"}
 	cloned.Approvals["human_approval"] = ApprovalRecord{Approved: false, Note: "changed"}
-	cloned.BackHistory[0] = BackHistory{FromStepID: "changed", ToStepID: "changed", Reason: "changed"}
+	cloned.BackHistory[0].FromStepID = "changed"
+	cloned.BackHistory[0].InvalidatedStepIDs[0] = "changed"
+	cloned.BackHistory[0].InvalidatedStepIDs = append(cloned.BackHistory[0].InvalidatedStepIDs, "added")
 	cloned.Finish.Reason = "changed"
 
 	if original.CompletedSteps[0] != "check_changes" {
@@ -38,7 +40,16 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 		t.Fatalf("Approvals shares map")
 	}
 	if original.BackHistory[0].FromStepID != "human_approval" {
+		t.Fatalf("BackHistory record was shared")
+	}
+	if original.BackHistory[0].InvalidatedStepIDs[0] != "write_review" {
 		t.Fatalf("BackHistory shares backing array")
+	}
+	if len(original.BackHistory) != 1 {
+		t.Fatalf("BackHistory length changed: %d", len(original.BackHistory))
+	}
+	if len(original.BackHistory[0].InvalidatedStepIDs) != 2 {
+		t.Fatalf("InvalidatedStepIDs length changed: %d", len(original.BackHistory[0].InvalidatedStepIDs))
 	}
 	if original.Finish.Reason != "out of scope" {
 		t.Fatalf("Finish pointer was shared")

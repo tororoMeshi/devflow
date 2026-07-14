@@ -29,9 +29,10 @@ type ApprovalRecord struct {
 }
 
 type BackHistory struct {
-	FromStepID string `json:"from_step_id"`
-	ToStepID   string `json:"to_step_id"`
-	Reason     string `json:"reason"`
+	FromStepID         string   `json:"from_step_id"`
+	ToStepID           string   `json:"to_step_id"`
+	Reason             string   `json:"reason"`
+	InvalidatedStepIDs []string `json:"invalidated_step_ids,omitempty"`
 }
 
 type Finish struct {
