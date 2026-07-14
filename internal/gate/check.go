@@ -12,6 +12,7 @@ func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result
 	result := Result{
 		MissingArtifacts: []string{},
 		MissingApprovals: []string{},
+		CheckProblems:    []CheckProblem{},
 	}
 
 	for _, artifact := range step.Artifacts {
@@ -30,7 +31,18 @@ func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result
 		}
 	}
 
-	result.OK = len(result.MissingArtifacts) == 0 && len(result.MissingApprovals) == 0
+	for _, checkID := range step.RequiredChecks {
+		checkResult, ok := state.CheckResults[checkID]
+		if !ok || checkResult.EntrySequence != state.CurrentEntrySequence {
+			result.CheckProblems = append(result.CheckProblems, CheckProblem{CheckID: checkID, Kind: CheckMissing})
+			continue
+		}
+		if checkResult.ExitCode != 0 {
+			result.CheckProblems = append(result.CheckProblems, CheckProblem{CheckID: checkID, Kind: CheckFailed})
+		}
+	}
+
+	result.OK = len(result.MissingArtifacts) == 0 && len(result.MissingApprovals) == 0 && len(result.CheckProblems) == 0
 	return result
 }
 

@@ -156,7 +156,7 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 			setup: func(t *testing.T, root string) {
 				writeCommandTestFile(t, StatePath(root), `{"not":"valid state"}`)
 			},
-			wantStatus: CodeInvalidState,
+			wantStatus: CodeUnsupportedStateVersion,
 		},
 		{
 			name: "flow file missing",
@@ -279,9 +279,12 @@ func statusPromptTestFlow() string {
 
 func statusPromptState(flowID string, status state.Status, currentStepID string) state.State {
 	st := state.State{
-		FlowID:        flowID,
-		Status:        status,
-		CurrentStepID: currentStepID,
+		SchemaVersion:        state.CurrentSchemaVersion,
+		FlowID:               flowID,
+		Status:               status,
+		CurrentStepID:        currentStepID,
+		FlowRunID:            "run_00000000000000000000000000000000",
+		CurrentEntrySequence: 1,
 	}
 	st.Normalize()
 	return st

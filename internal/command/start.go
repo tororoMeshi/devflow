@@ -29,7 +29,11 @@ func Start(ctx Context, flowID string) CommandResult {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
 	}
 
-	result := transition.ApplyStart(fl, current)
+	flowRunID, err := newFlowRunID()
+	if err != nil {
+		return commandFailure(CodeFlowRunIDGenerationFailed)
+	}
+	result := transition.ApplyStart(fl, current, flowRunID)
 	if saveDiagnostics := SaveTransitionState(ctx, result); len(saveDiagnostics) > 0 {
 		result.Diagnostics = append(result.Diagnostics, saveDiagnostics...)
 		return CommandResult{ExitCode: 1, Diagnostics: result.Diagnostics}
@@ -68,6 +72,9 @@ func startCurrentState(loaded state.LoadResult) (*state.State, []transition.Diag
 	case state.LoadNoState:
 		return nil, nil
 	case state.LoadInvalid:
+		if isUnsupportedStateVersion(loaded.Err) {
+			return nil, []transition.Diagnostic{unsupportedStateVersionDiagnostic()}
+		}
 		return nil, []transition.Diagnostic{commandErrorDiagnostic(CodeInvalidState)}
 	case state.LoadOK:
 		return loaded.State, nil

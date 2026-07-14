@@ -247,9 +247,12 @@ func approveDoneTestFlow() string {
 
 func approveDoneState(currentStepID string) state.State {
 	st := state.State{
-		FlowID:        "approve-done-flow",
-		Status:        state.StatusRunning,
-		CurrentStepID: currentStepID,
+		SchemaVersion:        state.CurrentSchemaVersion,
+		FlowID:               "approve-done-flow",
+		Status:               state.StatusRunning,
+		CurrentStepID:        currentStepID,
+		FlowRunID:            "run_00000000000000000000000000000000",
+		CurrentEntrySequence: 1,
 	}
 	st.Normalize()
 	return st
@@ -327,7 +330,7 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 			setup: func(t *testing.T, root string) {
 				writeCommandTestFile(t, StatePath(root), `{"not":"valid state"}`)
 			},
-			wantStatus: CodeInvalidState,
+			wantStatus: CodeUnsupportedStateVersion,
 		},
 		{
 			name: "flow file missing",

@@ -24,6 +24,14 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 	assertStartedState(t, *loaded.State, "test-flow", "first")
 }
 
+func TestStartCurrentStateRecognizesTypedUnsupportedVersion(t *testing.T) {
+	_, diagnostics := startCurrentState(state.LoadResult{
+		Status: state.LoadInvalid,
+		Err:    &state.UnsupportedSchemaVersionError{Actual: 3},
+	})
+	assertDiagnosticCodes(t, diagnostics, []string{CodeUnsupportedStateVersion})
+}
+
 func TestStartAllowsCompletedAndFinishedState(t *testing.T) {
 	for _, status := range []state.Status{state.StatusCompleted, state.StatusFinished} {
 		t.Run(string(status), func(t *testing.T) {
@@ -72,7 +80,7 @@ func TestStartRejectsInvalidStateWithoutSaving(t *testing.T) {
 
 	got := Start(Context{ProjectRoot: root}, "test-flow")
 
-	assertCommandFailure(t, got, CodeInvalidState)
+	assertCommandFailure(t, got, CodeUnsupportedStateVersion)
 	after := readCommandFile(t, StatePath(root))
 	if string(after) != string(before) {
 		t.Fatalf("state.json was modified")
@@ -207,9 +215,12 @@ func startTestFlow(id string) string {
 
 func commandStartState(flowID string, status state.Status, currentStepID string) state.State {
 	st := state.State{
-		FlowID:        flowID,
-		Status:        status,
-		CurrentStepID: currentStepID,
+		SchemaVersion:        state.CurrentSchemaVersion,
+		FlowID:               flowID,
+		Status:               status,
+		CurrentStepID:        currentStepID,
+		FlowRunID:            "run_00000000000000000000000000000000",
+		CurrentEntrySequence: 1,
 	}
 	st.Normalize()
 	return st
@@ -218,6 +229,9 @@ func commandStartState(flowID string, status state.Status, currentStepID string)
 func assertStartedState(t *testing.T, got state.State, flowID string, currentStepID string) {
 	t.Helper()
 
+	if got.SchemaVersion != state.CurrentSchemaVersion {
+		t.Fatalf("SchemaVersion = %d, want %d", got.SchemaVersion, state.CurrentSchemaVersion)
+	}
 	if got.FlowID != flowID {
 		t.Fatalf("FlowID = %q, want %q", got.FlowID, flowID)
 	}

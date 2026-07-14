@@ -2,10 +2,13 @@ package state
 
 func (s State) Clone() State {
 	next := State{
-		FlowID:        s.FlowID,
-		Status:        s.Status,
-		CurrentStepID: s.CurrentStepID,
-		Finish:        cloneFinish(s.Finish),
+		SchemaVersion:        s.SchemaVersion,
+		FlowID:               s.FlowID,
+		Status:               s.Status,
+		CurrentStepID:        s.CurrentStepID,
+		Finish:               cloneFinish(s.Finish),
+		FlowRunID:            s.FlowRunID,
+		CurrentEntrySequence: s.CurrentEntrySequence,
 	}
 
 	if s.CompletedSteps != nil {
@@ -32,6 +35,12 @@ func (s State) Clone() State {
 			}
 		}
 	}
+	if s.CheckResults != nil {
+		next.CheckResults = make(map[string]CheckResult, len(s.CheckResults))
+		for checkID, result := range s.CheckResults {
+			next.CheckResults[checkID] = result
+		}
+	}
 
 	next.Normalize()
 	return next
@@ -52,6 +61,9 @@ func (s *State) Normalize() {
 	}
 	if s.BackHistory == nil {
 		s.BackHistory = []BackHistory{}
+	}
+	if s.CheckResults == nil {
+		s.CheckResults = map[string]CheckResult{}
 	}
 }
 

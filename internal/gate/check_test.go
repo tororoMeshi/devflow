@@ -171,6 +171,33 @@ func TestCheckDoneGate(t *testing.T) {
 	}
 }
 
+func TestCheckDoneGatePreservesRequiredCheckOrder(t *testing.T) {
+	step := flow.Step{ID: "quality", RequiredChecks: []string{"go-test", "go-vet", "gofmt"}}
+	for _, tt := range []struct {
+		name    string
+		results map[string]state.CheckResult
+		want    []CheckProblem
+		ok      bool
+	}{
+		{"all missing", nil, []CheckProblem{{"go-test", CheckMissing}, {"go-vet", CheckMissing}, {"gofmt", CheckMissing}}, false},
+		{"all failed", map[string]state.CheckResult{"go-test": {EntrySequence: 1, ExitCode: 1}, "go-vet": {EntrySequence: 1, ExitCode: 1}, "gofmt": {EntrySequence: 1, ExitCode: 1}}, []CheckProblem{{"go-test", CheckFailed}, {"go-vet", CheckFailed}, {"gofmt", CheckFailed}}, false},
+		{"missing failed missing", map[string]state.CheckResult{"go-vet": {EntrySequence: 1, ExitCode: 1}}, []CheckProblem{{"go-test", CheckMissing}, {"go-vet", CheckFailed}, {"gofmt", CheckMissing}}, false},
+		{"failed missing failed", map[string]state.CheckResult{"go-test": {EntrySequence: 1, ExitCode: 1}, "gofmt": {EntrySequence: 1, ExitCode: 1}}, []CheckProblem{{"go-test", CheckFailed}, {"go-vet", CheckMissing}, {"gofmt", CheckFailed}}, false},
+		{"all passed", map[string]state.CheckResult{"go-test": {EntrySequence: 1, ExitCode: 0}, "go-vet": {EntrySequence: 1, ExitCode: 0}, "gofmt": {EntrySequence: 1, ExitCode: 0}}, []CheckProblem{}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CheckDoneGate(step, state.State{CurrentEntrySequence: 1, CheckResults: tt.results}, t.TempDir())
+			if got.OK != tt.ok || !reflect.DeepEqual(got.CheckProblems, tt.want) {
+				t.Fatalf("result=%#v want=%#v", got, tt.want)
+			}
+		})
+	}
+
+	if got := CheckDoneGate(flow.Step{ID: "quality"}, state.State{}, t.TempDir()); !got.OK || len(got.CheckProblems) != 0 {
+		t.Fatalf("required_checksなしの結果=%#v", got)
+	}
+}
+
 func createFiles(t *testing.T, root string, files []string) {
 	t.Helper()
 

@@ -5,7 +5,7 @@ import (
 	"github.com/8noki8/devflow/internal/state"
 )
 
-func ApplyStart(flow flow.Flow, current *state.State) TransitionResult {
+func ApplyStart(flow flow.Flow, current *state.State, flowRunID string) TransitionResult {
 	if len(flow.Steps) == 0 {
 		return failure(errorDiagnostic(CodeFlowHasNoSteps, ""))
 	}
@@ -14,9 +14,12 @@ func ApplyStart(flow flow.Flow, current *state.State) TransitionResult {
 	}
 
 	next := state.State{
-		FlowID:        flow.ID,
-		Status:        state.StatusRunning,
-		CurrentStepID: flow.Steps[0].ID,
+		SchemaVersion:        state.CurrentSchemaVersion,
+		FlowID:               flow.ID,
+		Status:               state.StatusRunning,
+		CurrentStepID:        flow.Steps[0].ID,
+		FlowRunID:            flowRunID,
+		CurrentEntrySequence: 1,
 	}
 	next.Normalize()
 

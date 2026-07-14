@@ -17,8 +17,11 @@ const (
 	CodeFlowHasNoSteps           = "error_flow_has_no_steps"
 	CodeApprovalNotRequired      = "error_approval_not_required"
 	CodeInvalidGateResult        = "error_invalid_gate_result"
+	CodeMissingRequiredCheck     = "error_missing_required_check"
+	CodeFailedRequiredCheck      = "error_failed_required_check"
 	CodeSkippedRequiredApproval  = "warning_skipped_required_approval"
 	CodeSkippedRequiredArtifact  = "warning_skipped_required_artifact"
+	CodeSkippedRequiredCheck     = "warning_skipped_required_check"
 	CodeSkippedFinalStep         = "warning_skipped_final_step"
 	CodeSkippedFinalApprovalStep = "warning_skipped_final_approval_step"
 )

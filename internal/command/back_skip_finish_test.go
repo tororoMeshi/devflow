@@ -432,9 +432,12 @@ func backSkipFinishTestFlow() string {
 
 func backSkipFinishState(currentStepID string) state.State {
 	st := state.State{
-		FlowID:        "back-skip-finish-flow",
-		Status:        state.StatusRunning,
-		CurrentStepID: currentStepID,
+		SchemaVersion:        state.CurrentSchemaVersion,
+		FlowID:               "back-skip-finish-flow",
+		Status:               state.StatusRunning,
+		CurrentStepID:        currentStepID,
+		FlowRunID:            "run_00000000000000000000000000000000",
+		CurrentEntrySequence: 1,
 	}
 	st.Normalize()
 	return st

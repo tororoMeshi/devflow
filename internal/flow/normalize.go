@@ -9,6 +9,9 @@ func Normalize(flow Flow) Flow {
 		if flow.Steps[stepIndex].Artifacts == nil {
 			flow.Steps[stepIndex].Artifacts = []Artifact{}
 		}
+		if flow.Steps[stepIndex].RequiredChecks == nil {
+			flow.Steps[stepIndex].RequiredChecks = []string{}
+		}
 	}
 
 	return flow

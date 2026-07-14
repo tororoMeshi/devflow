@@ -26,6 +26,14 @@ type LoadResult struct {
 	Err    error
 }
 
+type UnsupportedSchemaVersionError struct {
+	Actual int
+}
+
+func (e *UnsupportedSchemaVersionError) Error() string {
+	return fmt.Sprintf("unsupported state schema version %d", e.Actual)
+}
+
 func (s Store) Load() LoadResult {
 	data, err := os.ReadFile(s.Path)
 	if err != nil {
@@ -93,7 +101,10 @@ func (s Store) Save(state State) error {
 }
 
 func validateStateFile(raw map[string]json.RawMessage, state State) error {
-	for _, field := range []string{"flow_id", "status", "current_step_id"} {
+	if _, ok := raw["schema_version"]; !ok {
+		return &UnsupportedSchemaVersionError{}
+	}
+	for _, field := range []string{"schema_version", "flow_id", "status", "current_step_id"} {
 		if _, ok := raw[field]; !ok {
 			return fmt.Errorf("missing required field %q", field)
 		}
@@ -102,11 +113,25 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 }
 
 func validateState(state State) error {
+	if state.SchemaVersion != CurrentSchemaVersion {
+		return &UnsupportedSchemaVersionError{Actual: state.SchemaVersion}
+	}
 	if state.FlowID == "" {
 		return errors.New("missing required field \"flow_id\"")
 	}
 	if state.CurrentStepID == "" {
 		return errors.New("missing required field \"current_step_id\"")
+	}
+	if !IsValidFlowRunID(state.FlowRunID) {
+		return errors.New("invalid flow_run_id")
+	}
+	if state.CurrentEntrySequence == 0 {
+		return errors.New("invalid current_entry_sequence")
+	}
+	for _, result := range state.CheckResults {
+		if result.EntrySequence != state.CurrentEntrySequence {
+			return errors.New("check result entry sequence mismatch")
+		}
 	}
 	switch state.Status {
 	case StatusRunning, StatusCompleted, StatusFinished:

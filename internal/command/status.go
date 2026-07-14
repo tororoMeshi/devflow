@@ -16,8 +16,28 @@ func Status(ctx Context) CommandResult {
 			CompletedSteps:   append([]string(nil), active.State.CompletedSteps...),
 			SkippedSteps:     skippedStepResults(active),
 			Approvals:        approvalResults(active),
+			EntrySequence:    active.State.CurrentEntrySequence,
+			Checks:           checkStatusResults(active),
 		},
 	}
+}
+
+func checkStatusResults(active ActiveFlow) []CheckStatusResult {
+	results := make([]CheckStatusResult, 0, len(active.CurrentStep.RequiredChecks))
+	for _, checkID := range active.CurrentStep.RequiredChecks {
+		stored, ok := active.State.CheckResults[checkID]
+		if !ok || stored.EntrySequence != active.State.CurrentEntrySequence {
+			results = append(results, CheckStatusResult{CheckID: checkID, Status: "pending"})
+			continue
+		}
+		exitCode := stored.ExitCode
+		status := "failed"
+		if exitCode == 0 {
+			status = "passed"
+		}
+		results = append(results, CheckStatusResult{CheckID: checkID, Status: status, ExitCode: &exitCode, LogPath: stored.LogPath})
+	}
+	return results
 }
 
 func skippedStepResults(active ActiveFlow) map[string]SkippedStepResult {

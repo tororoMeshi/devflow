@@ -8,11 +8,12 @@ type Flow struct {
 }
 
 type Step struct {
-	ID          string     `json:"id"`
-	Title       string     `json:"title"`
-	Instruction string     `json:"instruction"`
-	Artifacts   []Artifact `json:"artifacts"`
-	Approval    *Approval  `json:"approval"`
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	Instruction    string     `json:"instruction"`
+	Artifacts      []Artifact `json:"artifacts"`
+	Approval       *Approval  `json:"approval"`
+	RequiredChecks []string   `json:"required_checks"`
 }
 
 type Artifact struct {

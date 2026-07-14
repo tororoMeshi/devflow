@@ -19,6 +19,7 @@ func Prompt(ctx Context) CommandResult {
 			RequiredArtifacts:      requiredArtifacts,
 			OptionalArtifacts:      optionalArtifacts,
 			RequiredApproval:       requiredApproval,
+			RequiredChecks:         append([]string(nil), active.CurrentStep.RequiredChecks...),
 			AfterCompleting:        promptAfterCompleting(requiredApproval != nil),
 		},
 	}

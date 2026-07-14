@@ -83,3 +83,9 @@ func removeString(values []string, target string) []string {
 	}
 	return next
 }
+
+func enterStep(st *state.State, stepID string) {
+	st.CurrentStepID = stepID
+	st.CurrentEntrySequence++
+	st.CheckResults = map[string]state.CheckResult{}
+}

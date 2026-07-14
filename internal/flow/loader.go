@@ -99,11 +99,12 @@ type rawFlow struct {
 }
 
 type rawStep struct {
-	ID          string        `json:"id"`
-	Title       string        `json:"title"`
-	Instruction string        `json:"instruction"`
-	Artifacts   []rawArtifact `json:"artifacts"`
-	Approval    *rawApproval  `json:"approval"`
+	ID             string        `json:"id"`
+	Title          string        `json:"title"`
+	Instruction    string        `json:"instruction"`
+	Artifacts      []rawArtifact `json:"artifacts"`
+	Approval       *rawApproval  `json:"approval"`
+	RequiredChecks []string      `json:"required_checks"`
 }
 
 type rawArtifact struct {
@@ -141,11 +142,12 @@ func (s rawStep) toStep() Step {
 	}
 
 	return Step{
-		ID:          s.ID,
-		Title:       s.Title,
-		Instruction: s.Instruction,
-		Artifacts:   artifacts,
-		Approval:    approval,
+		ID:             s.ID,
+		Title:          s.Title,
+		Instruction:    s.Instruction,
+		Artifacts:      artifacts,
+		Approval:       approval,
+		RequiredChecks: append([]string(nil), s.RequiredChecks...),
 	}
 }
 

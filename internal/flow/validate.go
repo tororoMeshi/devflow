@@ -13,18 +13,21 @@ import (
 type ErrorCode string
 
 const (
-	ErrorMissingFlowID          ErrorCode = "error_missing_flow_id"
-	ErrorMissingFlowTitle       ErrorCode = "error_missing_flow_title"
-	ErrorFlowHasNoSteps         ErrorCode = "error_flow_has_no_steps"
-	ErrorMissingStepID          ErrorCode = "error_missing_step_id"
-	ErrorMissingStepTitle       ErrorCode = "error_missing_step_title"
-	ErrorMissingStepInstruction ErrorCode = "error_missing_step_instruction"
-	ErrorDuplicateStepID        ErrorCode = "error_duplicate_step_id"
-	ErrorMissingArtifactPath    ErrorCode = "error_missing_artifact_path"
-	ErrorInvalidArtifactPath    ErrorCode = "error_invalid_artifact_path"
-	ErrorFlowIDFilenameMismatch ErrorCode = "error_flow_id_filename_mismatch"
-	ErrorInvalidFlowID          ErrorCode = "error_invalid_flow_id"
-	ErrorInvalidStepID          ErrorCode = "error_invalid_step_id"
+	ErrorMissingFlowID            ErrorCode = "error_missing_flow_id"
+	ErrorMissingFlowTitle         ErrorCode = "error_missing_flow_title"
+	ErrorFlowHasNoSteps           ErrorCode = "error_flow_has_no_steps"
+	ErrorMissingStepID            ErrorCode = "error_missing_step_id"
+	ErrorMissingStepTitle         ErrorCode = "error_missing_step_title"
+	ErrorMissingStepInstruction   ErrorCode = "error_missing_step_instruction"
+	ErrorDuplicateStepID          ErrorCode = "error_duplicate_step_id"
+	ErrorMissingArtifactPath      ErrorCode = "error_missing_artifact_path"
+	ErrorInvalidArtifactPath      ErrorCode = "error_invalid_artifact_path"
+	ErrorFlowIDFilenameMismatch   ErrorCode = "error_flow_id_filename_mismatch"
+	ErrorInvalidFlowID            ErrorCode = "error_invalid_flow_id"
+	ErrorInvalidStepID            ErrorCode = "error_invalid_step_id"
+	ErrorMissingRequiredCheckID   ErrorCode = "error_missing_required_check_id"
+	ErrorInvalidRequiredCheckID   ErrorCode = "error_invalid_required_check_id"
+	ErrorDuplicateRequiredCheckID ErrorCode = "error_duplicate_required_check_id"
 )
 
 type ValidationError struct {
@@ -75,6 +78,20 @@ func Validate(flow Flow) error {
 			return validationError(ErrorDuplicateStepID, nil)
 		}
 		seen[step.ID] = struct{}{}
+
+		seenChecks := map[string]struct{}{}
+		for _, checkID := range step.RequiredChecks {
+			if blank(checkID) {
+				return validationError(ErrorMissingRequiredCheckID, nil)
+			}
+			if !IsValidID(checkID) {
+				return validationError(ErrorInvalidRequiredCheckID, nil)
+			}
+			if _, ok := seenChecks[checkID]; ok {
+				return validationError(ErrorDuplicateRequiredCheckID, nil)
+			}
+			seenChecks[checkID] = struct{}{}
+		}
 
 		if blank(step.Title) {
 			return validationError(ErrorMissingStepTitle, nil)

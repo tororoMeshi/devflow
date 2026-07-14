@@ -33,7 +33,6 @@ func ApplyBack(flow flow.Flow, st state.State, toStepID string, reason string) T
 	}
 
 	next := st.Clone()
-	next.CurrentStepID = toStepID
 	invalidatedStepIDs := invalidatedBackStepIDs(flow, st, toIndex, currentIndex)
 	invalidated := make(map[string]struct{}, len(flow.Steps)-toIndex)
 	for _, step := range flow.Steps[toIndex:] {
@@ -56,6 +55,7 @@ func ApplyBack(flow flow.Flow, st state.State, toStepID string, reason string) T
 		Reason:             reason,
 		InvalidatedStepIDs: invalidatedStepIDs,
 	})
+	enterStep(&next, toStepID)
 
 	return success(next)
 }

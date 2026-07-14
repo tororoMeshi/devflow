@@ -13,17 +13,21 @@ func TestApplyStart(t *testing.T) {
 	fl := testFlow()
 
 	t.Run("starts when no current state exists", func(t *testing.T) {
-		got := ApplyStart(fl, nil)
+		got := ApplyStart(fl, nil, "run_test")
 
 		assertSuccess(t, got)
 		assertStateEqual(t, *got.State, state.State{
-			FlowID:         "test-flow",
-			Status:         state.StatusRunning,
-			CurrentStepID:  "first",
-			CompletedSteps: []string{},
-			SkippedSteps:   map[string]state.SkippedStep{},
-			Approvals:      map[string]state.ApprovalRecord{},
-			BackHistory:    []state.BackHistory{},
+			SchemaVersion:        state.CurrentSchemaVersion,
+			FlowID:               "test-flow",
+			Status:               state.StatusRunning,
+			CurrentStepID:        "first",
+			FlowRunID:            "run_test",
+			CurrentEntrySequence: 1,
+			CheckResults:         map[string]state.CheckResult{},
+			CompletedSteps:       []string{},
+			SkippedSteps:         map[string]state.SkippedStep{},
+			Approvals:            map[string]state.ApprovalRecord{},
+			BackHistory:          []state.BackHistory{},
 		})
 	})
 
@@ -31,7 +35,7 @@ func TestApplyStart(t *testing.T) {
 		current := runningState()
 		current.Status = state.StatusCompleted
 
-		got := ApplyStart(fl, &current)
+		got := ApplyStart(fl, &current, "run_test")
 
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
@@ -43,7 +47,7 @@ func TestApplyStart(t *testing.T) {
 		current := runningState()
 		current.Status = state.StatusFinished
 
-		got := ApplyStart(fl, &current)
+		got := ApplyStart(fl, &current, "run_test")
 
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
@@ -54,14 +58,14 @@ func TestApplyStart(t *testing.T) {
 	t.Run("fails when flow is already running", func(t *testing.T) {
 		current := runningState()
 
-		got := ApplyStart(fl, &current)
+		got := ApplyStart(fl, &current, "run_test")
 
 		assertFailure(t, got, CodeFlowAlreadyRunning)
 		assertStateEqual(t, current, runningState())
 	})
 
 	t.Run("fails when flow has no steps", func(t *testing.T) {
-		got := ApplyStart(flow.Flow{ID: "empty"}, nil)
+		got := ApplyStart(flow.Flow{ID: "empty"}, nil, "run_test")
 
 		assertFailure(t, got, CodeFlowHasNoSteps)
 	})
@@ -85,6 +89,8 @@ func TestApplyDone(t *testing.T) {
 	t.Run("completes flow when current step is final", func(t *testing.T) {
 		st := runningState()
 		st.CurrentStepID = "approval"
+		st.SchemaVersion = state.CurrentSchemaVersion
+		st.CurrentEntrySequence = 7
 		before := st.Clone()
 
 		got := ApplyDone(testFlow(), st, gate.Result{OK: true})
@@ -96,6 +102,9 @@ func TestApplyDone(t *testing.T) {
 		}
 		if got.State.CurrentStepID != "approval" {
 			t.Fatalf("CurrentStepID = %q, want approval", got.State.CurrentStepID)
+		}
+		if got.State.CurrentEntrySequence != 7 || got.State.SchemaVersion != state.CurrentSchemaVersion {
+			t.Fatalf("state=%#v", got.State)
 		}
 	})
 
@@ -317,6 +326,39 @@ func TestApplyBackInvalidatesFutureSkippedApprovalAndKeepsFinish(t *testing.T) {
 	}
 }
 
+func TestEntrySequenceChangesOnlyOnSuccessfulMoves(t *testing.T) {
+	st := runningState()
+	st.FlowRunID = "run_test"
+	st.CurrentEntrySequence = 1
+	st.CheckResults["old"] = state.CheckResult{EntrySequence: 1, ExitCode: 0}
+
+	failed := ApplyDone(testFlow(), st, gate.Result{OK: false})
+	assertFailure(t, failed, CodeInvalidGateResult)
+	if st.CurrentEntrySequence != 1 || len(st.CheckResults) != 1 {
+		t.Fatalf("failed transition mutated state: %#v", st)
+	}
+
+	done := ApplyDone(testFlow(), st, gate.Result{OK: true})
+	assertSuccess(t, done)
+	if done.State.CurrentEntrySequence != 2 || len(done.State.CheckResults) != 0 {
+		t.Fatalf("done state=%#v", done.State)
+	}
+
+	back := ApplyBack(testFlow(), *done.State, "", "revise")
+	assertSuccess(t, back)
+	if back.State.CurrentEntrySequence != 3 || len(back.State.CheckResults) != 0 {
+		t.Fatalf("back state=%#v", back.State)
+	}
+}
+
+func TestApplySkipWarnsForRequiredChecks(t *testing.T) {
+	fl := testFlow()
+	fl.Steps[0].RequiredChecks = []string{"go-test"}
+	st := runningState()
+	got := ApplySkip(fl, st, "skip checks")
+	assertSuccess(t, got, CodeSkippedRequiredCheck)
+}
+
 func TestApplySkip(t *testing.T) {
 	t.Run("skips current step and moves to next without completing it", func(t *testing.T) {
 		st := runningState()
@@ -338,6 +380,8 @@ func TestApplySkip(t *testing.T) {
 	t.Run("completes flow when final step is skipped", func(t *testing.T) {
 		st := runningState()
 		st.CurrentStepID = "approval"
+		st.SchemaVersion = state.CurrentSchemaVersion
+		st.CurrentEntrySequence = 7
 		before := st.Clone()
 
 		got := ApplySkip(testFlow(), st, "skip final")
@@ -346,6 +390,9 @@ func TestApplySkip(t *testing.T) {
 		assertSuccess(t, got, CodeSkippedRequiredApproval, CodeSkippedFinalStep, CodeSkippedFinalApprovalStep)
 		if got.State.Status != state.StatusCompleted {
 			t.Fatalf("Status = %q, want completed", got.State.Status)
+		}
+		if got.State.CurrentEntrySequence != 7 || got.State.SchemaVersion != state.CurrentSchemaVersion {
+			t.Fatalf("state=%#v", got.State)
 		}
 	})
 
@@ -398,6 +445,9 @@ func TestApplyFinish(t *testing.T) {
 		st.CompletedSteps = []string{"first"}
 		st.SkippedSteps["second"] = state.SkippedStep{Reason: "skipped"}
 		st.Approvals["approval"] = state.ApprovalRecord{Approved: true}
+		st.SchemaVersion = state.CurrentSchemaVersion
+		st.CurrentEntrySequence = 7
+		st.CheckResults["go-test"] = state.CheckResult{EntrySequence: 7, ExitCode: 1}
 		before := st.Clone()
 
 		got := ApplyFinish(st, "out of scope")
@@ -419,6 +469,9 @@ func TestApplyFinish(t *testing.T) {
 		}
 		if !got.State.Approvals["approval"].Approved {
 			t.Fatalf("approvals was not preserved")
+		}
+		if got.State.SchemaVersion != state.CurrentSchemaVersion || got.State.CurrentEntrySequence != 7 || got.State.CheckResults["go-test"].ExitCode != 1 {
+			t.Fatalf("check context was not preserved: %#v", got.State)
 		}
 	})
 

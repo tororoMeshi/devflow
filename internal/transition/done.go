@@ -29,6 +29,13 @@ func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) Transitio
 		for _, stepID := range gateResult.MissingApprovals {
 			diagnostics = append(diagnostics, errorDiagnostic(CodeMissingRequiredApproval, stepID))
 		}
+		for _, problem := range gateResult.CheckProblems {
+			code := CodeMissingRequiredCheck
+			if problem.Kind == gate.CheckFailed {
+				code = CodeFailedRequiredCheck
+			}
+			diagnostics = append(diagnostics, errorDiagnostic(code, problem.CheckID))
+		}
 		if len(diagnostics) == 0 {
 			diagnostics = append(diagnostics, errorDiagnostic(CodeInvalidGateResult, currentStep.ID))
 		}
@@ -41,7 +48,7 @@ func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) Transitio
 
 	if currentIndex+1 < len(flow.Steps) {
 		next.Status = state.StatusRunning
-		next.CurrentStepID = flow.Steps[currentIndex+1].ID
+		enterStep(&next, flow.Steps[currentIndex+1].ID)
 	} else {
 		next.Status = state.StatusCompleted
 		next.CurrentStepID = currentStep.ID

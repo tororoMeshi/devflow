@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/8noki8/devflow/internal/command"
 )
@@ -20,6 +22,8 @@ const usage = `Usage:
   devflow back [--to <step>] --reason <reason>
   devflow skip --reason <reason>
   devflow finish --reason <reason>
+  devflow check request <check-id>
+  devflow check record --file <result.json>
 `
 
 func main() {
@@ -109,6 +113,20 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 			return 1
 		}
 		result = command.Finish(ctx, reason)
+	case "check":
+		if len(args) >= 2 && args[1] == "request" {
+			checkID, ok := parseCheckRequestArgs(args[2:])
+			if !ok {
+				writeUsage(stderr)
+				return 1
+			}
+			result = command.CheckRequest(ctx, checkID)
+		} else if len(args) == 4 && args[1] == "record" && args[2] == "--file" {
+			result = command.CheckRecord(ctx, args[3])
+		} else {
+			writeUsage(stderr)
+			return 1
+		}
 	default:
 		writeUsage(stderr)
 		return 1
@@ -147,6 +165,16 @@ func parseReasonArgs(args []string) (string, bool) {
 		return "", false
 	}
 	return args[1], true
+}
+
+func parseCheckRequestArgs(args []string) (string, bool) {
+	if len(args) == 1 && args[0] != "" && !strings.HasPrefix(args[0], "-") {
+		return args[0], true
+	}
+	if len(args) == 2 && args[0] == "--" && args[1] != "" {
+		return args[1], true
+	}
+	return "", false
 }
 
 func parseBackArgs(args []string) (string, string, bool) {
@@ -194,6 +222,9 @@ func writeResult(ctx command.Context, result command.CommandResult) {
 	}
 	if result.Prompt != nil {
 		writePrompt(ctx.Stdout, *result.Prompt)
+	}
+	if result.CheckRequest != nil {
+		_ = json.NewEncoder(ctx.Stdout).Encode(result.CheckRequest)
 	}
 	command.WriteDiagnostics(ctx, result.Diagnostics)
 }
@@ -255,6 +286,9 @@ func writeFlows(stdout io.Writer, flows []command.FlowListItem) {
 func writeStatus(stdout io.Writer, status command.StatusResult) {
 	_, _ = fmt.Fprintf(stdout, "Flow: %s - %s\n", status.FlowID, status.FlowTitle)
 	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", status.CurrentStepID, status.CurrentStepTitle)
+	if status.EntrySequence > 0 {
+		_, _ = fmt.Fprintf(stdout, "Entry sequence: %d\n", status.EntrySequence)
+	}
 	writeStringList(stdout, "Completed steps", status.CompletedSteps)
 
 	_, _ = fmt.Fprintln(stdout, "Skipped steps:")
@@ -273,6 +307,22 @@ func writeStatus(stdout io.Writer, status command.StatusResult) {
 	if len(status.Approvals) == 0 {
 		_, _ = fmt.Fprintln(stdout, "- none")
 	}
+
+	_, _ = fmt.Fprintln(stdout, "Checks:")
+	if len(status.Checks) == 0 {
+		_, _ = fmt.Fprintln(stdout, "- none")
+	}
+	for _, check := range status.Checks {
+		if check.ExitCode == nil {
+			_, _ = fmt.Fprintf(stdout, "- %s: pending\n", check.CheckID)
+			continue
+		}
+		_, _ = fmt.Fprintf(stdout, "- %s: %s exit=%d", check.CheckID, check.Status, *check.ExitCode)
+		if check.LogPath != "" {
+			_, _ = fmt.Fprintf(stdout, " log=%s", check.LogPath)
+		}
+		_, _ = fmt.Fprintln(stdout)
+	}
 }
 
 func writePrompt(stdout io.Writer, prompt command.PromptResult) {
@@ -289,6 +339,7 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	} else {
 		_, _ = fmt.Fprintf(stdout, "- %s\n", prompt.RequiredApproval.StepID)
 	}
+	writeStringList(stdout, "Required checks", prompt.RequiredChecks)
 	writeStringList(stdout, "After completing", prompt.AfterCompleting.Commands)
 }
 

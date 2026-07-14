@@ -37,6 +37,15 @@ func TestActiveFlowFromLoadResult(t *testing.T) {
 		assertDiagnosticCodes(t, diagnostics, []string{CodeInvalidState})
 	})
 
+	t.Run("returns unsupported version for typed schema error", func(t *testing.T) {
+		_, diagnostics := ActiveFlowFromLoadResult(Context{}, state.LoadResult{
+			Status: state.LoadInvalid,
+			Err:    &state.UnsupportedSchemaVersionError{Actual: 1},
+		})
+
+		assertDiagnosticCodes(t, diagnostics, []string{CodeUnsupportedStateVersion})
+	})
+
 	t.Run("returns no active flow for completed and finished states", func(t *testing.T) {
 		for _, status := range []state.Status{state.StatusCompleted, state.StatusFinished} {
 			st := validRunningState()
@@ -148,9 +157,12 @@ func TestSaveTransitionState(t *testing.T) {
 
 func validRunningState() state.State {
 	st := state.State{
-		FlowID:        "test-flow",
-		Status:        state.StatusRunning,
-		CurrentStepID: "first",
+		SchemaVersion:        state.CurrentSchemaVersion,
+		FlowID:               "test-flow",
+		Status:               state.StatusRunning,
+		CurrentStepID:        "first",
+		FlowRunID:            "run_00000000000000000000000000000000",
+		CurrentEntrySequence: 1,
 	}
 	st.Normalize()
 	return st

@@ -3,13 +3,14 @@ package command
 import "github.com/8noki8/devflow/internal/transition"
 
 type CommandResult struct {
-	ExitCode    int
-	Actions     []CommandAction
-	Flows       []FlowListItem
-	Status      *StatusResult
-	Prompt      *PromptResult
-	Success     *SuccessResult
-	Diagnostics []transition.Diagnostic
+	ExitCode     int
+	Actions      []CommandAction
+	Flows        []FlowListItem
+	Status       *StatusResult
+	Prompt       *PromptResult
+	Success      *SuccessResult
+	CheckRequest *CheckRequestResult
+	Diagnostics  []transition.Diagnostic
 }
 
 type CommandAction struct {
@@ -45,6 +46,8 @@ type StatusResult struct {
 	CompletedSteps   []string
 	SkippedSteps     map[string]SkippedStepResult
 	Approvals        map[string]ApprovalResult
+	EntrySequence    uint64
+	Checks           []CheckStatusResult
 }
 
 type SkippedStepResult struct {
@@ -56,6 +59,13 @@ type ApprovalResult struct {
 	Note     string
 }
 
+type CheckStatusResult struct {
+	CheckID  string
+	Status   string
+	ExitCode *int
+	LogPath  string
+}
+
 type PromptResult struct {
 	FlowID                 string
 	CurrentStepID          string
@@ -64,6 +74,7 @@ type PromptResult struct {
 	RequiredArtifacts      []ArtifactResult
 	OptionalArtifacts      []ArtifactResult
 	RequiredApproval       *RequiredApprovalResult
+	RequiredChecks         []string
 	AfterCompleting        AfterCompletingResult
 }
 

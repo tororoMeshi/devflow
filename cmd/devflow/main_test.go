@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -67,6 +68,161 @@ func TestRunApproveParsesStepAndNote(t *testing.T) {
 	approval := st.Approvals["human_approval"]
 	if !approval.Approved || approval.Note != "ok" {
 		t.Fatalf("approval = %#v", approval)
+	}
+}
+
+func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
+	root := t.TempDir()
+	flowPath := filepath.Join(root, ".devflow", "flows", "check-flow.cue")
+	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runSuccess(t, root, []string{"start", "check-flow"})
+	statePath := filepath.Join(root, ".devflow", "state.json")
+	before, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, exitCode := runCapture(root, []string{"check", "request", "go-test"})
+
+	assertExitCode(t, exitCode, 0, stderr)
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	var request map[string]any
+	if err := json.Unmarshal([]byte(stdout), &request); err != nil {
+		t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
+	}
+	if request["check_id"] != "go-test" || request["entry_sequence"].(float64) != 1 {
+		t.Fatalf("request=%#v", request)
+	}
+	after, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("check request modified state.json")
+	}
+}
+
+func TestRunCheckRequestRejectsLegacyStateWithoutOutput(t *testing.T) {
+	root := t.TempDir()
+	flowPath := filepath.Join(root, ".devflow", "flows", "check-flow.cue")
+	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(root, ".devflow", "state.json")
+	legacy := []byte(`{"flow_id":"check-flow","status":"running","current_step_id":"quality"}`)
+	if err := os.WriteFile(statePath, legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, exitCode := runCapture(root, []string{"check", "request", "go-test"})
+	if exitCode == 0 || stdout != "" || !strings.Contains(stderr, "error_unsupported_state_version") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	after, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(legacy, after) {
+		t.Fatal("legacy state was modified")
+	}
+}
+
+func TestRunCheckRequestRejectsInvalidArgumentsWithoutChangingState(t *testing.T) {
+	for _, args := range [][]string{
+		{"check", "request"},
+		{"check", "request", "unit-test", "extra"},
+		{"check", "request", "--unknown"},
+		{"check", "request", "-x"},
+		{"check", "request", "--"},
+		{"check", "request", "--", "unit-test", "extra"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			root := t.TempDir()
+			runSuccess(t, root, []string{"init"})
+			runSuccess(t, root, []string{"start", "post-task-review"})
+			statePath := filepath.Join(root, ".devflow", "state.json")
+			before, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stdout, stderr, exitCode := runCapture(root, args)
+			if exitCode == 0 || stdout != "" || !strings.Contains(stderr, "Usage:") || strings.Contains(stderr, "error_check_not_required") {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+			}
+			after, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatal("invalid parser input modified state.json")
+			}
+		})
+	}
+}
+
+func TestParseCheckRequestArgs(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+		ok   bool
+	}{
+		{[]string{"unit-test"}, "unit-test", true},
+		{[]string{"--", "--custom-check"}, "--custom-check", true},
+		{[]string{"--", "unit-test"}, "unit-test", true},
+		{[]string{"--unknown"}, "", false},
+		{[]string{"-x"}, "", false},
+		{[]string{"--"}, "", false},
+		{[]string{"--", "unit-test", "extra"}, "", false},
+	} {
+		got, ok := parseCheckRequestArgs(tt.args)
+		if got != tt.want || ok != tt.ok {
+			t.Fatalf("parseCheckRequestArgs(%q) = (%q, %t), want (%q, %t)", tt.args, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestRunCheckRecordRejectsInvalidArgumentsWithoutChangingState(t *testing.T) {
+	for _, args := range [][]string{
+		{"check", "record"},
+		{"check", "record", "--file"},
+		{"check", "record", "--file", "a.json", "--file", "b.json"},
+		{"check", "record", "--unknown", "value"},
+		{"check", "record", "--file", "result.json", "extra"},
+		{"check", "record", "extra", "--file", "result.json"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			root := t.TempDir()
+			runSuccess(t, root, []string{"init"})
+			runSuccess(t, root, []string{"start", "post-task-review"})
+			statePath := filepath.Join(root, ".devflow", "state.json")
+			before, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stdout, stderr, exitCode := runCapture(root, args)
+			if exitCode == 0 || stdout != "" || !strings.Contains(stderr, "Usage:") {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+			}
+			after, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatal("invalid parser input modified state.json")
+			}
+		})
 	}
 }
 

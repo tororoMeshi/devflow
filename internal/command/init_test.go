@@ -38,6 +38,11 @@ func TestInitCreatesDevflowFiles(t *testing.T) {
 	if len(loaded.Steps) != 5 {
 		t.Fatalf("len(steps) = %d, want 5", len(loaded.Steps))
 	}
+	for _, step := range loaded.Steps {
+		if len(step.RequiredChecks) != 0 {
+			t.Fatalf("standard flow step %q has required checks", step.ID)
+		}
+	}
 }
 
 func TestInitDoesNotOverwriteExistingFiles(t *testing.T) {

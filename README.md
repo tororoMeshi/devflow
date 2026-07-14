@@ -67,6 +67,43 @@ printf 'review ok\n' > docs/code-review.md
 
 `back` は戻り先以降の完了、スキップ、承認状態を無効化します。成果物ファイルは削除しません。
 
+## External Checks
+
+Flowの工程には、runnerが実行する必須checkを定義できます。
+
+```cue
+required_checks: ["go-test", "go-vet"]
+```
+
+runnerは実行前に文脈を取得し、実行後に結果を登録します。devflow自身はcheckを実行しません。
+
+```bash
+devflow check request go-test > check-request.json
+# runner executes the check and writes result.json
+devflow check record --file result.json
+devflow done
+```
+
+`result.json` にはrequestの `flow_run_id`、`step_id`、`entry_sequence`、`check_id` を引き継ぎ、`exit_code` を設定します。必須checkが未登録または失敗の場合、`done` は失敗します。
+
+`devflow check record` は、結果JSONを現在の文脈へ受理・保存できたかを表します。外部checkの `exit_code` が非0でも、JSONと文脈が正しければrecord自体は成功し、process exit codeは0です。その結果、後続の `devflow done` は `error_failed_required_check` を出して非0で失敗します。runnerは外部check自身の終了コードと、recordの終了コードを混同しないでください。
+
+```text
+external check:       exit_code = 1
+devflow check record: result stored, process exit code = 0
+devflow done:         error_failed_required_check, process exit code != 0
+```
+
+check実行後にworkspaceが変更されていないことはv0.2.0では検出しません。ファイルを変更した場合は必要なcheckを再実行してください。fingerprintや成果物freshnessは扱いません。
+
+## Breaking Changes
+
+v0.2.0ではState schema version 2を導入しました。v0.1.xで作成された `.devflow/state.json`、schema_versionを持たないState、対応値でないStateは利用できません。
+
+更新前に現在の作業状態を確認し、必要なら `.devflow/state.json` を退避してください。Stateを削除してFlowを再度 `start` することもできます。devflowは旧Stateを自動移行・削除しません。
+
+`.devflow/flows/*.cue` は引き続き利用でき、`required_checks` のない既存Flowと標準Quick Startも従来どおり動作します。
+
 現在工程をスキップする場合:
 
 ```bash

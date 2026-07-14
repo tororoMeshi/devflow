@@ -36,6 +36,9 @@ func ActiveFlowFromLoadResult(ctx Context, loaded state.LoadResult) (ActiveFlow,
 	case state.LoadNoState:
 		return ActiveFlow{}, []transition.Diagnostic{commandErrorDiagnostic(CodeNoActiveFlow)}
 	case state.LoadInvalid:
+		if isUnsupportedStateVersion(loaded.Err) {
+			return ActiveFlow{}, []transition.Diagnostic{unsupportedStateVersionDiagnostic()}
+		}
 		return ActiveFlow{}, []transition.Diagnostic{commandErrorDiagnostic(CodeInvalidState)}
 	case state.LoadOK:
 		if loaded.State == nil {
