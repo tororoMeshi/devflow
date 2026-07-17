@@ -3,14 +3,15 @@ package command
 import "github.com/8noki8/devflow/internal/transition"
 
 type CommandResult struct {
-	ExitCode     int
-	Actions      []CommandAction
-	Flows        []FlowListItem
-	Status       *StatusResult
-	Prompt       *PromptResult
-	Success      *SuccessResult
-	CheckRequest *CheckRequestResult
-	Diagnostics  []transition.Diagnostic
+	ExitCode         int
+	Actions          []CommandAction
+	Flows            []FlowListItem
+	Status           *StatusResult
+	Prompt           *PromptResult
+	ExecutionContext *ExecutionContextResult
+	Success          *SuccessResult
+	CheckRequest     *CheckRequestResult
+	Diagnostics      []transition.Diagnostic
 }
 
 type CommandAction struct {

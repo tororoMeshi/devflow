@@ -8,6 +8,7 @@ const (
 
 	CodeNoActiveFlow             = "error_no_active_flow"
 	CodeInvalidCurrentStep       = "error_invalid_current_step"
+	CodeMissingRequiredInput     = "error_missing_required_input"
 	CodeMissingRequiredArtifact  = "error_missing_required_artifact"
 	CodeMissingRequiredApproval  = "error_missing_required_approval"
 	CodeEmptyReason              = "error_empty_reason"
