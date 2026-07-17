@@ -20,8 +20,12 @@ const (
 	ErrorMissingStepTitle         ErrorCode = "error_missing_step_title"
 	ErrorMissingStepInstruction   ErrorCode = "error_missing_step_instruction"
 	ErrorDuplicateStepID          ErrorCode = "error_duplicate_step_id"
+	ErrorMissingInputPath         ErrorCode = "error_missing_input_path"
+	ErrorInvalidInputPath         ErrorCode = "error_invalid_input_path"
+	ErrorDuplicateInputPath       ErrorCode = "error_duplicate_input_path"
 	ErrorMissingArtifactPath      ErrorCode = "error_missing_artifact_path"
 	ErrorInvalidArtifactPath      ErrorCode = "error_invalid_artifact_path"
+	ErrorDuplicateArtifactPath    ErrorCode = "error_duplicate_artifact_path"
 	ErrorFlowIDFilenameMismatch   ErrorCode = "error_flow_id_filename_mismatch"
 	ErrorInvalidFlowID            ErrorCode = "error_invalid_flow_id"
 	ErrorInvalidStepID            ErrorCode = "error_invalid_step_id"
@@ -100,16 +104,31 @@ func Validate(flow Flow) error {
 			return validationError(ErrorMissingStepInstruction, nil)
 		}
 
-		for _, artifact := range step.Artifacts {
-			if blank(artifact.Path) {
-				return validationError(ErrorMissingArtifactPath, nil)
-			}
-			if err := pathcheck.ValidateArtifactPath(artifact.Path); err != nil {
-				return validationError(ErrorInvalidArtifactPath, err)
-			}
+		if err := validateArtifacts(step.Inputs, ErrorMissingInputPath, ErrorInvalidInputPath, ErrorDuplicateInputPath); err != nil {
+			return err
+		}
+		if err := validateArtifacts(step.Artifacts, ErrorMissingArtifactPath, ErrorInvalidArtifactPath, ErrorDuplicateArtifactPath); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func validateArtifacts(artifacts []Artifact, missingCode ErrorCode, invalidCode ErrorCode, duplicateCode ErrorCode) error {
+	seen := map[string]struct{}{}
+	for _, artifact := range artifacts {
+		if blank(artifact.Path) {
+			return validationError(missingCode, nil)
+		}
+		if err := pathcheck.ValidateArtifactPath(artifact.Path); err != nil {
+			return validationError(invalidCode, err)
+		}
+		if _, ok := seen[artifact.Path]; ok {
+			return validationError(duplicateCode, nil)
+		}
+		seen[artifact.Path] = struct{}{}
+	}
 	return nil
 }
 

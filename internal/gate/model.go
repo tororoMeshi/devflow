@@ -1,6 +1,7 @@
 package gate
 
 type GateResult struct {
+	MissingInputs    []string
 	OK               bool
 	MissingArtifacts []string
 	MissingApprovals []string

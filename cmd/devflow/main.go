@@ -17,6 +17,7 @@ const usage = `Usage:
   devflow start <flow>
   devflow status
   devflow prompt
+  devflow context
   devflow approve [--step <step>] [--note <note>]
   devflow done
   devflow back [--to <step>] --reason <reason>
@@ -79,6 +80,12 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 			return 1
 		}
 		result = command.Prompt(ctx)
+	case "context":
+		if len(args) != 1 {
+			writeUsage(stderr)
+			return 1
+		}
+		result = command.CurrentContext(ctx)
 	case "approve":
 		stepID, note, ok := parseApproveArgs(args[1:])
 		if !ok {
@@ -222,6 +229,9 @@ func writeResult(ctx command.Context, result command.CommandResult) {
 	}
 	if result.Prompt != nil {
 		writePrompt(ctx.Stdout, *result.Prompt)
+	}
+	if result.ExecutionContext != nil {
+		_ = json.NewEncoder(ctx.Stdout).Encode(result.ExecutionContext)
 	}
 	if result.CheckRequest != nil {
 		_ = json.NewEncoder(ctx.Stdout).Encode(result.CheckRequest)

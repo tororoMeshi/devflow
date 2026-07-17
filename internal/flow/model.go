@@ -11,6 +11,7 @@ type Step struct {
 	ID             string     `json:"id"`
 	Title          string     `json:"title"`
 	Instruction    string     `json:"instruction"`
+	Inputs         []Artifact `json:"inputs"`
 	Artifacts      []Artifact `json:"artifacts"`
 	Approval       *Approval  `json:"approval"`
 	RequiredChecks []string   `json:"required_checks"`

@@ -109,6 +109,73 @@ func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
 	}
 }
 
+func TestRunContextWritesOnlyJSON(t *testing.T) {
+	root := t.TempDir()
+	flowPath := filepath.Join(root, ".devflow", "flows", "context-flow.cue")
+	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", instruction: "Design.", inputs: [{path: "docs/request.md"}] }] }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runSuccess(t, root, []string{"start", "context-flow"})
+	stdout, stderr, exitCode := runCapture(root, []string{"context"})
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", exitCode, stderr)
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(stdout), &value); err != nil {
+		t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
+	}
+	if value["schema_version"].(float64) != 1 || value["completion"].(map[string]any)["ready"] != false {
+		t.Fatalf("context = %#v", value)
+	}
+}
+
+func TestRunContextRequiresActiveState(t *testing.T) {
+	stdout, stderr, exitCode := runCapture(t.TempDir(), []string{"context"})
+	if exitCode == 0 || stdout != "" || !strings.Contains(stderr, "error_no_active_flow") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		advance []string
+		want    string
+	}{
+		{name: "completed", advance: []string{"done"}, want: "completed"},
+		{name: "finished", advance: []string{"finish", "--reason", "stop"}, want: "finished"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			flowPath := filepath.Join(root, ".devflow", "flows", "context-flow.cue")
+			if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", instruction: "Design." }] }`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runSuccess(t, root, []string{"start", "context-flow"})
+			runSuccess(t, root, tt.advance)
+
+			stdout, stderr, exitCode := runCapture(root, []string{"context"})
+			if exitCode != 0 || stderr != "" {
+				t.Fatalf("exit=%d stderr=%q", exitCode, stderr)
+			}
+			var value map[string]any
+			if err := json.Unmarshal([]byte(stdout), &value); err != nil {
+				t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
+			}
+			state := value["state"].(map[string]any)
+			if state["status"] != tt.want || value["step"] != nil || value["completion"] != nil {
+				t.Fatalf("context = %#v", value)
+			}
+		})
+	}
+}
+
 func TestRunCheckRequestRejectsLegacyStateWithoutOutput(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(root, ".devflow", "flows", "check-flow.cue")

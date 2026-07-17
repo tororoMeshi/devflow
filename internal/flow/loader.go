@@ -102,6 +102,7 @@ type rawStep struct {
 	ID             string        `json:"id"`
 	Title          string        `json:"title"`
 	Instruction    string        `json:"instruction"`
+	Inputs         []rawArtifact `json:"inputs"`
 	Artifacts      []rawArtifact `json:"artifacts"`
 	Approval       *rawApproval  `json:"approval"`
 	RequiredChecks []string      `json:"required_checks"`
@@ -131,6 +132,11 @@ func (f rawFlow) toFlow() Flow {
 }
 
 func (s rawStep) toStep() Step {
+	inputs := make([]Artifact, len(s.Inputs))
+	for i, rawInput := range s.Inputs {
+		inputs[i] = rawInput.toArtifact()
+	}
+
 	artifacts := make([]Artifact, len(s.Artifacts))
 	for i, rawArtifact := range s.Artifacts {
 		artifacts[i] = rawArtifact.toArtifact()
@@ -145,6 +151,7 @@ func (s rawStep) toStep() Step {
 		ID:             s.ID,
 		Title:          s.Title,
 		Instruction:    s.Instruction,
+		Inputs:         inputs,
 		Artifacts:      artifacts,
 		Approval:       approval,
 		RequiredChecks: append([]string(nil), s.RequiredChecks...),

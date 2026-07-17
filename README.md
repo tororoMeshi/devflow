@@ -86,6 +86,28 @@ devflow done
 
 `result.json` にはrequestの `flow_run_id`、`step_id`、`entry_sequence`、`check_id` を引き継ぎ、`exit_code` を設定します。必須checkが未登録または失敗の場合、`done` は失敗します。
 
+## Inputs and execution context
+
+`inputs` は現在のstepが受け取る成果物、`artifacts` は現在のstepが作成する成果物です。どちらも `path` と任意の `required` を持ち、`required` の既定値は `true` です。
+
+```cue
+steps: [{
+	// ...
+	inputs: [{path: "docs/task-request.md"}]
+	artifacts: [{path: "docs/design.json"}]
+}]
+```
+
+required input は `done` のGateです。プロジェクトルート配下に通常ファイルとして存在しない場合、`done` は `error_missing_required_input` で失敗します。`inputs` を省略した既存Flowは引き続き有効です。
+
+`devflow context` はrunnerや外部AIが現在工程の契約を取得するための読み取り専用JSONをstdoutへ出力します。ファイル内容は含まれず、diagnosticはstderrへ出力されます。
+
+```sh
+devflow context
+```
+
+JSONにはschema version、Flow run ID、Flow、実行状態、現在step、inputs、artifacts、check・approval状態、完了可能性、completion blockerを含みます。running以外のcompleted / finished Stateでも、`step` と `completion` を`null`にした正常JSONを返します。
+
 `devflow check record` は、結果JSONを現在の文脈へ受理・保存できたかを表します。外部checkの `exit_code` が非0でも、JSONと文脈が正しければrecord自体は成功し、process exit codeは0です。その結果、後続の `devflow done` は `error_failed_required_check` を出して非0で失敗します。runnerは外部check自身の終了コードと、recordの終了コードを混同しないでください。
 
 ```text

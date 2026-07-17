@@ -10,16 +10,26 @@ import (
 
 func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result {
 	result := Result{
+		MissingInputs:    []string{},
 		MissingArtifacts: []string{},
 		MissingApprovals: []string{},
 		CheckProblems:    []CheckProblem{},
+	}
+
+	for _, input := range step.Inputs {
+		if !input.Required {
+			continue
+		}
+		if !FileExists(projectRoot, input.Path) {
+			result.MissingInputs = append(result.MissingInputs, input.Path)
+		}
 	}
 
 	for _, artifact := range step.Artifacts {
 		if !artifact.Required {
 			continue
 		}
-		if !artifactExists(projectRoot, artifact.Path) {
+		if !FileExists(projectRoot, artifact.Path) {
 			result.MissingArtifacts = append(result.MissingArtifacts, artifact.Path)
 		}
 	}
@@ -42,11 +52,11 @@ func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result
 		}
 	}
 
-	result.OK = len(result.MissingArtifacts) == 0 && len(result.MissingApprovals) == 0 && len(result.CheckProblems) == 0
+	result.OK = len(result.MissingInputs) == 0 && len(result.MissingArtifacts) == 0 && len(result.MissingApprovals) == 0 && len(result.CheckProblems) == 0
 	return result
 }
 
-func artifactExists(projectRoot string, artifactPath string) bool {
+func FileExists(projectRoot string, artifactPath string) bool {
 	info, err := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(artifactPath)))
 	if err != nil {
 		return false

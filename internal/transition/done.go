@@ -18,6 +18,14 @@ func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) Transitio
 
 	if !gateResult.OK {
 		diagnostics := []Diagnostic{}
+		for _, input := range gateResult.MissingInputs {
+			diagnostics = append(diagnostics, Diagnostic{
+				Level:     LevelError,
+				Code:      CodeMissingRequiredInput,
+				StepID:    currentStep.ID,
+				Artifacts: []string{input},
+			})
+		}
 		for _, artifact := range gateResult.MissingArtifacts {
 			diagnostics = append(diagnostics, Diagnostic{
 				Level:     LevelError,
