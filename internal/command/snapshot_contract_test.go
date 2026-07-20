@@ -12,7 +12,7 @@ func TestStartedRunIgnoresInstructionAndGateChanges(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
 	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`instruction: "Original instruction."`))
-	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "fixed-flow"))
+	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 
 	writeCommandTestFile(t, flowPath, fixedFlow(`
 		instruction: "Changed instruction."
@@ -37,7 +37,7 @@ func TestStartedRunIgnoresStepOrderChanges(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
 	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`instruction: "Original instruction."`))
-	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "fixed-flow"))
+	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 
 	writeCommandTestFile(t, flowPath, `flow: {
 		id: "fixed-flow"
@@ -67,7 +67,7 @@ func TestCommandsUseSnapshotAfterFlowDeletion(t *testing.T) {
 			required_checks: ["verify"]
 		}]
 	}`)
-	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "checked-flow"))
+	assertCommandSuccess(t, startWithTestTask(t, root, "checked-flow"))
 	if err := os.Remove(flowPath); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestStateTransitionUsesSnapshotAfterFlowDeletion(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
 	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`instruction: "Original instruction."`))
-	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "fixed-flow"))
+	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 	if err := os.Remove(flowPath); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestCompletedContextUsesSnapshotAfterFlowDeletion(t *testing.T) {
 		title: "Terminal Flow"
 		steps: [{id: "only", title: "Only", instruction: "Finish."}]
 	}`)
-	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "terminal-flow"))
+	assertCommandSuccess(t, startWithTestTask(t, root, "terminal-flow"))
 	runID := loadCommandState(t, root).FlowRunID
 	assertCommandSuccess(t, Done(Context{ProjectRoot: root}))
 	if err := os.Remove(flowPath); err != nil {
@@ -129,7 +129,7 @@ func TestFinishedContextUsesSnapshotAfterFlowDeletion(t *testing.T) {
 		title: "Terminal Flow"
 		steps: [{id: "only", title: "Only", instruction: "Finish."}]
 	}`)
-	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "terminal-flow"))
+	assertCommandSuccess(t, startWithTestTask(t, root, "terminal-flow"))
 	runID := loadCommandState(t, root).FlowRunID
 	assertCommandSuccess(t, Finish(Context{ProjectRoot: root}, "stopped"))
 	if err := os.Remove(flowPath); err != nil {

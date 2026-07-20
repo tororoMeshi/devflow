@@ -13,6 +13,7 @@ func Prompt(ctx Context) CommandResult {
 		ExitCode: 0,
 		Prompt: &PromptResult{
 			FlowID:                 active.Flow.ID,
+			TaskContent:            active.State.TaskSnapshot.Content,
 			CurrentStepID:          active.CurrentStep.ID,
 			CurrentStepTitle:       active.CurrentStep.Title,
 			CurrentStepInstruction: active.CurrentStep.Instruction,

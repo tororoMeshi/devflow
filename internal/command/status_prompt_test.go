@@ -65,6 +65,9 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.FlowID != "status-flow" {
 		t.Fatalf("FlowID = %q", got.Prompt.FlowID)
 	}
+	if got.Prompt.TaskContent != st.TaskSnapshot.Content {
+		t.Fatalf("TaskContent = %q", got.Prompt.TaskContent)
+	}
 	if got.Prompt.CurrentStepID != "current" {
 		t.Fatalf("CurrentStepID = %q", got.Prompt.CurrentStepID)
 	}
@@ -269,6 +272,7 @@ func statusPromptState(flowID string, status state.Status, currentStepID string)
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
 		FlowSnapshot:         testSnapshot(flowID),
+		TaskSnapshot:         testTaskSnapshot(),
 		Status:               status,
 		CurrentStepID:        currentStepID,
 		FlowRunID:            "run_00000000000000000000000000000000",

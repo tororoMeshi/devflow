@@ -7,18 +7,20 @@ import (
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
+	"github.com/8noki8/devflow/internal/task"
 )
 
 func TestApplyStart(t *testing.T) {
 	fl := testFlow()
 
 	t.Run("starts when no current state exists", func(t *testing.T) {
-		got := ApplyStart(testSnapshot(fl), nil, "run_test")
+		got := ApplyStart(testSnapshot(fl), transitionTaskSnapshot(), nil, "run_test")
 
 		assertSuccess(t, got)
 		assertStateEqual(t, *got.State, state.State{
 			SchemaVersion:        state.CurrentSchemaVersion,
 			FlowSnapshot:         testSnapshot(fl),
+			TaskSnapshot:         transitionTaskSnapshot(),
 			Status:               state.StatusRunning,
 			CurrentStepID:        "first",
 			FlowRunID:            "run_test",
@@ -35,7 +37,7 @@ func TestApplyStart(t *testing.T) {
 		current := runningState()
 		current.Status = state.StatusCompleted
 
-		got := ApplyStart(testSnapshot(fl), &current, "run_test")
+		got := ApplyStart(testSnapshot(fl), transitionTaskSnapshot(), &current, "run_test")
 
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
@@ -47,7 +49,7 @@ func TestApplyStart(t *testing.T) {
 		current := runningState()
 		current.Status = state.StatusFinished
 
-		got := ApplyStart(testSnapshot(fl), &current, "run_test")
+		got := ApplyStart(testSnapshot(fl), transitionTaskSnapshot(), &current, "run_test")
 
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
@@ -57,7 +59,8 @@ func TestApplyStart(t *testing.T) {
 
 	t.Run("does not share snapshot memory with input", func(t *testing.T) {
 		snapshot := testSnapshot(fl)
-		got := ApplyStart(snapshot, nil, "run_test")
+		taskSnapshot := transitionTaskSnapshot()
+		got := ApplyStart(snapshot, taskSnapshot, nil, "run_test")
 		assertSuccess(t, got)
 
 		snapshot.Flow.Steps[0].Instruction = "changed input"
@@ -70,22 +73,35 @@ func TestApplyStart(t *testing.T) {
 		if snapshot.Flow.Steps[0].Instruction != "changed input" || snapshot.Flow.Steps[2].Approval.Required {
 			t.Fatal("input snapshot shares memory with State snapshot")
 		}
+		got.State.TaskSnapshot.Content = "changed state"
+		got.State.TaskSnapshot.Source.Path = "changed.md"
+		if taskSnapshot.Content != "Test task\n" || taskSnapshot.Source.Path != "tasks/task.md" {
+			t.Fatal("input TaskSnapshot changed")
+		}
 	})
 
 	t.Run("fails when flow is already running", func(t *testing.T) {
 		current := runningState()
 
-		got := ApplyStart(testSnapshot(fl), &current, "run_test")
+		got := ApplyStart(testSnapshot(fl), transitionTaskSnapshot(), &current, "run_test")
 
 		assertFailure(t, got, CodeFlowAlreadyRunning)
 		assertStateEqual(t, current, runningState())
 	})
 
 	t.Run("fails when flow has no steps", func(t *testing.T) {
-		got := ApplyStart(flow.FlowSnapshot{Flow: flow.Flow{ID: "empty"}}, nil, "run_test")
+		got := ApplyStart(flow.FlowSnapshot{Flow: flow.Flow{ID: "empty"}}, transitionTaskSnapshot(), nil, "run_test")
 
 		assertFailure(t, got, CodeFlowHasNoSteps)
 	})
+}
+
+func transitionTaskSnapshot() task.TaskSnapshot {
+	snapshot, err := task.BuildSnapshot("Test task\n", task.TaskSource{Path: "tasks/task.md"})
+	if err != nil {
+		panic(err)
+	}
+	return snapshot
 }
 
 func TestApplyDone(t *testing.T) {

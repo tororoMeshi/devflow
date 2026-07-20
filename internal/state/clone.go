@@ -6,6 +6,7 @@ func (s State) Clone() State {
 	next := State{
 		SchemaVersion:        s.SchemaVersion,
 		FlowSnapshot:         flow.CloneSnapshot(s.FlowSnapshot),
+		TaskSnapshot:         s.TaskSnapshot,
 		Status:               s.Status,
 		CurrentStepID:        s.CurrentStepID,
 		Finish:               cloneFinish(s.Finish),

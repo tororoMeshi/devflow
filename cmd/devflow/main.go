@@ -14,7 +14,7 @@ import (
 const usage = `Usage:
   devflow init
   devflow list
-  devflow start <flow>
+  devflow start <flow-id> --task-file <path>
   devflow status
   devflow prompt
   devflow context
@@ -63,11 +63,12 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 		}
 		result = command.List(ctx)
 	case "start":
-		if len(args) != 2 {
+		flowID, taskPath, ok := parseStartArgs(args[1:])
+		if !ok {
 			writeUsage(stderr)
 			return 1
 		}
-		result = command.Start(ctx, args[1])
+		result = command.Start(ctx, flowID, taskPath)
 	case "status":
 		if len(args) != 1 {
 			writeUsage(stderr)
@@ -141,6 +142,16 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 
 	writeResult(ctx, result)
 	return result.ExitCode
+}
+
+func parseStartArgs(args []string) (string, string, bool) {
+	if len(args) != 3 || args[1] != "--task-file" || args[0] == "" || strings.TrimSpace(args[2]) == "" {
+		return "", "", false
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return "", "", false
+	}
+	return args[0], args[2], true
 }
 
 func parseApproveArgs(args []string) (string, string, bool) {
@@ -337,7 +348,13 @@ func writeStatus(stdout io.Writer, status command.StatusResult) {
 
 func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	_, _ = fmt.Fprintf(stdout, "Flow: %s\n", prompt.FlowID)
-	_, _ = fmt.Fprintf(stdout, "Step: %s - %s\n", prompt.CurrentStepID, prompt.CurrentStepTitle)
+	_, _ = fmt.Fprintf(stdout, "Task:\n%s", prompt.TaskContent)
+	if strings.HasSuffix(prompt.TaskContent, "\n") {
+		_, _ = io.WriteString(stdout, "\n")
+	} else {
+		_, _ = io.WriteString(stdout, "\n\n")
+	}
+	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", prompt.CurrentStepID, prompt.CurrentStepTitle)
 	_, _ = fmt.Fprintf(stdout, "Instruction:\n%s\n", prompt.CurrentStepInstruction)
 	writeArtifactList(stdout, "Required artifacts", prompt.RequiredArtifacts)
 	if len(prompt.OptionalArtifacts) > 0 {

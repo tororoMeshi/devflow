@@ -5,6 +5,7 @@ import "testing"
 func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	original := State{
 		FlowSnapshot:   testState(t, StatusRunning, "first").FlowSnapshot,
+		TaskSnapshot:   testState(t, StatusRunning, "first").TaskSnapshot,
 		Status:         StatusRunning,
 		CurrentStepID:  "check_changes",
 		CompletedSteps: []string{"check_changes"},
@@ -30,6 +31,8 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	cloned.BackHistory[0].InvalidatedStepIDs = append(cloned.BackHistory[0].InvalidatedStepIDs, "added")
 	cloned.Finish.Reason = "changed"
 	cloned.FlowSnapshot.Flow.Steps[0].Instruction = "changed"
+	cloned.TaskSnapshot.Content = "changed"
+	cloned.TaskSnapshot.Source.Path = "changed.md"
 
 	if original.CompletedSteps[0] != "check_changes" {
 		t.Fatalf("CompletedSteps shares backing array")
@@ -57,6 +60,9 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	}
 	if original.FlowSnapshot.Flow.Steps[0].Instruction != "Do first." {
 		t.Fatalf("FlowSnapshot shares Flow memory")
+	}
+	if original.TaskSnapshot.Content != "Test task\n" || original.TaskSnapshot.Source.Path != "tasks/task.md" {
+		t.Fatal("TaskSnapshot changed through clone")
 	}
 }
 
