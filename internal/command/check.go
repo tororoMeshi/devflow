@@ -89,7 +89,7 @@ func CheckRecord(ctx Context, path string) CommandResult {
 		ExitCode:      *record.ExitCode,
 		LogPath:       record.LogPath,
 	}
-	if err := NewStore(ctx).Save(next); err != nil {
+	if err := NewStore(ctx).SaveCurrent(next); err != nil {
 		return commandFailure(CodeStateSaveFailed)
 	}
 	return CommandResult{ExitCode: 0}

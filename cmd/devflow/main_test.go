@@ -81,7 +81,7 @@ func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	runSuccess(t, root, []string{"start", "check-flow"})
-	statePath := filepath.Join(root, ".devflow", "state.json")
+	statePath := currentStatePath(t, root)
 	before, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestRunCheckRequestRejectsInvalidArgumentsWithoutChangingState(t *testing.T
 			root := t.TempDir()
 			runSuccess(t, root, []string{"init"})
 			runSuccess(t, root, []string{"start", "post-task-review"})
-			statePath := filepath.Join(root, ".devflow", "state.json")
+			statePath := currentStatePath(t, root)
 			before, err := os.ReadFile(statePath)
 			if err != nil {
 				t.Fatal(err)
@@ -272,7 +272,7 @@ func TestRunCheckRecordRejectsInvalidArgumentsWithoutChangingState(t *testing.T)
 			root := t.TempDir()
 			runSuccess(t, root, []string{"init"})
 			runSuccess(t, root, []string{"start", "post-task-review"})
-			statePath := filepath.Join(root, ".devflow", "state.json")
+			statePath := currentStatePath(t, root)
 			before, err := os.ReadFile(statePath)
 			if err != nil {
 				t.Fatal(err)
@@ -616,6 +616,20 @@ func runCapture(root string, args []string) (string, string, int) {
 	return stdout.String(), stderr.String(), exitCode
 }
 
+func currentStatePath(t testing.TB, root string) string {
+	t.Helper()
+	store := command.NewStore(command.Context{ProjectRoot: root})
+	loaded := store.LoadCurrent()
+	if loaded.Status != state.LoadOK || loaded.State == nil {
+		t.Fatalf("LoadCurrent() = %#v", loaded)
+	}
+	path, err := store.RunStatePath(loaded.State.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func assertExitCode(t *testing.T, got int, want int, stderr string) {
 	t.Helper()
 
@@ -646,7 +660,7 @@ func runSuccess(t *testing.T, root string, args []string) {
 func loadCLIState(t *testing.T, root string) state.State {
 	t.Helper()
 
-	loaded := command.NewStore(command.Context{ProjectRoot: root}).Load()
+	loaded := command.NewStore(command.Context{ProjectRoot: root}).LoadCurrent()
 	if loaded.Status != state.LoadOK {
 		t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 	}

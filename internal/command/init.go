@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	devflowGitignoreContent = "state.json\n"
+	devflowGitignoreContent = "state.json\ncurrent.json\nruns/\n"
 
 	postTaskReviewFlowContent = `flow: {
 	id: "post-task-review"
@@ -60,6 +60,7 @@ func Init(ctx Context) CommandResult {
 	for _, dir := range []string{
 		filepath.Join(ctx.ProjectRoot, ".devflow"),
 		FlowDir(ctx.ProjectRoot),
+		RunsDir(ctx.ProjectRoot),
 	} {
 		action, err := ensureDir(dir)
 		result.Actions = append(result.Actions, action)

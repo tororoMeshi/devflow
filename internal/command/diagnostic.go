@@ -59,7 +59,8 @@ func commandErrorDiagnostic(code string) transition.Diagnostic {
 
 func isUnsupportedStateVersion(err error) bool {
 	var target *state.UnsupportedSchemaVersionError
-	return errors.As(err, &target)
+	var legacy *state.LegacyStateError
+	return errors.As(err, &target) || errors.As(err, &legacy)
 }
 
 func unsupportedStateVersionDiagnostic() transition.Diagnostic {

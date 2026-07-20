@@ -21,12 +21,15 @@ func TestInitCreatesDevflowFiles(t *testing.T) {
 		ActionCreated,
 		ActionCreated,
 		ActionCreated,
+		ActionCreated,
 	})
 	assertDir(t, filepath.Join(root, ".devflow"))
 	assertDir(t, FlowDir(root))
+	assertDir(t, RunsDir(root))
 	assertFileContent(t, filepath.Join(root, ".devflow", ".gitignore"), devflowGitignoreContent)
 	assertFileExists(t, filepath.Join(FlowDir(root), "post-task-review.cue"))
-	assertNoFile(t, StatePath(root))
+	assertNoFile(t, LegacyStatePath(root))
+	assertNoFile(t, CurrentPath(root))
 
 	loaded, err := flow.LoadFile(filepath.Join(FlowDir(root), "post-task-review.cue"))
 	if err != nil {
@@ -62,10 +65,11 @@ func TestInitDoesNotOverwriteExistingFiles(t *testing.T) {
 	}
 	assertFileContent(t, gitignorePath, "custom-ignore\n")
 	assertFileContent(t, flowPath, "custom-flow\n")
-	assertNoFile(t, StatePath(root))
+	assertNoFile(t, LegacyStatePath(root))
 	assertActionStatuses(t, got.Actions, []string{
 		ActionExists,
 		ActionExists,
+		ActionCreated,
 		ActionExists,
 		ActionExists,
 	})

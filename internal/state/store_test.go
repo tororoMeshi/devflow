@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -15,328 +14,313 @@ import (
 
 const testRunID = "run_00000000000000000000000000000000"
 
-func TestStoreLoad(t *testing.T) {
-	for _, status := range []Status{StatusRunning, StatusCompleted, StatusFinished} {
-		t.Run(string(status), func(t *testing.T) {
-			store := testStore(t)
-			want := testState(t, status, "first")
-			writeStateJSON(t, store.Path, want)
-
-			got := store.Load()
-			if got.Status != LoadOK || got.Err != nil || got.State == nil {
-				t.Fatalf("Load() = %#v", got)
-			}
-			want.Normalize()
-			if !reflect.DeepEqual(*got.State, want) {
-				t.Fatalf("State = %#v, want %#v", *got.State, want)
-			}
-		})
-	}
-}
-
-func TestStoreLoadNoState(t *testing.T) {
-	got := testStore(t).Load()
-	if got.Status != LoadNoState || got.State != nil || got.Err != nil {
-		t.Fatalf("Load() = %#v", got)
-	}
-}
-
-func TestStoreLoadRejectsBrokenJSONAndTypeMismatch(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		json string
-	}{
-		{"broken json", `{"schema_version":3`},
-		{"type mismatch", `{"schema_version":3,"flow_snapshot":{},"status":42,"current_step_id":"first"}`},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			store := testStore(t)
-			writeFile(t, store.Path, tt.json)
-			got := store.Load()
-			if got.Status != LoadInvalid || got.Err == nil || got.State != nil {
-				t.Fatalf("Load() = %#v", got)
-			}
-		})
-	}
-}
-
-func TestStoreLoadNormalizesStateCollections(t *testing.T) {
-	store := testStore(t)
-	value := testState(t, StatusRunning, "first")
-	value.CompletedSteps = nil
-	value.SkippedSteps = nil
-	value.Approvals = nil
-	value.BackHistory = nil
-	value.CheckResults = nil
-	writeStateJSON(t, store.Path, value)
-
-	got := store.Load()
-	if got.Status != LoadOK || got.State == nil {
-		t.Fatalf("Load() = %#v", got)
-	}
-	if got.State.CompletedSteps == nil || got.State.SkippedSteps == nil || got.State.Approvals == nil || got.State.BackHistory == nil || got.State.CheckResults == nil {
-		t.Fatalf("collections were not normalized: %#v", got.State)
-	}
-}
-
-func TestStoreSaveRoundTripPreservesSnapshot(t *testing.T) {
+func TestStoreCreateLoadAndSaveCurrent(t *testing.T) {
 	store := testStore(t)
 	want := testState(t, StatusRunning, "first")
-
-	if err := store.Save(want); err != nil {
+	if err := store.CreateRun(want); err != nil {
 		t.Fatal(err)
 	}
-	got := store.Load()
-	if got.Status != LoadOK || got.State == nil {
-		t.Fatalf("Load() = %#v", got)
+	assertRegularFile(t, filepath.Join(store.RunsDir(), testRunID, "state.json"))
+	assertRegularFile(t, store.CurrentPath())
+	if _, err := os.Stat(store.LegacyPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy state: %v", err)
 	}
-	if !reflect.DeepEqual(got.State.FlowSnapshot, want.FlowSnapshot) {
-		t.Fatalf("FlowSnapshot changed:\ngot  %#v\nwant %#v", got.State.FlowSnapshot, want.FlowSnapshot)
+	loaded := store.LoadCurrent()
+	if loaded.Status != LoadOK || !reflect.DeepEqual(*loaded.State, want) {
+		t.Fatalf("LoadCurrent = %#v, want %#v", loaded, want)
 	}
 
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(readFile(t, store.Path), &raw); err != nil {
+	want.CurrentStepID = "second"
+	want.CurrentEntrySequence = 2
+	if err := store.SaveCurrent(want); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := raw["flow_snapshot"]; !ok {
-		t.Fatal("top-level flow_snapshot is missing")
+	loaded = store.LoadCurrent()
+	if loaded.Status != LoadOK || !reflect.DeepEqual(*loaded.State, want) {
+		t.Fatalf("updated = %#v, want %#v", loaded, want)
 	}
-	if _, ok := raw["flow_id"]; ok {
-		t.Fatal("legacy top-level flow_id is present")
-	}
-	for _, field := range []string{"completed_steps", "back_history"} {
-		if got := string(raw[field]); got != "[]" {
-			t.Fatalf("%s = %s, want []", field, got)
-		}
-	}
-	for _, field := range []string{"skipped_steps", "approvals"} {
-		if got := string(raw[field]); got != "{}" {
-			t.Fatalf("%s = %s, want {}", field, got)
-		}
-	}
-	if _, err := os.Stat(filepath.Dir(store.Path)); err != nil {
-		t.Fatalf("parent directory was not created: %v", err)
-	}
-	matches, err := filepath.Glob(filepath.Join(filepath.Dir(store.Path), "*.tmp-*"))
-	if err != nil || len(matches) != 0 {
-		t.Fatalf("temporary files = %v, err = %v", matches, err)
-	}
+	assertNoTemps(t, store.Root)
 }
 
-func TestStoreSaveAllStatuses(t *testing.T) {
-	for _, status := range []Status{StatusRunning, StatusCompleted, StatusFinished} {
-		t.Run(string(status), func(t *testing.T) {
-			store := testStore(t)
-			want := testState(t, status, "first")
-			if status == StatusFinished {
-				want.Finish = &Finish{Reason: "out of scope"}
-			}
-			if err := store.Save(want); err != nil {
-				t.Fatal(err)
-			}
-			got := store.Load()
-			if got.Status != LoadOK || got.State == nil || !reflect.DeepEqual(*got.State, want) {
-				t.Fatalf("Load() = %#v, want %#v", got, want)
-			}
-		})
-	}
-}
-
-func TestStoreSaveReplacesExistingState(t *testing.T) {
-	store := testStore(t)
-	if err := store.Save(testState(t, StatusRunning, "first")); err != nil {
-		t.Fatal(err)
-	}
-	want := testState(t, StatusCompleted, "second")
-	want.CompletedSteps = []string{"first", "second"}
-	if err := store.Save(want); err != nil {
-		t.Fatal(err)
-	}
-	got := store.Load()
-	if got.Status != LoadOK || got.State == nil || !reflect.DeepEqual(*got.State, want) {
-		t.Fatalf("Load() = %#v, want %#v", got, want)
-	}
-}
-
-func TestStoreRejectsUnsupportedStateSchema(t *testing.T) {
-	for _, version := range []int{0, 1, 2, 4, -1} {
-		t.Run(strconv.Itoa(version), func(t *testing.T) {
-			store := testStore(t)
-			value := testState(t, StatusRunning, "first")
-			value.SchemaVersion = version
-			writeStateJSON(t, store.Path, value)
-			got := store.Load()
-			var unsupported *UnsupportedSchemaVersionError
-			if got.Status != LoadInvalid || !errors.As(got.Err, &unsupported) || unsupported.Actual != version {
-				t.Fatalf("Load() = %#v", got)
-			}
-		})
-	}
-}
-
-func TestStoreRejectsMissingStateSchema(t *testing.T) {
-	store := testStore(t)
-	writeFile(t, store.Path, `{"status":"running"}`)
-	got := store.Load()
-	var unsupported *UnsupportedSchemaVersionError
-	if got.Status != LoadInvalid || !errors.As(got.Err, &unsupported) {
-		t.Fatalf("Load() = %#v", got)
-	}
-}
-
-func TestStoreRejectsInvalidSnapshot(t *testing.T) {
-	valid := testState(t, StatusRunning, "first")
-	tests := []struct {
-		name string
-		edit func(*State)
-		want error
-	}{
-		{"digest changed", func(s *State) { s.FlowSnapshot.Digest = "sha256:" + strings.Repeat("0", 64) }, flow.ErrSnapshotDigestMismatch},
-		{"flow changed", func(s *State) { s.FlowSnapshot.Flow.Title = "tampered" }, flow.ErrSnapshotDigestMismatch},
-		{"unsupported snapshot schema", func(s *State) { s.FlowSnapshot.SchemaVersion++ }, flow.ErrUnsupportedSnapshotSchema},
-		{"not normalized", func(s *State) { s.FlowSnapshot.Flow.Steps[0].Inputs = nil }, flow.ErrSnapshotNotNormalized},
-		{"invalid flow", func(s *State) { s.FlowSnapshot.Flow.ID = "" }, nil},
-		{"invalid digest format", func(s *State) { s.FlowSnapshot.Digest = "SHA256:nope" }, flow.ErrInvalidSnapshotDigest},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := testStore(t)
-			value := valid.Clone()
-			tt.edit(&value)
-			writeStateJSON(t, store.Path, value)
-			got := store.Load()
-			if got.Status != LoadInvalid || got.Err == nil {
-				t.Fatalf("Load() = %#v", got)
-			}
-			if tt.want != nil && !errors.Is(got.Err, tt.want) {
-				t.Fatalf("error = %v, want errors.Is(%v)", got.Err, tt.want)
-			}
-		})
-	}
-}
-
-func TestStoreSaveRejectsUnnormalizedSnapshot(t *testing.T) {
+func TestStoreCreateRunRejectsExistingRunAndKeepsPointer(t *testing.T) {
 	store := testStore(t)
 	value := testState(t, StatusRunning, "first")
-	value.FlowSnapshot.Flow.Steps[0].Inputs = nil
-	if err := store.Save(value); !errors.Is(err, flow.ErrSnapshotNotNormalized) {
-		t.Fatalf("Save() error = %v, want %v", err, flow.ErrSnapshotNotNormalized)
+	if err := store.CreateRun(value); err != nil {
+		t.Fatal(err)
 	}
-	if got := store.Load(); got.Status != LoadNoState {
-		t.Fatalf("Load() after rejected Save = %#v", got)
+	before := mustRead(t, store.CurrentPath())
+	if err := store.CreateRun(value); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("CreateRun error = %v", err)
+	}
+	if got := mustRead(t, store.CurrentPath()); !reflect.DeepEqual(got, before) {
+		t.Fatal("pointer changed")
 	}
 }
 
-func TestStoreRejectsCurrentStepOutsideSnapshotForRunningState(t *testing.T) {
+func TestStoreSaveCurrentRejectsDifferentRun(t *testing.T) {
 	store := testStore(t)
-	value := testState(t, StatusRunning, "missing")
-	writeStateJSON(t, store.Path, value)
-	got := store.Load()
-	if got.Status != LoadInvalid || got.Err == nil || !strings.Contains(got.Err.Error(), "current_step_id") {
-		t.Fatalf("Load() = %#v", got)
+	value := testState(t, StatusRunning, "first")
+	if err := store.CreateRun(value); err != nil {
+		t.Fatal(err)
+	}
+	value.FlowRunID = "run_11111111111111111111111111111111"
+	if err := store.SaveCurrent(value); err == nil {
+		t.Fatal("expected mismatch error")
 	}
 }
 
-func TestStoreRequiresValidSnapshotForTerminalState(t *testing.T) {
-	for _, status := range []Status{StatusCompleted, StatusFinished} {
-		t.Run(string(status), func(t *testing.T) {
-			store := testStore(t)
-			value := testState(t, status, "first")
-			value.FlowSnapshot = flow.FlowSnapshot{}
-			writeStateJSON(t, store.Path, value)
-			got := store.Load()
-			if got.Status != LoadInvalid || got.Err == nil {
-				t.Fatalf("Load() = %#v", got)
-			}
-		})
-	}
-}
-
-func TestStoreRejectsInvalidRunContext(t *testing.T) {
-	tests := []struct {
-		name string
-		edit func(*State)
-	}{
-		{"missing run id", func(s *State) { s.FlowRunID = "" }},
-		{"bad run id", func(s *State) { s.FlowRunID = "run_BAD" }},
-		{"zero entry sequence", func(s *State) { s.CurrentEntrySequence = 0 }},
-		{"check entry mismatch", func(s *State) { s.CheckResults["test"] = CheckResult{EntrySequence: 2} }},
+func TestStoreRejectsPointerFailures(t *testing.T) {
+	tests := []struct{ name, content string }{
+		{"broken JSON", "{"},
+		{"trailing JSON", `{"schema_version":1,"flow_run_id":"` + testRunID + `"} {}`},
+		{"unsupported schema", `{"schema_version":2,"flow_run_id":"` + testRunID + `"}`},
+		{"invalid run id", `{"schema_version":1,"flow_run_id":"../escape"}`},
+		{"missing run id", `{"schema_version":1}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := testStore(t)
-			value := testState(t, StatusRunning, "first")
-			tt.edit(&value)
-			writeStateJSON(t, store.Path, value)
-			got := store.Load()
-			if got.Status != LoadInvalid || got.Err == nil {
-				t.Fatalf("Load() = %#v", got)
+			writeFile(t, store.CurrentPath(), tt.content)
+			if got := store.LoadCurrent(); got.Status != LoadInvalid || got.Err == nil {
+				t.Fatalf("LoadCurrent = %#v", got)
 			}
 		})
 	}
 }
 
-func TestStoreRejectsMissingRequiredFieldsAndUnknownStatus(t *testing.T) {
-	valid := testState(t, StatusRunning, "first")
-	data, err := json.Marshal(valid)
+func TestStoreCurrentPointerAllowsUnknownFieldsLikeStateJSON(t *testing.T) {
+	store := testStore(t)
+	value := testState(t, StatusRunning, "first")
+	path, err := store.RunStatePath(value.FlowRunID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
+	writeJSON(t, path, value)
+	writeFile(t, store.CurrentPath(), `{"schema_version":1,"flow_run_id":"`+testRunID+`","future_field":true}`)
+	if got := store.LoadCurrent(); got.Status != LoadOK {
+		t.Fatalf("LoadCurrent = %#v", got)
 	}
-	for _, field := range []string{"flow_snapshot", "status", "current_step_id"} {
-		t.Run("missing "+field, func(t *testing.T) {
-			copy := make(map[string]json.RawMessage, len(raw))
-			for key, value := range raw {
-				copy[key] = value
-			}
-			delete(copy, field)
-			store := testStore(t)
-			writeRawJSON(t, store.Path, copy)
-			got := store.Load()
-			if got.Status != LoadInvalid || got.Err == nil {
-				t.Fatalf("Load() = %#v", got)
-			}
-		})
+}
+
+func TestStoreRejectsMissingAndMismatchedRunState(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		store := testStore(t)
+		writePointer(t, store, testRunID)
+		if got := store.LoadCurrent(); got.Status != LoadInvalid || got.Err == nil {
+			t.Fatalf("LoadCurrent = %#v", got)
+		}
+	})
+	t.Run("mismatch", func(t *testing.T) {
+		store := testStore(t)
+		other := testState(t, StatusRunning, "first")
+		other.FlowRunID = "run_11111111111111111111111111111111"
+		path, _ := store.RunStatePath(testRunID)
+		writeJSON(t, path, other)
+		writePointer(t, store, testRunID)
+		if got := store.LoadCurrent(); got.Status != LoadInvalid || got.Err == nil {
+			t.Fatalf("LoadCurrent = %#v", got)
+		}
+		if err := store.SaveCurrent(testState(t, StatusRunning, "first")); err == nil {
+			t.Fatal("SaveCurrent accepted mismatched stored State")
+		}
+	})
+}
+
+func TestStoreRejectsInvalidState(t *testing.T) {
+	store := testStore(t)
+	value := testState(t, StatusRunning, "first")
+	value.FlowSnapshot.Digest = "bad"
+	if err := store.CreateRun(value); err == nil {
+		t.Fatalf("CreateRun error = %v", err)
+	}
+	if got := store.LoadCurrent(); got.Status != LoadNoState {
+		t.Fatalf("LoadCurrent = %#v", got)
+	}
+}
+
+func TestStoreDetectsLegacyStateOnlyAndLeavesItUntouched(t *testing.T) {
+	store := testStore(t)
+	legacy := []byte("legacy")
+	writeFile(t, store.LegacyPath(), string(legacy))
+	got := store.LoadCurrent()
+	var legacyErr *LegacyStateError
+	if got.Status != LoadInvalid || !errors.As(got.Err, &legacyErr) {
+		t.Fatalf("LoadCurrent = %#v", got)
+	}
+	if !reflect.DeepEqual(mustRead(t, store.LegacyPath()), legacy) {
+		t.Fatal("legacy file changed")
 	}
 
-	valid.Status = "unknown"
+	value := testState(t, StatusRunning, "first")
+	if err := store.CreateRun(value); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.LoadCurrent(); got.Status != LoadOK {
+		t.Fatalf("valid pointer did not win: %#v", got)
+	}
+	if !reflect.DeepEqual(mustRead(t, store.LegacyPath()), legacy) {
+		t.Fatal("legacy file changed")
+	}
+}
+
+func TestStoreNoPointerAndNoLegacyReturnsNoState(t *testing.T) {
 	store := testStore(t)
-	writeStateJSON(t, store.Path, valid)
-	if got := store.Load(); got.Status != LoadInvalid || got.Err == nil {
-		t.Fatalf("Load() = %#v", got)
+	if got := store.LoadCurrent(); got.Status != LoadNoState || got.Err != nil {
+		t.Fatalf("LoadCurrent = %#v", got)
+	}
+}
+
+func TestStoreBrokenPointerDoesNotFallBackToLegacy(t *testing.T) {
+	store := testStore(t)
+	legacy := []byte("legacy")
+	writeFile(t, store.LegacyPath(), string(legacy))
+	writeFile(t, store.CurrentPath(), "{")
+	got := store.LoadCurrent()
+	var legacyErr *LegacyStateError
+	if got.Status != LoadInvalid || got.Err == nil || errors.As(got.Err, &legacyErr) {
+		t.Fatalf("LoadCurrent = %#v", got)
+	}
+	if !reflect.DeepEqual(mustRead(t, store.LegacyPath()), legacy) {
+		t.Fatal("legacy file changed")
+	}
+}
+
+func TestStoreCreateRunPointerFailureLeavesUnreferencedRun(t *testing.T) {
+	store := testStore(t)
+	if err := os.MkdirAll(store.CurrentPath(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	value := testState(t, StatusRunning, "first")
+	if err := store.CreateRun(value); err == nil {
+		t.Fatal("expected pointer save failure")
+	}
+	assertRegularFile(t, filepath.Join(store.RunsDir(), testRunID, "state.json"))
+	if info, err := os.Stat(store.CurrentPath()); err != nil || !info.IsDir() {
+		t.Fatalf("current target changed: %v", err)
+	}
+	assertNoTemps(t, store.Root)
+}
+
+func TestStoreCreateRunStateSaveFailureKeepsPreviousPointer(t *testing.T) {
+	store := testStore(t)
+	current := testState(t, StatusCompleted, "first")
+	if err := store.CreateRun(current); err != nil {
+		t.Fatal(err)
+	}
+	pointerBefore := mustRead(t, store.CurrentPath())
+
+	next := testState(t, StatusRunning, "first")
+	next.FlowRunID = "run_11111111111111111111111111111111"
+	failing := Store{Root: store.Root, saveJSON: func(path string, value any) error {
+		if path != store.CurrentPath() {
+			return errors.New("injected state save failure")
+		}
+		return atomicSaveJSON(path, value)
+	}}
+	if err := failing.CreateRun(next); err == nil {
+		t.Fatal("expected state save failure")
+	}
+	if got := mustRead(t, store.CurrentPath()); !reflect.DeepEqual(got, pointerBefore) {
+		t.Fatal("pointer changed after state save failure")
+	}
+}
+
+func TestStoreCreateRunPointerSaveFailureKeepsPreviousPointer(t *testing.T) {
+	store := testStore(t)
+	current := testState(t, StatusCompleted, "first")
+	if err := store.CreateRun(current); err != nil {
+		t.Fatal(err)
+	}
+	pointerBefore := mustRead(t, store.CurrentPath())
+
+	next := testState(t, StatusRunning, "first")
+	next.FlowRunID = "run_11111111111111111111111111111111"
+	failing := Store{Root: store.Root, saveJSON: func(path string, value any) error {
+		if path == store.CurrentPath() {
+			return errors.New("injected pointer save failure")
+		}
+		return atomicSaveJSON(path, value)
+	}}
+	if err := failing.CreateRun(next); err == nil {
+		t.Fatal("expected pointer save failure")
+	}
+	if got := mustRead(t, store.CurrentPath()); !reflect.DeepEqual(got, pointerBefore) {
+		t.Fatal("previous pointer changed")
+	}
+	path, err := store.RunStatePath(next.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRegularFile(t, path)
+}
+
+func TestStoreInvalidStateDoesNotChangePointer(t *testing.T) {
+	store := testStore(t)
+	value := testState(t, StatusRunning, "first")
+	if err := store.CreateRun(value); err != nil {
+		t.Fatal(err)
+	}
+	before := mustRead(t, store.CurrentPath())
+	bad := testState(t, StatusRunning, "missing")
+	bad.FlowRunID = "run_11111111111111111111111111111111"
+	if err := store.CreateRun(bad); err == nil {
+		t.Fatal("expected state validation failure")
+	}
+	if got := mustRead(t, store.CurrentPath()); !reflect.DeepEqual(got, before) {
+		t.Fatal("pointer changed")
+	}
+}
+
+func TestStoreRunIDPathSafety(t *testing.T) {
+	store := testStore(t)
+	for _, id := range []string{"../escape", "run_../../escape", "/tmp/escape", "run_BAD"} {
+		if _, err := store.RunStatePath(id); err == nil {
+			t.Fatalf("RunStatePath(%q) accepted", id)
+		}
+		value := testState(t, StatusRunning, "first")
+		value.FlowRunID = id
+		if err := store.CreateRun(value); err == nil {
+			t.Fatalf("CreateRun(%q) accepted", id)
+		}
+	}
+}
+
+func TestStorePreservesStateSchemaAndSnapshotValidation(t *testing.T) {
+	for _, status := range []Status{StatusRunning, StatusCompleted, StatusFinished} {
+		t.Run(string(status), func(t *testing.T) {
+			store := testStore(t)
+			value := testState(t, status, "first")
+			if err := store.CreateRun(value); err != nil {
+				t.Fatal(err)
+			}
+			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 3 {
+				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
 	}
 }
 
 func testState(t testing.TB, status Status, currentStepID string) State {
 	t.Helper()
-	fl := flow.Flow{
-		ID: "post-task-review", Title: "Post Task Review",
-		Steps: []flow.Step{
-			{ID: "first", Title: "First", Instruction: "Do first."},
-			{ID: "second", Title: "Second", Instruction: "Do second."},
-		},
-	}
+	fl := flow.Flow{ID: "post-task-review", Title: "Post Task Review", Steps: []flow.Step{{ID: "first", Title: "First", Instruction: "Do first."}, {ID: "second", Title: "Second", Instruction: "Do second."}}}
 	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: ".devflow/flows/post-task-review.cue"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := State{
-		SchemaVersion: CurrentSchemaVersion, FlowSnapshot: snapshot, Status: status,
-		CurrentStepID: currentStepID, FlowRunID: testRunID, CurrentEntrySequence: 1,
-	}
+	value := State{SchemaVersion: CurrentSchemaVersion, FlowSnapshot: snapshot, Status: status, CurrentStepID: currentStepID, FlowRunID: testRunID, CurrentEntrySequence: 1}
 	value.Normalize()
 	return value
 }
 
 func testStore(t testing.TB) Store {
 	t.Helper()
-	return Store{Path: filepath.Join(t.TempDir(), ".devflow", "state.json")}
+	return Store{Root: filepath.Join(t.TempDir(), ".devflow")}
 }
-
-func writeStateJSON(t testing.TB, path string, value State) {
+func writePointer(t testing.TB, store Store, id string) {
+	t.Helper()
+	writeJSON(t, store.CurrentPath(), CurrentPointer{SchemaVersion: 1, FlowRunID: id})
+}
+func writeJSON(t testing.TB, path string, value any) {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -344,16 +328,6 @@ func writeStateJSON(t testing.TB, path string, value State) {
 	}
 	writeFile(t, path, string(data))
 }
-
-func writeRawJSON(t testing.TB, path string, value any) {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, path, string(data))
-}
-
 func writeFile(t testing.TB, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -363,12 +337,33 @@ func writeFile(t testing.TB, path, content string) {
 		t.Fatal(err)
 	}
 }
-
-func readFile(t testing.TB, path string) []byte {
+func mustRead(t testing.TB, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return data
+}
+func assertRegularFile(t testing.TB, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("%s not regular: %v", path, err)
+	}
+}
+func assertNoTemps(t testing.TB, root string) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if strings.Contains(d.Name(), ".tmp-") {
+			t.Fatalf("temporary file remains: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

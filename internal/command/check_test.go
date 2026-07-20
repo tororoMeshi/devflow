@@ -15,15 +15,15 @@ func TestCheckRequestRejectsLegacyStateWithoutChangingIt(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "check-flow", checkTestFlow())
 	legacy := `{"flow_id":"check-flow","status":"running","current_step_id":"quality"}`
-	writeCheckRecord(t, StatePath(root), legacy)
-	before := readCommandFile(t, StatePath(root))
+	writeCheckRecord(t, LegacyStatePath(root), legacy)
+	before := readCommandFile(t, LegacyStatePath(root))
 
 	got := CheckRequest(Context{ProjectRoot: root}, "go-test")
 
 	if got.ExitCode == 0 || got.CheckRequest != nil || hasDiagnostic(got.Diagnostics, CodeUnsupportedStateVersion) == false {
 		t.Fatalf("result=%#v", got)
 	}
-	if after := readCommandFile(t, StatePath(root)); string(after) != string(before) {
+	if after := readCommandFile(t, LegacyStatePath(root)); string(after) != string(before) {
 		t.Fatal("legacy state was modified")
 	}
 }

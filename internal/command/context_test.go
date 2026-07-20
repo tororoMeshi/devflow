@@ -13,14 +13,14 @@ import (
 func TestPaths(t *testing.T) {
 	root := t.TempDir()
 
-	if got := StatePath(root); got != filepath.Join(root, ".devflow", "state.json") {
-		t.Fatalf("StatePath = %q", got)
+	if got := LegacyStatePath(root); got != filepath.Join(root, ".devflow", "state.json") {
+		t.Fatalf("LegacyStatePath = %q", got)
 	}
 	if got := FlowDir(root); got != filepath.Join(root, ".devflow", "flows") {
 		t.Fatalf("FlowDir = %q", got)
 	}
-	if got := NewStore(Context{ProjectRoot: root}).Path; got != StatePath(root) {
-		t.Fatalf("NewStore path = %q", got)
+	if got := NewStore(Context{ProjectRoot: root}).Root; got != filepath.Join(root, ".devflow") {
+		t.Fatalf("NewStore root = %q", got)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestSaveTransitionState(t *testing.T) {
 		diagnostics := SaveTransitionState(Context{ProjectRoot: root}, transition.TransitionResult{})
 
 		assertNoDiagnostics(t, diagnostics)
-		if _, err := os.Stat(StatePath(root)); !os.IsNotExist(err) {
+		if _, err := os.Stat(LegacyStatePath(root)); !os.IsNotExist(err) {
 			t.Fatalf("state file exists or stat failed unexpectedly: %v", err)
 		}
 	})
@@ -127,11 +127,15 @@ func TestSaveTransitionState(t *testing.T) {
 	t.Run("saves when state is present", func(t *testing.T) {
 		root := t.TempDir()
 		st := validRunningState()
+		if err := NewStore(Context{ProjectRoot: root}).CreateRun(st); err != nil {
+			t.Fatal(err)
+		}
+		st.CurrentEntrySequence = 2
 
 		diagnostics := SaveTransitionState(Context{ProjectRoot: root}, transition.TransitionResult{State: &st})
 
 		assertNoDiagnostics(t, diagnostics)
-		loaded := NewStore(Context{ProjectRoot: root}).Load()
+		loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
 		if loaded.Status != state.LoadOK {
 			t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 		}

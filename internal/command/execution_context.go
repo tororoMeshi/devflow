@@ -118,7 +118,7 @@ func CurrentContext(ctx Context) CommandResult {
 }
 
 func LoadExecutionContext(ctx Context) (LoadedExecutionContext, []transition.Diagnostic) {
-	loaded := NewStore(ctx).Load()
+	loaded := NewStore(ctx).LoadCurrent()
 	switch loaded.Status {
 	case state.LoadNoState:
 		return LoadedExecutionContext{}, []transition.Diagnostic{commandErrorDiagnostic(CodeNoActiveFlow)}

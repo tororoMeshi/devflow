@@ -35,7 +35,7 @@ func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testin
 		}]
 	}`)
 	saveExecutionState(t, root, executionTestState(state.StatusRunning))
-	statePath := StatePath(root)
+	statePath := currentStatePath(t, root)
 	before, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestDoneRejectsMissingRequiredInputWithoutChangingState(t *testing.T) {
 		}]
 	}`)
 	saveExecutionState(t, root, executionTestState(state.StatusRunning))
-	before, err := os.ReadFile(StatePath(root))
+	before, err := os.ReadFile(currentStatePath(t, root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestDoneRejectsMissingRequiredInputWithoutChangingState(t *testing.T) {
 	if got.ExitCode == 0 || len(got.Diagnostics) != 1 || got.Diagnostics[0].Code != transition.CodeMissingRequiredInput {
 		t.Fatalf("Done() = %#v", got)
 	}
-	after, err := os.ReadFile(StatePath(root))
+	after, err := os.ReadFile(currentStatePath(t, root))
 	if err != nil {
 		t.Fatal(err)
 	}
