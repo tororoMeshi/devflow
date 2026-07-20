@@ -1,17 +1,34 @@
 package command
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
+	"github.com/8noki8/devflow/internal/task"
 	"github.com/8noki8/devflow/internal/transition"
 )
 
-func Start(ctx Context, flowID string) CommandResult {
+func Start(ctx Context, flowID, taskPath string) CommandResult {
 	if diagnostics := validateStartFlowID(flowID); len(diagnostics) > 0 {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
+	}
+	normalizedTaskPath, ok := normalizeTaskPath(taskPath)
+	if !ok {
+		return commandFailure(CodeInvalidTaskPath)
+	}
+
+	store := NewStore(ctx)
+	loaded := store.LoadCurrent()
+	current, diagnostics := startCurrentState(loaded)
+	if len(diagnostics) > 0 {
+		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
+	}
+	if current != nil && current.Status == state.StatusRunning {
+		return CommandResult{ExitCode: 1, Diagnostics: []transition.Diagnostic{{Level: transition.LevelError, Code: transition.CodeFlowAlreadyRunning, StepID: current.CurrentStepID}}}
 	}
 
 	fl, err := flow.LoadFile(filepath.Join(FlowDir(ctx.ProjectRoot), flowID+".cue"))
@@ -21,23 +38,41 @@ func Start(ctx Context, flowID string) CommandResult {
 	if fl.ID != flowID {
 		return commandFailure(CodeStateFlowMismatch)
 	}
-	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: filepath.Join(FlowDir(ctx.ProjectRoot), flowID+".cue")})
+	flowSnapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: filepath.Join(FlowDir(ctx.ProjectRoot), flowID+".cue")})
 	if err != nil {
 		return commandFailure(CodeStateFlowMismatch)
 	}
-
-	store := NewStore(ctx)
-	loaded := store.LoadCurrent()
-	current, diagnostics := startCurrentState(loaded)
-	if len(diagnostics) > 0 {
-		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
+	taskFilePath := filepath.Join(ctx.ProjectRoot, filepath.FromSlash(normalizedTaskPath))
+	info, err := os.Stat(taskFilePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return commandFailureWithError(CodeTaskFileNotFound, err)
+		}
+		return commandFailureWithError(CodeTaskFileReadFailed, err)
+	}
+	if info.IsDir() {
+		return commandFailure(CodeTaskPathIsDirectory)
+	}
+	content, err := os.ReadFile(taskFilePath)
+	if err != nil {
+		return commandFailureWithError(CodeTaskFileReadFailed, err)
+	}
+	taskSnapshot, err := task.BuildSnapshot(string(content), task.TaskSource{Path: normalizedTaskPath})
+	if err != nil {
+		if errors.Is(err, task.ErrEmptyTask) {
+			return commandFailure(CodeTaskEmpty)
+		}
+		if errors.Is(err, task.ErrInvalidUTF8) {
+			return commandFailure(CodeTaskInvalidUTF8)
+		}
+		return commandFailure(CodeTaskSnapshotBuildFailed)
 	}
 
 	flowRunID, err := newFlowRunID()
 	if err != nil {
 		return commandFailure(CodeFlowRunIDGenerationFailed)
 	}
-	result := transition.ApplyStart(snapshot, current, flowRunID)
+	result := transition.ApplyStart(flowSnapshot, taskSnapshot, current, flowRunID)
 	if result.State != nil && result.ExitCode == 0 {
 		if err := store.CreateRun(*result.State); err != nil {
 			result.Diagnostics = append(result.Diagnostics, commandErrorDiagnostic(CodeStateSaveFailed))
@@ -54,6 +89,22 @@ func Start(ctx Context, flowID string) CommandResult {
 		Success:     startSuccess(result),
 		Diagnostics: result.Diagnostics,
 	}
+}
+
+func normalizeTaskPath(path string) (string, bool) {
+	if strings.TrimSpace(path) == "" || filepath.IsAbs(path) {
+		return "", false
+	}
+	for _, part := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return "", false
+		}
+	}
+	cleaned := filepath.Clean(path)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(cleaned), true
 }
 
 func startSuccess(result transition.TransitionResult) *SuccessResult {
@@ -98,4 +149,10 @@ func commandFailure(code string) CommandResult {
 		ExitCode:    1,
 		Diagnostics: []transition.Diagnostic{commandErrorDiagnostic(code)},
 	}
+}
+
+func commandFailureWithError(code string, err error) CommandResult {
+	diagnostic := commandErrorDiagnostic(code)
+	diagnostic.Message = err.Error()
+	return CommandResult{ExitCode: 1, Diagnostics: []transition.Diagnostic{diagnostic}}
 }

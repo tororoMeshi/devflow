@@ -4,10 +4,11 @@ import (
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
+	"github.com/8noki8/devflow/internal/task"
 	"github.com/8noki8/devflow/internal/transition"
 )
 
-const executionContextSchemaVersion = 1
+const executionContextSchemaVersion = 2
 
 type CheckStatus string
 
@@ -31,6 +32,7 @@ type ExecutionContextResult struct {
 	SchemaVersion int                        `json:"schema_version"`
 	FlowRunID     string                     `json:"flow_run_id"`
 	Flow          ExecutionFlowResult        `json:"flow"`
+	TaskSnapshot  task.TaskSnapshot          `json:"task_snapshot"`
 	State         ExecutionStateResult       `json:"state"`
 	Step          *ExecutionStepResult       `json:"step"`
 	Completion    *ExecutionCompletionResult `json:"completion"`
@@ -99,6 +101,7 @@ func CurrentContext(ctx Context) CommandResult {
 	result := ExecutionContextResult{
 		SchemaVersion: executionContextSchemaVersion,
 		FlowRunID:     loaded.State.FlowRunID,
+		TaskSnapshot:  loaded.State.TaskSnapshot,
 		Flow: ExecutionFlowResult{
 			ID:    loaded.Flow.ID,
 			Title: loaded.Flow.Title,

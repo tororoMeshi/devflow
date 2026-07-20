@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/8noki8/devflow/internal/flow"
+	"github.com/8noki8/devflow/internal/task"
 )
 
 const CurrentPointerSchemaVersion = 1
@@ -239,7 +240,7 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 	if state.SchemaVersion != CurrentSchemaVersion {
 		return &UnsupportedSchemaVersionError{Actual: state.SchemaVersion}
 	}
-	for _, field := range []string{"schema_version", "flow_snapshot", "status", "current_step_id"} {
+	for _, field := range []string{"schema_version", "flow_snapshot", "task_snapshot", "status", "current_step_id"} {
 		if _, ok := raw[field]; !ok {
 			return fmt.Errorf("missing required field %q", field)
 		}
@@ -253,6 +254,9 @@ func validateState(state State) error {
 	}
 	if err := flow.ValidateSnapshot(state.FlowSnapshot); err != nil {
 		return fmt.Errorf("invalid flow_snapshot: %w", err)
+	}
+	if err := task.ValidateSnapshot(state.TaskSnapshot); err != nil {
+		return fmt.Errorf("invalid task_snapshot: %w", err)
 	}
 	if state.FlowSnapshot.Flow.ID == "" {
 		return errors.New("missing required flow_snapshot.flow.id")

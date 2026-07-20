@@ -49,6 +49,9 @@ func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testin
 	if context.SchemaVersion != executionContextSchemaVersion || context.FlowRunID == "" {
 		t.Fatalf("Context header = %#v", context)
 	}
+	if !reflect.DeepEqual(context.TaskSnapshot, executionTestState(state.StatusRunning).TaskSnapshot) {
+		t.Fatalf("TaskSnapshot = %#v", context.TaskSnapshot)
+	}
 	if context.Step == nil || context.Completion == nil || context.Completion.Ready {
 		t.Fatalf("Step/Completion = %#v / %#v", context.Step, context.Completion)
 	}
@@ -87,6 +90,9 @@ func TestCurrentContextReturnsTerminalState(t *testing.T) {
 			}
 			if got.ExecutionContext.State.Status != status || got.ExecutionContext.Step != nil || got.ExecutionContext.Completion != nil {
 				t.Fatalf("Context = %#v", got.ExecutionContext)
+			}
+			if !reflect.DeepEqual(got.ExecutionContext.TaskSnapshot, executionTestState(status).TaskSnapshot) {
+				t.Fatalf("terminal TaskSnapshot = %#v", got.ExecutionContext.TaskSnapshot)
 			}
 		})
 	}
@@ -203,6 +209,7 @@ func executionTestState(status state.Status) state.State {
 	return state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
 		FlowSnapshot:         testSnapshot("context-flow"),
+		TaskSnapshot:         testTaskSnapshot(),
 		Status:               status,
 		CurrentStepID:        "design",
 		FlowRunID:            "run_0123456789abcdef0123456789abcdef",

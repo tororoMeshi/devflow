@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,14 +10,16 @@ import (
 
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
+	"github.com/8noki8/devflow/internal/task"
 	"github.com/8noki8/devflow/internal/transition"
 )
 
 func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
+	writeCommandTask(t, root, "tasks/task.md", "Do the task.\r\n")
 
-	got := Start(Context{ProjectRoot: root}, "test-flow")
+	got := Start(Context{ProjectRoot: root}, "test-flow", "./tasks/task.md")
 
 	assertCommandSuccess(t, got)
 	loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
@@ -53,12 +56,24 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 	if !reflect.DeepEqual(loaded.State.FlowSnapshot, expectedSnapshot) {
 		t.Fatalf("FlowSnapshot = %#v, want %#v", loaded.State.FlowSnapshot, expectedSnapshot)
 	}
+	expectedTask, err := task.BuildSnapshot("Do the task.\r\n", task.TaskSource{Path: "tasks/task.md"})
+	if err != nil || !reflect.DeepEqual(loaded.State.TaskSnapshot, expectedTask) {
+		t.Fatalf("TaskSnapshot = %#v, want %#v, err=%v", loaded.State.TaskSnapshot, expectedTask, err)
+	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(readCommandFile(t, currentStatePath(t, root)), &raw); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := raw["flow_snapshot"]; !ok {
 		t.Fatal("top-level flow_snapshot is missing")
+	}
+	if _, ok := raw["task_snapshot"]; !ok {
+		t.Fatal("top-level task_snapshot is missing")
+	}
+	for _, field := range []string{"task_content", "task_digest", "task_source_path"} {
+		if _, ok := raw[field]; ok {
+			t.Fatalf("duplicate top-level Task field %q is present", field)
+		}
 	}
 	if _, ok := raw["flow_id"]; ok {
 		t.Fatal("legacy top-level flow_id is present")
@@ -78,14 +93,16 @@ func TestStartAllowsCompletedAndFinishedState(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
+			writeCommandTask(t, root, "tasks/task.md", "New task\n")
 			current := commandStartState("previous-flow", status, "done")
 			if err := saveCommandState(t, root, current); err != nil {
 				t.Fatal(err)
 			}
 			previousPath := currentStatePath(t, root)
 			previousData := readCommandFile(t, previousPath)
+			previousTask := current.TaskSnapshot
 
-			got := Start(Context{ProjectRoot: root}, "test-flow")
+			got := Start(Context{ProjectRoot: root}, "test-flow", "tasks/task.md")
 
 			assertCommandSuccess(t, got)
 			loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
@@ -93,11 +110,18 @@ func TestStartAllowsCompletedAndFinishedState(t *testing.T) {
 				t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 			}
 			assertStartedState(t, *loaded.State, "test-flow", "first")
+			if loaded.State.TaskSnapshot.Content != "New task\n" {
+				t.Fatalf("new Run TaskSnapshot = %#v", loaded.State.TaskSnapshot)
+			}
 			if loaded.State.FlowRunID == current.FlowRunID {
 				t.Fatal("current pointer did not switch to the new Run")
 			}
 			if got := readCommandFile(t, previousPath); !reflect.DeepEqual(got, previousData) {
 				t.Fatal("previous terminal Run state changed")
+			}
+			previousLoaded := NewStore(Context{ProjectRoot: root}).LoadRun(current.FlowRunID)
+			if previousLoaded.Status != state.LoadOK || !reflect.DeepEqual(previousLoaded.State.TaskSnapshot, previousTask) {
+				t.Fatalf("previous TaskSnapshot = %#v", previousLoaded)
 			}
 			entries, err := os.ReadDir(RunsDir(root))
 			if err != nil || len(entries) != 2 {
@@ -120,7 +144,7 @@ func TestStartRejectsRunningStateWithoutSaving(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Start(Context{ProjectRoot: root}, "test-flow")
+	got := Start(Context{ProjectRoot: root}, "test-flow", "tasks/missing.md")
 
 	assertCommandFailure(t, got, transition.CodeFlowAlreadyRunning)
 	after := readCommandFile(t, currentStatePath(t, root))
@@ -142,7 +166,7 @@ func TestStartRejectsInvalidStateWithoutSaving(t *testing.T) {
 	writeCommandTestFile(t, LegacyStatePath(root), `{"not":"valid state"}`)
 	before := readCommandFile(t, LegacyStatePath(root))
 
-	got := Start(Context{ProjectRoot: root}, "test-flow")
+	got := Start(Context{ProjectRoot: root}, "test-flow", "tasks/missing.md")
 
 	assertCommandFailure(t, got, CodeUnsupportedStateVersion)
 	after := readCommandFile(t, LegacyStatePath(root))
@@ -155,7 +179,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 	t.Run("missing flow file", func(t *testing.T) {
 		root := t.TempDir()
 
-		got := Start(Context{ProjectRoot: root}, "missing-flow")
+		got := Start(Context{ProjectRoot: root}, "missing-flow", "tasks/missing.md")
 
 		assertCommandFailure(t, got, CodeStateFlowMismatch)
 		assertNoFile(t, LegacyStatePath(root))
@@ -169,7 +193,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 			steps: []
 		}`)
 
-		got := Start(Context{ProjectRoot: root}, "broken-flow")
+		got := Start(Context{ProjectRoot: root}, "broken-flow", "tasks/missing.md")
 
 		assertCommandFailure(t, got, CodeStateFlowMismatch)
 		assertNoFile(t, LegacyStatePath(root))
@@ -179,7 +203,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 		root := t.TempDir()
 		writeCommandTestFile(t, filepath.Join(FlowDir(root), "requested-flow.cue"), startTestFlow("different-flow"))
 
-		got := Start(Context{ProjectRoot: root}, "requested-flow")
+		got := Start(Context{ProjectRoot: root}, "requested-flow", "tasks/missing.md")
 
 		assertCommandFailure(t, got, CodeStateFlowMismatch)
 		assertNoFile(t, LegacyStatePath(root))
@@ -204,8 +228,9 @@ func TestStartDoesNotCheckArtifactsOrGate(t *testing.T) {
 			}
 		}]
 	}`)
+	writeCommandTask(t, root, "tasks/task.md", "Test task\n")
 
-	got := Start(Context{ProjectRoot: root}, "artifact-flow")
+	got := Start(Context{ProjectRoot: root}, "artifact-flow", "tasks/task.md")
 
 	assertCommandSuccess(t, got)
 	loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
@@ -215,6 +240,75 @@ func TestStartDoesNotCheckArtifactsOrGate(t *testing.T) {
 	assertStartedState(t, *loaded.State, "artifact-flow", "first")
 	if _, err := os.Stat(filepath.Join(root, "docs", "missing.md")); !os.IsNotExist(err) {
 		t.Fatalf("artifact unexpectedly exists or stat failed: %v", err)
+	}
+}
+
+func TestStartRejectsInvalidTaskInputsWithoutPersistence(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		setup    func(testing.TB, string)
+		wantCode string
+	}{
+		{"empty path", "", nil, CodeInvalidTaskPath},
+		{"whitespace path", "   ", nil, CodeInvalidTaskPath},
+		{"absolute path", "/tmp/task.md", nil, CodeInvalidTaskPath},
+		{"parent component", "tasks/../task.md", nil, CodeInvalidTaskPath},
+		{"missing", "tasks/missing.md", nil, CodeTaskFileNotFound},
+		{"directory", "tasks", func(t testing.TB, root string) {
+			if err := os.MkdirAll(filepath.Join(root, "tasks"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, CodeTaskPathIsDirectory},
+		{"empty task", "tasks/task.md", func(t testing.TB, root string) { writeCommandTask(t, root, "tasks/task.md", " \n") }, CodeTaskEmpty},
+		{"invalid UTF-8", "tasks/task.md", func(t testing.TB, root string) { writeCommandTask(t, root, "tasks/task.md", string([]byte{0xff})) }, CodeTaskInvalidUTF8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
+			if tt.setup != nil {
+				tt.setup(t, root)
+			}
+			got := Start(Context{ProjectRoot: root}, "test-flow", tt.path)
+			assertCommandFailure(t, got, tt.wantCode)
+			if _, err := os.Stat(RunsDir(root)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("runs directory exists or stat failed: %v", err)
+			}
+			if _, err := os.Stat(CurrentPath(root)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("pointer exists or stat failed: %v", err)
+			}
+		})
+	}
+}
+
+func TestStartedRunUsesTaskSnapshotAfterTaskFileChangesAndDeletion(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
+	writeCommandTask(t, root, "tasks/task.md", "# Original\r\n\r\nKeep **markdown**.\r\n")
+	assertCommandSuccess(t, Start(Context{ProjectRoot: root}, "test-flow", "./tasks/task.md"))
+	want := loadCommandState(t, root).TaskSnapshot
+	writeCommandTask(t, root, "tasks/task.md", "Changed\n")
+	if got := loadCommandState(t, root).TaskSnapshot; !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshot changed: %#v", got)
+	}
+	if got := CurrentContext(Context{ProjectRoot: root}); got.ExitCode != 0 || !reflect.DeepEqual(got.ExecutionContext.TaskSnapshot, want) {
+		t.Fatalf("context = %#v", got)
+	}
+	if got := Prompt(Context{ProjectRoot: root}); got.ExitCode != 0 || got.Prompt.TaskContent != want.Content {
+		t.Fatalf("prompt = %#v", got)
+	}
+	if err := os.Remove(filepath.Join(root, "tasks", "task.md")); err != nil {
+		t.Fatal(err)
+	}
+	if got := CurrentContext(Context{ProjectRoot: root}); got.ExitCode != 0 || !reflect.DeepEqual(got.ExecutionContext.TaskSnapshot, want) {
+		t.Fatalf("context after deletion = %#v", got)
+	}
+	if got := Prompt(Context{ProjectRoot: root}); got.ExitCode != 0 || got.Prompt.TaskContent != want.Content {
+		t.Fatalf("prompt after deletion = %#v", got)
+	}
+	if got := Done(Context{ProjectRoot: root}); got.ExitCode != 0 {
+		t.Fatalf("done after deletion = %#v", got)
 	}
 }
 
@@ -236,7 +330,7 @@ func TestStartRejectsInvalidFlowIDBeforeReadingFlow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 
-			got := Start(Context{ProjectRoot: root}, tt.flowID)
+			got := Start(Context{ProjectRoot: root}, tt.flowID, "tasks/task.md")
 
 			assertCommandFailure(t, got, tt.code)
 			assertNoFile(t, LegacyStatePath(root))
@@ -252,7 +346,7 @@ func TestStartRejectsInvalidFlowIDWithoutOverwritingState(t *testing.T) {
 	}
 	before := readCommandFile(t, currentStatePath(t, root))
 
-	got := Start(Context{ProjectRoot: root}, "../outside")
+	got := Start(Context{ProjectRoot: root}, "../outside", "tasks/task.md")
 
 	assertCommandFailure(t, got, string(flow.ErrorInvalidFlowID))
 	after := readCommandFile(t, currentStatePath(t, root))
@@ -281,6 +375,7 @@ func commandStartState(flowID string, status state.Status, currentStepID string)
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
 		FlowSnapshot:         testSnapshotForStep(flowID, currentStepID),
+		TaskSnapshot:         testTaskSnapshot(),
 		Status:               status,
 		CurrentStepID:        currentStepID,
 		FlowRunID:            "run_00000000000000000000000000000000",
@@ -288,6 +383,17 @@ func commandStartState(flowID string, status state.Status, currentStepID string)
 	}
 	st.Normalize()
 	return st
+}
+
+func writeCommandTask(t testing.TB, root, path, content string) {
+	t.Helper()
+	fullPath := filepath.Join(root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertStartedState(t *testing.T, got state.State, flowID string, currentStepID string) {

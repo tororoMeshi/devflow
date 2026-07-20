@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/8noki8/devflow/internal/flow"
+	"github.com/8noki8/devflow/internal/task"
 )
 
 const testRunID = "run_00000000000000000000000000000000"
@@ -135,6 +136,64 @@ func TestStoreRejectsInvalidState(t *testing.T) {
 	}
 	if got := store.LoadCurrent(); got.Status != LoadNoState {
 		t.Fatalf("LoadCurrent = %#v", got)
+	}
+}
+
+func TestStoreRejectsInvalidTaskSnapshots(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*State)
+	}{
+		{"missing", func(s *State) { s.TaskSnapshot = task.TaskSnapshot{} }},
+		{"schema", func(s *State) { s.TaskSnapshot.SchemaVersion++ }},
+		{"content tampering", func(s *State) { s.TaskSnapshot.Content = "tampered\n" }},
+		{"digest tampering", func(s *State) { s.TaskSnapshot.Digest = "sha256:" + strings.Repeat("0", 64) }},
+		{"unnormalized CRLF", func(s *State) { s.TaskSnapshot.Content = "Test task\r\n" }},
+		{"empty", func(s *State) { s.TaskSnapshot.Content = "" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := testStore(t)
+			value := testState(t, StatusRunning, "first")
+			tt.mutate(&value)
+			if err := store.CreateRun(value); err == nil || !strings.Contains(err.Error(), "task_snapshot") {
+				t.Fatalf("CreateRun error = %v", err)
+			}
+			if got := store.LoadCurrent(); got.Status != LoadNoState {
+				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
+	}
+}
+
+func TestStoreLoadRejectsSchema3AndMissingTaskSnapshot(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"schema 3", func(raw map[string]any) { raw["schema_version"] = float64(3) }},
+		{"missing task snapshot", func(raw map[string]any) { delete(raw, "task_snapshot") }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := testStore(t)
+			value := testState(t, StatusRunning, "first")
+			data, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(raw)
+			path, _ := store.RunStatePath(value.FlowRunID)
+			writeJSON(t, path, raw)
+			writePointer(t, store, value.FlowRunID)
+			got := store.LoadCurrent()
+			if got.Status != LoadInvalid || got.Err == nil {
+				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
 	}
 }
 
@@ -293,7 +352,7 @@ func TestStorePreservesStateSchemaAndSnapshotValidation(t *testing.T) {
 			if err := store.CreateRun(value); err != nil {
 				t.Fatal(err)
 			}
-			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 3 {
+			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 4 {
 				t.Fatalf("LoadCurrent = %#v", got)
 			}
 		})
@@ -307,7 +366,11 @@ func testState(t testing.TB, status Status, currentStepID string) State {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := State{SchemaVersion: CurrentSchemaVersion, FlowSnapshot: snapshot, Status: status, CurrentStepID: currentStepID, FlowRunID: testRunID, CurrentEntrySequence: 1}
+	taskSnapshot, err := task.BuildSnapshot("Test task\n", task.TaskSource{Path: "tasks/task.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := State{SchemaVersion: CurrentSchemaVersion, FlowSnapshot: snapshot, TaskSnapshot: taskSnapshot, Status: status, CurrentStepID: currentStepID, FlowRunID: testRunID, CurrentEntrySequence: 1}
 	value.Normalize()
 	return value
 }

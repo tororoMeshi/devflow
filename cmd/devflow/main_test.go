@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -127,7 +128,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &value); err != nil {
 		t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
 	}
-	if value["schema_version"].(float64) != 1 || value["completion"].(map[string]any)["ready"] != false {
+	if value["schema_version"].(float64) != 2 || value["completion"].(map[string]any)["ready"] != false {
 		t.Fatalf("context = %#v", value)
 	}
 }
@@ -400,6 +401,55 @@ func TestRunRejectsMissingRequiredArgs(t *testing.T) {
 	}
 }
 
+func TestRunStartArgumentContract(t *testing.T) {
+	for _, args := range [][]string{
+		{"start", "post-task-review"},
+		{"start", "post-task-review", "--task-file"},
+		{"start", "post-task-review", "--task-file", "one.md", "--task-file", "two.md"},
+		{"start", "post-task-review", "--unknown", "task.md"},
+		{"start", "post-task-review", "extra", "--task-file", "task.md"},
+		{"start", "post-task-review", "--task-file", ""},
+		{"start", "post-task-review", "--task-file", "   "},
+		{"start", "--task-file", "task.md", "post-task-review"},
+		{"start", "post-task-review", "--task-file=task.md"},
+		{"start", "--task-file", "task.md"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, exitCode := runCapture(t.TempDir(), args)
+			if exitCode == 0 || stdout != "" || !strings.Contains(stderr, "devflow start <flow-id> --task-file <path>") {
+				t.Fatalf("args=%#v exit=%d stdout=%q stderr=%q", args, exitCode, stdout, stderr)
+			}
+		})
+	}
+}
+
+func TestWritePromptPreservesTaskContentAndSeparatesCurrentStep(t *testing.T) {
+	for _, content := range []string{
+		"Task without newline",
+		"Task with newline\n",
+		"Task with blank lines\n\n",
+		"# Markdown\n\n- item\n",
+	} {
+		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
+			var stdout bytes.Buffer
+			writePrompt(&stdout, command.PromptResult{
+				FlowID:                 "flow",
+				TaskContent:            content,
+				CurrentStepID:          "step",
+				CurrentStepTitle:       "Step",
+				CurrentStepInstruction: "Instruction",
+			})
+			wantPrefix := "Flow: flow\nTask:\n" + content
+			if !strings.HasPrefix(stdout.String(), wantPrefix) {
+				t.Fatalf("output changed Task content: %q", stdout.String())
+			}
+			if !strings.Contains(stdout.String()[len(wantPrefix):], "\nCurrent step: step - Step\n") {
+				t.Fatalf("Current step is not separated: %q", stdout.String())
+			}
+		})
+	}
+}
+
 func TestRunRejectsUnknownCommand(t *testing.T) {
 	root := t.TempDir()
 	var stdout bytes.Buffer
@@ -491,8 +541,9 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 	t.Run("start", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
+		writeCLITestFile(t, root, "tasks/task.md")
 
-		stdout, stderr, exitCode := runCapture(root, []string{"start", "post-task-review"})
+		stdout, stderr, exitCode := runCapture(root, []string{"start", "post-task-review", "--task-file", "tasks/task.md"})
 
 		assertExitCode(t, exitCode, 0, stderr)
 		assertContains(t, stdout, "Started flow: post-task-review")
@@ -607,6 +658,9 @@ func TestRunWritesNormalResultToStdout(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Instruction:") {
 		t.Fatalf("stdout = %q, want prompt output", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Task:\nok\n\nCurrent step:") {
+		t.Fatalf("stdout = %q, want separated Task and Current step sections", stdout.String())
+	}
 }
 
 func runCapture(root string, args []string) (string, string, int) {
@@ -648,6 +702,10 @@ func assertContains(t *testing.T, got string, want string) {
 
 func runSuccess(t *testing.T, root string, args []string) {
 	t.Helper()
+	if len(args) == 2 && args[0] == "start" {
+		writeCLITestFile(t, root, "tasks/task.md")
+		args = append(args, "--task-file", "tasks/task.md")
+	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

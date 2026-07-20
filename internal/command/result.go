@@ -69,6 +69,7 @@ type CheckStatusResult struct {
 
 type PromptResult struct {
 	FlowID                 string
+	TaskContent            string
 	CurrentStepID          string
 	CurrentStepTitle       string
 	CurrentStepInstruction string

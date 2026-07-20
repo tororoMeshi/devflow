@@ -1,8 +1,10 @@
 package command
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,14 +33,14 @@ func TestCheckRequestRejectsLegacyStateWithoutChangingIt(t *testing.T) {
 func TestStartCreatesDifferentFlowRunIDs(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "check-flow", checkTestFlow())
-	if got := Start(Context{ProjectRoot: root}, "check-flow"); got.ExitCode != 0 {
+	if got := startWithTestTask(t, root, "check-flow"); got.ExitCode != 0 {
 		t.Fatal(got)
 	}
 	first := loadCommandState(t, root).FlowRunID
 	if got := Finish(Context{ProjectRoot: root}, "restart"); got.ExitCode != 0 {
 		t.Fatal(got)
 	}
-	if got := Start(Context{ProjectRoot: root}, "check-flow"); got.ExitCode != 0 {
+	if got := startWithTestTask(t, root, "check-flow"); got.ExitCode != 0 {
 		t.Fatal(got)
 	}
 	if !state.IsValidFlowRunID(first) {
@@ -52,14 +54,27 @@ func TestStartCreatesDifferentFlowRunIDs(t *testing.T) {
 func TestCheckRecordStrictValidationAndGate(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "check-flow", checkTestFlow())
-	if got := Start(Context{ProjectRoot: root}, "check-flow"); got.ExitCode != 0 {
+	if got := startWithTestTask(t, root, "check-flow"); got.ExitCode != 0 {
 		t.Fatalf("start=%#v", got)
 	}
+	taskSnapshot := loadCommandState(t, root).TaskSnapshot
 	request := CheckRequest(Context{ProjectRoot: root}, "go-test").CheckRequest
+	requestJSON, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"task_snapshot", "task_digest", "task_content"} {
+		if strings.Contains(string(requestJSON), forbidden) {
+			t.Fatalf("CheckRequest JSON contains %q: %s", forbidden, requestJSON)
+		}
+	}
 	path := filepath.Join(root, "result.json")
 	writeCheckRecord(t, path, checkRecordJSON(request, 1, `".devflow/logs/test.log"`))
 	if got := CheckRecord(Context{ProjectRoot: root}, path); got.ExitCode != 0 {
 		t.Fatalf("record=%#v", got)
+	}
+	if got := loadCommandState(t, root).TaskSnapshot; !reflect.DeepEqual(got, taskSnapshot) {
+		t.Fatalf("CheckRecord changed TaskSnapshot: %#v", got)
 	}
 	if got := Done(Context{ProjectRoot: root}); got.ExitCode == 0 {
 		t.Fatal("done succeeded with missing and failed checks")
@@ -84,7 +99,7 @@ func TestCheckRecordStrictValidationAndGate(t *testing.T) {
 func TestCheckRecordRejectsUnknownTrailingAndStaleContext(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "check-flow", checkTestFlow())
-	if got := Start(Context{ProjectRoot: root}, "check-flow"); got.ExitCode != 0 {
+	if got := startWithTestTask(t, root, "check-flow"); got.ExitCode != 0 {
 		t.Fatal(got)
 	}
 	request := CheckRequest(Context{ProjectRoot: root}, "go-test").CheckRequest
@@ -106,7 +121,7 @@ func TestCheckRecordRejectsUnknownTrailingAndStaleContext(t *testing.T) {
 func TestCheckStatusAndPrompt(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "check-flow", checkTestFlow())
-	if got := Start(Context{ProjectRoot: root}, "check-flow"); got.ExitCode != 0 {
+	if got := startWithTestTask(t, root, "check-flow"); got.ExitCode != 0 {
 		t.Fatal(got)
 	}
 	if got := CheckRequest(Context{ProjectRoot: root}, "go-test"); got.ExitCode != 0 {
@@ -125,7 +140,7 @@ func TestCheckStatusAndPrompt(t *testing.T) {
 func TestCheckRecordRejectsRequestFromPreviousEntryAfterBack(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "check-flow", checkTestFlow())
-	if got := Start(Context{ProjectRoot: root}, "check-flow"); got.ExitCode != 0 {
+	if got := startWithTestTask(t, root, "check-flow"); got.ExitCode != 0 {
 		t.Fatal(got)
 	}
 	request := CheckRequest(Context{ProjectRoot: root}, "go-test").CheckRequest
