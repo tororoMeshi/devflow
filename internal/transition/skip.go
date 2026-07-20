@@ -21,13 +21,19 @@ func ApplySkip(flow flow.Flow, st state.State, reason string) TransitionResult {
 	diagnostics := skipWarnings(currentStep, currentIndex == len(flow.Steps)-1)
 
 	next := st.Clone()
+	if !closeCurrentAttempt(&next, state.StepAttemptExitSkip, reason) {
+		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+	}
 	next.SkippedSteps[currentStep.ID] = state.SkippedStep{Reason: reason}
 	if currentIndex+1 < len(flow.Steps) {
 		next.Status = state.StatusRunning
-		enterStep(&next, flow.Steps[currentIndex+1].ID)
+		if !enterStep(&next, flow.Steps[currentIndex+1].ID) {
+			return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+		}
 	} else {
 		next.Status = state.StatusCompleted
 		next.CurrentStepID = currentStep.ID
+		next.CurrentAttemptID = ""
 	}
 
 	return success(next, diagnostics...)

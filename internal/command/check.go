@@ -42,13 +42,17 @@ func CheckRequest(ctx Context, checkID string) CommandResult {
 	}
 
 	current := active.State
+	attempt, _, ok := current.CurrentAttempt()
+	if !ok || attempt.StepID != active.CurrentStep.ID {
+		return commandFailure(CodeInvalidState)
+	}
 
 	return CommandResult{ExitCode: 0, CheckRequest: &CheckRequestResult{
 		SchemaVersion: checkSchemaVersion,
 		FlowRunID:     current.FlowRunID,
 		FlowID:        active.Flow.ID,
-		StepID:        active.CurrentStep.ID,
-		EntrySequence: current.CurrentEntrySequence,
+		StepID:        attempt.StepID,
+		EntrySequence: attempt.EntrySequence,
 		CheckID:       checkID,
 	}}
 }
@@ -76,7 +80,11 @@ func CheckRecord(ctx Context, path string) CommandResult {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
 	}
 	current := active.State
-	if record.FlowRunID != current.FlowRunID || record.FlowID != active.Flow.ID || record.StepID != active.CurrentStep.ID || *record.EntrySequence != current.CurrentEntrySequence {
+	attempt, attemptIndex, ok := current.CurrentAttempt()
+	if !ok || attempt.StepID != active.CurrentStep.ID {
+		return commandFailure(CodeInvalidState)
+	}
+	if record.FlowRunID != current.FlowRunID || record.FlowID != active.Flow.ID || record.StepID != attempt.StepID || *record.EntrySequence != attempt.EntrySequence {
 		return commandFailure(CodeCheckContextMismatch)
 	}
 	if !requiredCheck(active.CurrentStep.RequiredChecks, record.CheckID) {
@@ -84,10 +92,9 @@ func CheckRecord(ctx Context, path string) CommandResult {
 	}
 
 	next := current.Clone()
-	next.CheckResults[record.CheckID] = state.CheckResult{
-		EntrySequence: *record.EntrySequence,
-		ExitCode:      *record.ExitCode,
-		LogPath:       record.LogPath,
+	next.Attempts[attemptIndex].CheckResults[record.CheckID] = state.CheckResult{
+		ExitCode: *record.ExitCode,
+		LogPath:  record.LogPath,
 	}
 	if err := NewStore(ctx).SaveCurrent(next); err != nil {
 		return commandFailure(CodeStateSaveFailed)

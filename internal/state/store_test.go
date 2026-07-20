@@ -31,8 +31,18 @@ func TestStoreCreateLoadAndSaveCurrent(t *testing.T) {
 		t.Fatalf("LoadCurrent = %#v, want %#v", loaded, want)
 	}
 
+	closed, err := CloseStepAttempt(want.Attempts[0], StepAttemptExitDone, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextAttempt, err := NewStepAttempt("second", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want.Attempts[0] = closed
+	want.Attempts = append(want.Attempts, nextAttempt)
+	want.CurrentAttemptID = nextAttempt.ID
 	want.CurrentStepID = "second"
-	want.CurrentEntrySequence = 2
 	if err := store.SaveCurrent(want); err != nil {
 		t.Fatal(err)
 	}
@@ -166,11 +176,12 @@ func TestStoreRejectsInvalidTaskSnapshots(t *testing.T) {
 	}
 }
 
-func TestStoreLoadRejectsSchema3AndMissingTaskSnapshot(t *testing.T) {
+func TestStoreLoadRejectsOldSchemaAndMissingTaskSnapshot(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		mutate func(map[string]any)
 	}{
+		{"schema 4", func(raw map[string]any) { raw["schema_version"] = float64(4) }},
 		{"schema 3", func(raw map[string]any) { raw["schema_version"] = float64(3) }},
 		{"missing task snapshot", func(raw map[string]any) { delete(raw, "task_snapshot") }},
 	} {
@@ -352,7 +363,7 @@ func TestStorePreservesStateSchemaAndSnapshotValidation(t *testing.T) {
 			if err := store.CreateRun(value); err != nil {
 				t.Fatal(err)
 			}
-			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 4 {
+			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 5 {
 				t.Fatalf("LoadCurrent = %#v", got)
 			}
 		})
@@ -370,7 +381,25 @@ func testState(t testing.TB, status Status, currentStepID string) State {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := State{SchemaVersion: CurrentSchemaVersion, FlowSnapshot: snapshot, TaskSnapshot: taskSnapshot, Status: status, CurrentStepID: currentStepID, FlowRunID: testRunID, CurrentEntrySequence: 1}
+	attempt, err := NewStepAttempt(currentStepID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := State{SchemaVersion: CurrentSchemaVersion, FlowSnapshot: snapshot, TaskSnapshot: taskSnapshot, Status: status, CurrentStepID: currentStepID, FlowRunID: testRunID, Attempts: []StepAttempt{attempt}, CurrentAttemptID: attempt.ID}
+	if status != StatusRunning {
+		reason := StepAttemptExitDone
+		closeReason := ""
+		if status == StatusFinished {
+			reason = StepAttemptExitFinish
+			closeReason = "finished"
+			value.Finish = &Finish{Reason: closeReason}
+		}
+		value.Attempts[0], err = CloseStepAttempt(attempt, reason, closeReason)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value.CurrentAttemptID = ""
+	}
 	value.Normalize()
 	return value
 }

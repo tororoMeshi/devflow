@@ -41,9 +41,10 @@ func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result
 		}
 	}
 
+	attempt, _, hasCurrentAttempt := state.CurrentAttempt()
 	for _, checkID := range step.RequiredChecks {
-		checkResult, ok := state.CheckResults[checkID]
-		if !ok || checkResult.EntrySequence != state.CurrentEntrySequence {
+		checkResult, ok := attempt.CheckResults[checkID]
+		if !hasCurrentAttempt || attempt.StepID != step.ID || !ok {
 			result.CheckProblems = append(result.CheckProblems, CheckProblem{CheckID: checkID, Kind: CheckMissing})
 			continue
 		}

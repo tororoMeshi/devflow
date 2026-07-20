@@ -180,13 +180,18 @@ func TestCheckDoneGatePreservesRequiredCheckOrder(t *testing.T) {
 		ok      bool
 	}{
 		{"all missing", nil, []CheckProblem{{"go-test", CheckMissing}, {"go-vet", CheckMissing}, {"gofmt", CheckMissing}}, false},
-		{"all failed", map[string]state.CheckResult{"go-test": {EntrySequence: 1, ExitCode: 1}, "go-vet": {EntrySequence: 1, ExitCode: 1}, "gofmt": {EntrySequence: 1, ExitCode: 1}}, []CheckProblem{{"go-test", CheckFailed}, {"go-vet", CheckFailed}, {"gofmt", CheckFailed}}, false},
-		{"missing failed missing", map[string]state.CheckResult{"go-vet": {EntrySequence: 1, ExitCode: 1}}, []CheckProblem{{"go-test", CheckMissing}, {"go-vet", CheckFailed}, {"gofmt", CheckMissing}}, false},
-		{"failed missing failed", map[string]state.CheckResult{"go-test": {EntrySequence: 1, ExitCode: 1}, "gofmt": {EntrySequence: 1, ExitCode: 1}}, []CheckProblem{{"go-test", CheckFailed}, {"go-vet", CheckMissing}, {"gofmt", CheckFailed}}, false},
-		{"all passed", map[string]state.CheckResult{"go-test": {EntrySequence: 1, ExitCode: 0}, "go-vet": {EntrySequence: 1, ExitCode: 0}, "gofmt": {EntrySequence: 1, ExitCode: 0}}, []CheckProblem{}, true},
+		{"all failed", map[string]state.CheckResult{"go-test": {ExitCode: 1}, "go-vet": {ExitCode: 1}, "gofmt": {ExitCode: 1}}, []CheckProblem{{"go-test", CheckFailed}, {"go-vet", CheckFailed}, {"gofmt", CheckFailed}}, false},
+		{"missing failed missing", map[string]state.CheckResult{"go-vet": {ExitCode: 1}}, []CheckProblem{{"go-test", CheckMissing}, {"go-vet", CheckFailed}, {"gofmt", CheckMissing}}, false},
+		{"failed missing failed", map[string]state.CheckResult{"go-test": {ExitCode: 1}, "gofmt": {ExitCode: 1}}, []CheckProblem{{"go-test", CheckFailed}, {"go-vet", CheckMissing}, {"gofmt", CheckFailed}}, false},
+		{"all passed", map[string]state.CheckResult{"go-test": {ExitCode: 0}, "go-vet": {ExitCode: 0}, "gofmt": {ExitCode: 0}}, []CheckProblem{}, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckDoneGate(step, state.State{CurrentEntrySequence: 1, CheckResults: tt.results}, t.TempDir())
+			attempt, err := state.NewStepAttempt("quality", 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attempt.CheckResults = tt.results
+			got := CheckDoneGate(step, state.State{Attempts: []state.StepAttempt{attempt}, CurrentAttemptID: attempt.ID}, t.TempDir())
 			if got.OK != tt.ok || !reflect.DeepEqual(got.CheckProblems, tt.want) {
 				t.Fatalf("result=%#v want=%#v", got, tt.want)
 			}

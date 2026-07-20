@@ -51,15 +51,21 @@ func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) Transitio
 	}
 
 	next := st.Clone()
+	if !closeCurrentAttempt(&next, state.StepAttemptExitDone, "") {
+		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+	}
 	next.CompletedSteps = append(next.CompletedSteps, currentStep.ID)
 	delete(next.SkippedSteps, currentStep.ID)
 
 	if currentIndex+1 < len(flow.Steps) {
 		next.Status = state.StatusRunning
-		enterStep(&next, flow.Steps[currentIndex+1].ID)
+		if !enterStep(&next, flow.Steps[currentIndex+1].ID) {
+			return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+		}
 	} else {
 		next.Status = state.StatusCompleted
 		next.CurrentStepID = currentStep.ID
+		next.CurrentAttemptID = ""
 	}
 
 	return success(next)

@@ -431,17 +431,7 @@ func backSkipFinishTestFlow() string {
 }
 
 func backSkipFinishState(currentStepID string) state.State {
-	st := state.State{
-		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowSnapshot:         testSnapshot("back-skip-finish-flow"),
-		TaskSnapshot:         testTaskSnapshot(),
-		Status:               state.StatusRunning,
-		CurrentStepID:        currentStepID,
-		FlowRunID:            "run_00000000000000000000000000000000",
-		CurrentEntrySequence: 1,
-	}
-	st.Normalize()
-	return st
+	return commandStateWithAttempt(testSnapshot("back-skip-finish-flow"), testTaskSnapshot(), state.StatusRunning, currentStepID, "run_00000000000000000000000000000000")
 }
 
 func assertCommandWarningSuccess(t *testing.T, got CommandResult, code string) {

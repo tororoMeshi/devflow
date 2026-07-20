@@ -13,8 +13,12 @@ func ApplyFinish(st state.State, reason string) TransitionResult {
 	}
 
 	next := st.Clone()
+	if !closeCurrentAttempt(&next, state.StepAttemptExitFinish, reason) {
+		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+	}
 	next.Status = state.StatusFinished
 	next.Finish = &state.Finish{Reason: reason}
+	next.CurrentAttemptID = ""
 
 	return success(next)
 }

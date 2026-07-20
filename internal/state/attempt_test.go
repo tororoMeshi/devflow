@@ -153,8 +153,8 @@ func TestCloseStepAttempt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			original := mustNewStepAttempt(t)
 			original.CheckResults = map[string]CheckResult{
-				"build": {EntrySequence: 1, ExitCode: 0, LogPath: "logs/build.log"},
-				"lint":  {EntrySequence: 1, ExitCode: 1, LogPath: "logs/lint.log"},
+				"build": {ExitCode: 0, LogPath: "logs/build.log"},
+				"lint":  {ExitCode: 1, LogPath: "logs/lint.log"},
 			}
 			before := withAttempt(original, func(*StepAttempt) {})
 
@@ -171,12 +171,12 @@ func TestCloseStepAttempt(t *testing.T) {
 			if closed.ID != original.ID || closed.StepID != original.StepID || closed.EntrySequence != original.EntrySequence || !reflect.DeepEqual(closed.CheckResults, original.CheckResults) {
 				t.Fatalf("CloseStepAttempt did not preserve attempt identity or check results: %#v", closed)
 			}
-			closed.CheckResults["build"] = CheckResult{EntrySequence: 1, ExitCode: 2}
-			closed.CheckResults["new"] = CheckResult{EntrySequence: 1, ExitCode: 0}
+			closed.CheckResults["build"] = CheckResult{ExitCode: 2}
+			closed.CheckResults["new"] = CheckResult{ExitCode: 0}
 			if original.CheckResults["build"].ExitCode != 0 || len(original.CheckResults) != 2 {
 				t.Fatalf("CloseStepAttempt shares CheckResults: %#v", original.CheckResults)
 			}
-			original.CheckResults["input-only"] = CheckResult{EntrySequence: 1, ExitCode: 3}
+			original.CheckResults["input-only"] = CheckResult{ExitCode: 3}
 			if _, ok := closed.CheckResults["input-only"]; ok {
 				t.Fatalf("closed CheckResults changed through input map: %#v", closed.CheckResults)
 			}
@@ -202,7 +202,7 @@ func TestCloseStepAttempt(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			input := withAttempt(active, func(a *StepAttempt) {
-				a.CheckResults["check"] = CheckResult{EntrySequence: 1, ExitCode: 0}
+				a.CheckResults["check"] = CheckResult{ExitCode: 0}
 			})
 			before := withAttempt(input, func(*StepAttempt) {})
 			if _, err := CloseStepAttempt(input, tt.exitReason, tt.reason); !errors.Is(err, tt.wantErr) {

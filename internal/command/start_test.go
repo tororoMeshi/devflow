@@ -372,17 +372,7 @@ func startTestFlow(id string) string {
 }
 
 func commandStartState(flowID string, status state.Status, currentStepID string) state.State {
-	st := state.State{
-		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowSnapshot:         testSnapshotForStep(flowID, currentStepID),
-		TaskSnapshot:         testTaskSnapshot(),
-		Status:               status,
-		CurrentStepID:        currentStepID,
-		FlowRunID:            "run_00000000000000000000000000000000",
-		CurrentEntrySequence: 1,
-	}
-	st.Normalize()
-	return st
+	return commandStateWithAttempt(testSnapshotForStep(flowID, currentStepID), testTaskSnapshot(), status, currentStepID, "run_00000000000000000000000000000000")
 }
 
 func writeCommandTask(t testing.TB, root, path, content string) {

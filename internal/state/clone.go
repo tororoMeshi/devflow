@@ -4,14 +4,14 @@ import "github.com/8noki8/devflow/internal/flow"
 
 func (s State) Clone() State {
 	next := State{
-		SchemaVersion:        s.SchemaVersion,
-		FlowSnapshot:         flow.CloneSnapshot(s.FlowSnapshot),
-		TaskSnapshot:         s.TaskSnapshot,
-		Status:               s.Status,
-		CurrentStepID:        s.CurrentStepID,
-		Finish:               cloneFinish(s.Finish),
-		FlowRunID:            s.FlowRunID,
-		CurrentEntrySequence: s.CurrentEntrySequence,
+		SchemaVersion:    s.SchemaVersion,
+		FlowSnapshot:     flow.CloneSnapshot(s.FlowSnapshot),
+		TaskSnapshot:     s.TaskSnapshot,
+		Status:           s.Status,
+		CurrentStepID:    s.CurrentStepID,
+		Finish:           cloneFinish(s.Finish),
+		FlowRunID:        s.FlowRunID,
+		CurrentAttemptID: s.CurrentAttemptID,
 	}
 
 	if s.CompletedSteps != nil {
@@ -38,10 +38,11 @@ func (s State) Clone() State {
 			}
 		}
 	}
-	if s.CheckResults != nil {
-		next.CheckResults = make(map[string]CheckResult, len(s.CheckResults))
-		for checkID, result := range s.CheckResults {
-			next.CheckResults[checkID] = result
+	if s.Attempts != nil {
+		next.Attempts = make([]StepAttempt, len(s.Attempts))
+		for i, attempt := range s.Attempts {
+			next.Attempts[i] = attempt
+			next.Attempts[i].CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 		}
 	}
 
@@ -64,9 +65,6 @@ func (s *State) Normalize() {
 	}
 	if s.BackHistory == nil {
 		s.BackHistory = []BackHistory{}
-	}
-	if s.CheckResults == nil {
-		s.CheckResults = map[string]CheckResult{}
 	}
 }
 
