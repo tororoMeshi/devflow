@@ -34,7 +34,9 @@ func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testin
 			approval: {required: true}
 		}]
 	}`)
-	saveExecutionState(t, root, executionTestState(state.StatusRunning))
+	currentState := executionTestState(state.StatusRunning)
+	currentState.Attempts[0].CheckResults["review"] = state.CheckResult{ExitCode: 1}
+	saveExecutionState(t, root, currentState)
 	statePath := currentStatePath(t, root)
 	before, err := os.ReadFile(statePath)
 	if err != nil {
@@ -173,17 +175,20 @@ func TestDoneRejectsMissingRequiredInputWithoutChangingState(t *testing.T) {
 		t.Fatalf("Done() after input creation = %#v", got)
 	}
 	updated := loadCommandState(t, root)
-	if updated.Status != state.StatusRunning || updated.CurrentStepID != "review" || updated.CurrentEntrySequence != 4 {
+	if updated.Status != state.StatusRunning || updated.CurrentStepID != "review" || updated.EntrySequence() != 2 {
 		t.Fatalf("updated state = %#v", updated)
 	}
 }
 
 func TestExecutionChecksTreatsStaleResultAsPendingAndBlocksCompletion(t *testing.T) {
+	attempt, err := state.NewStepAttempt("old-design", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt.CheckResults["validate"] = state.CheckResult{ExitCode: 0}
 	current := state.State{
-		CurrentEntrySequence: 3,
-		CheckResults: map[string]state.CheckResult{
-			"validate": {EntrySequence: 2, ExitCode: 0},
-		},
+		CurrentAttemptID: "attempt_00000000000000000003",
+		Attempts:         []state.StepAttempt{attempt},
 	}
 	checks := executionChecks([]string{"validate"}, current)
 	if !reflect.DeepEqual(checks, []ExecutionCheckResult{{ID: "validate", Status: CheckStatusPending}}) {
@@ -206,18 +211,11 @@ func executionTestFlow() string {
 }
 
 func executionTestState(status state.Status) state.State {
-	return state.State{
-		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowSnapshot:         testSnapshot("context-flow"),
-		TaskSnapshot:         testTaskSnapshot(),
-		Status:               status,
-		CurrentStepID:        "design",
-		FlowRunID:            "run_0123456789abcdef0123456789abcdef",
-		CurrentEntrySequence: 3,
-		CheckResults: map[string]state.CheckResult{
-			"review": {EntrySequence: 3, ExitCode: 1},
-		},
+	snapshot, err := flow.BuildSnapshot(flow.Flow{ID: "context-flow", Title: "Context Flow", Steps: []flow.Step{{ID: "design", Title: "Design", Instruction: "Create the design.", RequiredChecks: []string{"validate", "review"}}, {ID: "review", Title: "Review", Instruction: "Review the design."}}}, flow.FlowSource{})
+	if err != nil {
+		panic(err)
 	}
+	return commandStateWithAttempt(snapshot, testTaskSnapshot(), status, "design", "run_0123456789abcdef0123456789abcdef")
 }
 
 func writeExecutionFlow(t *testing.T, root string, id string, content string) {

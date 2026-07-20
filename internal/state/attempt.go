@@ -154,6 +154,9 @@ func isValidStepAttemptExitReason(reason StepAttemptExitReason) bool {
 }
 
 func cloneStepAttemptCheckResults(source map[string]CheckResult) map[string]CheckResult {
+	if source == nil {
+		return nil
+	}
 	cloned := make(map[string]CheckResult, len(source))
 	for name, result := range source {
 		cloned[name] = result

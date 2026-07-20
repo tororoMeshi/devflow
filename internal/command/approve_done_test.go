@@ -246,17 +246,7 @@ func approveDoneTestFlow() string {
 }
 
 func approveDoneState(currentStepID string) state.State {
-	st := state.State{
-		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowSnapshot:         testSnapshot("approve-done-flow"),
-		TaskSnapshot:         testTaskSnapshot(),
-		Status:               state.StatusRunning,
-		CurrentStepID:        currentStepID,
-		FlowRunID:            "run_00000000000000000000000000000000",
-		CurrentEntrySequence: 1,
-	}
-	st.Normalize()
-	return st
+	return commandStateWithAttempt(testSnapshot("approve-done-flow"), testTaskSnapshot(), state.StatusRunning, currentStepID, "run_00000000000000000000000000000000")
 }
 
 func loadCommandState(t *testing.T, root string) state.State {
@@ -307,8 +297,7 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 		{
 			name: "completed state",
 			setup: func(t *testing.T, root string) {
-				st := approveDoneState("first")
-				st.Status = state.StatusCompleted
+				st := commandStateWithAttempt(testSnapshot("approve-done-flow"), testTaskSnapshot(), state.StatusCompleted, "first", "run_00000000000000000000000000000000")
 				if err := saveCommandState(t, root, st); err != nil {
 					t.Fatal(err)
 				}
@@ -318,8 +307,7 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 		{
 			name: "finished state",
 			setup: func(t *testing.T, root string) {
-				st := approveDoneState("first")
-				st.Status = state.StatusFinished
+				st := commandStateWithAttempt(testSnapshot("approve-done-flow"), testTaskSnapshot(), state.StatusFinished, "first", "run_00000000000000000000000000000000")
 				if err := saveCommandState(t, root, st); err != nil {
 					t.Fatal(err)
 				}

@@ -130,7 +130,7 @@ func TestSaveTransitionState(t *testing.T) {
 		if err := NewStore(Context{ProjectRoot: root}).CreateRun(st); err != nil {
 			t.Fatal(err)
 		}
-		st.CurrentEntrySequence = 2
+		st.Attempts[0].CheckResults = map[string]state.CheckResult{}
 
 		diagnostics := SaveTransitionState(Context{ProjectRoot: root}, transition.TransitionResult{State: &st})
 
@@ -143,17 +143,7 @@ func TestSaveTransitionState(t *testing.T) {
 }
 
 func validRunningState() state.State {
-	st := state.State{
-		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowSnapshot:         testSnapshot("test-flow"),
-		TaskSnapshot:         testTaskSnapshot(),
-		Status:               state.StatusRunning,
-		CurrentStepID:        "first",
-		FlowRunID:            "run_00000000000000000000000000000000",
-		CurrentEntrySequence: 1,
-	}
-	st.Normalize()
-	return st
+	return commandStateWithAttempt(testSnapshot("test-flow"), testTaskSnapshot(), state.StatusRunning, "first", "run_00000000000000000000000000000000")
 }
 
 func writeFlow(t *testing.T, root string, id string, content string) {

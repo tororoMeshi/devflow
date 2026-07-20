@@ -73,8 +73,24 @@ func TestCheckRecordStrictValidationAndGate(t *testing.T) {
 	if got := CheckRecord(Context{ProjectRoot: root}, path); got.ExitCode != 0 {
 		t.Fatalf("record=%#v", got)
 	}
-	if got := loadCommandState(t, root).TaskSnapshot; !reflect.DeepEqual(got, taskSnapshot) {
+	recorded := loadCommandState(t, root)
+	if got := recorded.TaskSnapshot; !reflect.DeepEqual(got, taskSnapshot) {
 		t.Fatalf("CheckRecord changed TaskSnapshot: %#v", got)
+	}
+	attempt, _, ok := recorded.CurrentAttempt()
+	if !ok || attempt.CheckResults["go-test"].ExitCode != 1 || len(recorded.Attempts) != 1 {
+		t.Fatalf("check was not recorded on current Attempt: %#v", recorded.Attempts)
+	}
+	data, err := json.Marshal(recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := raw["check_results"]; exists {
+		t.Fatalf("top-level check_results exists: %s", data)
 	}
 	if got := Done(Context{ProjectRoot: root}); got.ExitCode == 0 {
 		t.Fatal("done succeeded with missing and failed checks")
@@ -159,6 +175,10 @@ func TestCheckRecordRejectsRequestFromPreviousEntryAfterBack(t *testing.T) {
 	}
 	if got := Back(Context{ProjectRoot: root}, "", "recheck"); got.ExitCode != 0 {
 		t.Fatal(got)
+	}
+	afterBack := loadCommandState(t, root)
+	if len(afterBack.Attempts) != 3 || len(afterBack.Attempts[0].CheckResults) != 2 || len(afterBack.Attempts[2].CheckResults) != 0 {
+		t.Fatalf("Attempt check history was not preserved: %#v", afterBack.Attempts)
 	}
 	writeCheckRecord(t, path, checkRecordJSON(request, 0, `null`))
 	if got := CheckRecord(Context{ProjectRoot: root}, path); got.ExitCode == 0 || !hasDiagnostic(got.Diagnostics, CodeCheckContextMismatch) {

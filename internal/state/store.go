@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/task"
@@ -98,10 +99,10 @@ func (s Store) LoadRun(flowRunID string) LoadResult {
 }
 
 func (s Store) CreateRun(value State) error {
-	next := value.Clone()
-	if err := validateState(next); err != nil {
+	if err := validateState(value); err != nil {
 		return err
 	}
+	next := value.Clone()
 	statePath, err := s.RunStatePath(next.FlowRunID)
 	if err != nil {
 		return err
@@ -141,10 +142,10 @@ func (s Store) SaveCurrent(value State) error {
 	if loaded.State.FlowRunID != pointer.FlowRunID {
 		return fmt.Errorf("current pointer flow_run_id %q does not match State flow_run_id %q", pointer.FlowRunID, loaded.State.FlowRunID)
 	}
-	next := value.Clone()
-	if err := validateState(next); err != nil {
+	if err := validateState(value); err != nil {
 		return err
 	}
+	next := value.Clone()
 	path, _ := s.RunStatePath(pointer.FlowRunID)
 	return s.saveJSONFile(path, next)
 }
@@ -240,7 +241,7 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 	if state.SchemaVersion != CurrentSchemaVersion {
 		return &UnsupportedSchemaVersionError{Actual: state.SchemaVersion}
 	}
-	for _, field := range []string{"schema_version", "flow_snapshot", "task_snapshot", "status", "current_step_id"} {
+	for _, field := range []string{"schema_version", "flow_snapshot", "task_snapshot", "status", "current_step_id", "attempts"} {
 		if _, ok := raw[field]; !ok {
 			return fmt.Errorf("missing required field %q", field)
 		}
@@ -267,28 +268,106 @@ func validateState(state State) error {
 	if !IsValidFlowRunID(state.FlowRunID) {
 		return errors.New("invalid flow_run_id")
 	}
-	if state.CurrentEntrySequence == 0 {
-		return errors.New("invalid current_entry_sequence")
+	if state.CompletedSteps == nil || state.SkippedSteps == nil || state.Approvals == nil || state.BackHistory == nil {
+		return errors.New("state collections must not be null")
 	}
-	if state.Status == StatusRunning && !flowHasStep(state.FlowSnapshot.Flow, state.CurrentStepID) {
+	if !flowHasStep(state.FlowSnapshot.Flow, state.CurrentStepID) {
 		return errors.New("current_step_id is not in flow_snapshot")
 	}
-	for _, result := range state.CheckResults {
-		if result.EntrySequence != state.CurrentEntrySequence {
-			return errors.New("check result entry sequence mismatch")
+	if state.Attempts == nil {
+		return errors.New("attempts must not be null")
+	}
+	if len(state.Attempts) == 0 {
+		return errors.New("attempts must not be empty")
+	}
+	seenIDs := make(map[string]struct{}, len(state.Attempts))
+	activeCount := 0
+	for i, attempt := range state.Attempts {
+		if err := ValidateStepAttempt(attempt); err != nil {
+			return fmt.Errorf("invalid attempt %d: %w", i, err)
+		}
+		wantSequence := uint64(i + 1)
+		if attempt.EntrySequence != wantSequence {
+			return fmt.Errorf("attempt %d entry sequence must be %d", i, wantSequence)
+		}
+		if _, duplicate := seenIDs[attempt.ID]; duplicate {
+			return errors.New("duplicate attempt id")
+		}
+		seenIDs[attempt.ID] = struct{}{}
+		if !flowHasStep(state.FlowSnapshot.Flow, attempt.StepID) {
+			return fmt.Errorf("attempt step_id %q is not in flow_snapshot", attempt.StepID)
+		}
+		step, _ := flowStep(state.FlowSnapshot.Flow, attempt.StepID)
+		for checkID, result := range attempt.CheckResults {
+			if !containsString(step.RequiredChecks, checkID) {
+				return fmt.Errorf("attempt check %q is not required by step %q", checkID, attempt.StepID)
+			}
+			if result.ExitCode < 0 {
+				return fmt.Errorf("attempt check %q has invalid exit_code", checkID)
+			}
+			if invalidCheckLogPath(result.LogPath) {
+				return fmt.Errorf("attempt check %q has invalid log_path", checkID)
+			}
+		}
+		if attempt.Status == StepAttemptActive {
+			activeCount++
 		}
 	}
+	last := state.Attempts[len(state.Attempts)-1]
 	switch state.Status {
-	case StatusRunning, StatusCompleted, StatusFinished:
-		return nil
+	case StatusRunning:
+		if state.CurrentAttemptID == "" || activeCount != 1 || last.Status != StepAttemptActive || last.ID != state.CurrentAttemptID || last.StepID != state.CurrentStepID {
+			return errors.New("running state current attempt invariant violated")
+		}
+		if state.Finish != nil {
+			return errors.New("running state must not have finish")
+		}
+	case StatusCompleted:
+		if state.CurrentAttemptID != "" || activeCount != 0 || last.Status != StepAttemptClosed || (last.ExitReason != StepAttemptExitDone && last.ExitReason != StepAttemptExitSkip) || last.StepID != state.CurrentStepID {
+			return errors.New("completed state attempt invariant violated")
+		}
+		if state.Finish != nil {
+			return errors.New("completed state must not have finish")
+		}
+	case StatusFinished:
+		if state.CurrentAttemptID != "" || activeCount != 0 || last.Status != StepAttemptClosed || last.ExitReason != StepAttemptExitFinish || last.StepID != state.CurrentStepID {
+			return errors.New("finished state attempt invariant violated")
+		}
+		if state.Finish == nil || state.Finish.Reason != last.Reason {
+			return errors.New("finished state reason mismatch")
+		}
 	default:
 		return fmt.Errorf("unknown status %q", state.Status)
 	}
+	return nil
 }
 
 func flowHasStep(snapshotFlow flow.Flow, stepID string) bool {
+	_, ok := flowStep(snapshotFlow, stepID)
+	return ok
+}
+
+func flowStep(snapshotFlow flow.Flow, stepID string) (flow.Step, bool) {
 	for _, step := range snapshotFlow.Steps {
 		if step.ID == stepID {
+			return step, true
+		}
+	}
+	return flow.Step{}, false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func invalidCheckLogPath(value string) bool {
+	for _, forbidden := range []string{"\n", "\r", "\x00"} {
+		if strings.Contains(value, forbidden) {
 			return true
 		}
 	}

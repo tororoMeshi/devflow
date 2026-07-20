@@ -1,6 +1,7 @@
 package transition
 
 import (
+	"math"
 	"strings"
 
 	"github.com/8noki8/devflow/internal/flow"
@@ -84,8 +85,35 @@ func removeString(values []string, target string) []string {
 	return next
 }
 
-func enterStep(st *state.State, stepID string) {
+func currentAttempt(st state.State) (state.StepAttempt, int, bool) {
+	attempt, index, ok := st.CurrentAttempt()
+	return attempt, index, ok && attempt.Status == state.StepAttemptActive && attempt.StepID == st.CurrentStepID
+}
+
+func closeCurrentAttempt(st *state.State, exitReason state.StepAttemptExitReason, reason string) bool {
+	attempt, index, ok := currentAttempt(*st)
+	if !ok {
+		return false
+	}
+	closed, err := state.CloseStepAttempt(attempt, exitReason, reason)
+	if err != nil {
+		return false
+	}
+	st.Attempts[index] = closed
+	return true
+}
+
+func enterStep(st *state.State, stepID string) bool {
+	last, ok := st.LastAttempt()
+	if !ok || last.EntrySequence == math.MaxUint64 {
+		return false
+	}
+	attempt, err := state.NewStepAttempt(stepID, last.EntrySequence+1)
+	if err != nil {
+		return false
+	}
+	st.Attempts = append(st.Attempts, attempt)
+	st.CurrentAttemptID = attempt.ID
 	st.CurrentStepID = stepID
-	st.CurrentEntrySequence++
-	st.CheckResults = map[string]state.CheckResult{}
+	return true
 }

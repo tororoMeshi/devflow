@@ -269,17 +269,7 @@ func statusPromptTestFlow() string {
 }
 
 func statusPromptState(flowID string, status state.Status, currentStepID string) state.State {
-	st := state.State{
-		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowSnapshot:         testSnapshot(flowID),
-		TaskSnapshot:         testTaskSnapshot(),
-		Status:               status,
-		CurrentStepID:        currentStepID,
-		FlowRunID:            "run_00000000000000000000000000000000",
-		CurrentEntrySequence: 1,
-	}
-	st.Normalize()
-	return st
+	return commandStateWithAttempt(testSnapshotForStep(flowID, currentStepID), testTaskSnapshot(), status, currentStepID, "run_00000000000000000000000000000000")
 }
 
 func assertArtifactPaths(t *testing.T, got []ArtifactResult, want []string) {

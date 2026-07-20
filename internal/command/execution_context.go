@@ -108,7 +108,7 @@ func CurrentContext(ctx Context) CommandResult {
 		},
 		State: ExecutionStateResult{
 			Status:        loaded.State.Status,
-			EntrySequence: loaded.State.CurrentEntrySequence,
+			EntrySequence: loaded.State.EntrySequence(),
 		},
 	}
 	if loaded.Step != nil {
@@ -175,9 +175,10 @@ func executionArtifacts(artifacts []flow.Artifact, projectRoot string) []Executi
 
 func executionChecks(requiredChecks []string, current state.State) []ExecutionCheckResult {
 	result := make([]ExecutionCheckResult, 0, len(requiredChecks))
+	attempt, _, hasCurrentAttempt := current.CurrentAttempt()
 	for _, checkID := range requiredChecks {
-		stored, ok := current.CheckResults[checkID]
-		if !ok || stored.EntrySequence != current.CurrentEntrySequence {
+		stored, ok := attempt.CheckResults[checkID]
+		if !hasCurrentAttempt || !ok {
 			result = append(result, ExecutionCheckResult{ID: checkID, Status: CheckStatusPending})
 			continue
 		}
