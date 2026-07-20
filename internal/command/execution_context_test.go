@@ -202,7 +202,7 @@ func executionTestFlow() string {
 func executionTestState(status state.Status) state.State {
 	return state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               "context-flow",
+		FlowSnapshot:         testSnapshot("context-flow"),
 		Status:               status,
 		CurrentStepID:        "design",
 		FlowRunID:            "run_0123456789abcdef0123456789abcdef",
@@ -226,7 +226,7 @@ func writeExecutionFlow(t *testing.T, root string, id string, content string) {
 
 func saveExecutionState(t *testing.T, root string, value state.State) {
 	t.Helper()
-	if err := NewStore(Context{ProjectRoot: root}).Save(value); err != nil {
+	if err := saveCommandState(t, root, value); err != nil {
 		t.Fatal(err)
 	}
 }

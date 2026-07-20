@@ -2,6 +2,7 @@ package flow
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"regexp"
 	"strings"
@@ -51,6 +52,64 @@ func TestBuildSnapshotDigestExcludesSource(t *testing.T) {
 	}
 	if first.Source.Path != "flows/first.cue" || second.Source.Path != "other/second.cue" {
 		t.Fatalf("sources = %#v, %#v", first.Source, second.Source)
+	}
+}
+
+func TestValidateSnapshot(t *testing.T) {
+	snapshot, err := BuildSnapshot(snapshotTestFlow(), FlowSource{Path: "flows/test.cue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSnapshot(snapshot); err != nil {
+		t.Fatalf("ValidateSnapshot() error = %v", err)
+	}
+	before := CloneSnapshot(snapshot)
+	if err := ValidateSnapshot(snapshot); err != nil {
+		t.Fatalf("ValidateSnapshot() second error = %v", err)
+	}
+	if !reflect.DeepEqual(snapshot, before) {
+		t.Fatal("ValidateSnapshot modified its input")
+	}
+
+	tests := []struct {
+		name string
+		edit func(*FlowSnapshot)
+		want error
+	}{
+		{"schema", func(s *FlowSnapshot) { s.SchemaVersion++ }, ErrUnsupportedSnapshotSchema},
+		{"digest format", func(s *FlowSnapshot) { s.Digest = "sha256:BAD" }, ErrInvalidSnapshotDigest},
+		{"digest mismatch", func(s *FlowSnapshot) { s.Digest = "sha256:" + strings.Repeat("0", 64) }, ErrSnapshotDigestMismatch},
+		{"flow changed", func(s *FlowSnapshot) { s.Flow.Title = "changed" }, ErrSnapshotDigestMismatch},
+		{"not normalized", func(s *FlowSnapshot) { s.Flow.Steps[0].Inputs = nil }, ErrSnapshotNotNormalized},
+		{"invalid flow", func(s *FlowSnapshot) { s.Flow.ID = "" }, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := snapshot
+			got.Flow = copyFlow(snapshot.Flow)
+			tt.edit(&got)
+			err := ValidateSnapshot(got)
+			if err == nil || tt.want != nil && !errors.Is(err, tt.want) {
+				t.Fatalf("ValidateSnapshot() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestCloneSnapshotDoesNotShareFlowMemory(t *testing.T) {
+	snapshot, err := BuildSnapshot(snapshotTestFlow(), FlowSource{Path: "flows/test.cue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := CloneSnapshot(snapshot)
+	if !reflect.DeepEqual(clone, snapshot) {
+		t.Fatalf("CloneSnapshot = %#v, want %#v", clone, snapshot)
+	}
+	clone.Flow.Steps[0].Inputs[0].Path = "changed-input"
+	clone.Flow.Steps[0].Approval.Required = false
+	clone.Flow.Steps[0].RequiredChecks[0] = "changed-check"
+	if snapshot.Flow.Steps[0].Inputs[0].Path == "changed-input" || !snapshot.Flow.Steps[0].Approval.Required || snapshot.Flow.Steps[0].RequiredChecks[0] == "changed-check" {
+		t.Fatal("CloneSnapshot shares Flow memory")
 	}
 }
 

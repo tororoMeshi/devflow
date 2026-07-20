@@ -21,6 +21,10 @@ func Start(ctx Context, flowID string) CommandResult {
 	if fl.ID != flowID {
 		return commandFailure(CodeStateFlowMismatch)
 	}
+	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: filepath.Join(FlowDir(ctx.ProjectRoot), flowID+".cue")})
+	if err != nil {
+		return commandFailure(CodeStateFlowMismatch)
+	}
 
 	store := NewStore(ctx)
 	loaded := store.Load()
@@ -33,7 +37,7 @@ func Start(ctx Context, flowID string) CommandResult {
 	if err != nil {
 		return commandFailure(CodeFlowRunIDGenerationFailed)
 	}
-	result := transition.ApplyStart(fl, current, flowRunID)
+	result := transition.ApplyStart(snapshot, current, flowRunID)
 	if saveDiagnostics := SaveTransitionState(ctx, result); len(saveDiagnostics) > 0 {
 		result.Diagnostics = append(result.Diagnostics, saveDiagnostics...)
 		return CommandResult{ExitCode: 1, Diagnostics: result.Diagnostics}
@@ -51,7 +55,7 @@ func startSuccess(result transition.TransitionResult) *SuccessResult {
 		return nil
 	}
 	return &SuccessResult{
-		StartedFlowID: result.State.FlowID,
+		StartedFlowID: result.State.FlowSnapshot.Flow.ID,
 		CurrentStepID: result.State.CurrentStepID,
 	}
 }

@@ -4,10 +4,21 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
+	"regexp"
 )
 
 const FlowSnapshotSchemaVersion = 1
+
+var (
+	ErrUnsupportedSnapshotSchema = errors.New("unsupported flow snapshot schema version")
+	ErrSnapshotNotNormalized     = errors.New("flow snapshot is not normalized")
+	ErrInvalidSnapshotDigest     = errors.New("invalid flow snapshot digest")
+	ErrSnapshotDigestMismatch    = errors.New("flow snapshot digest mismatch")
+	flowSnapshotDigestPattern    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+)
 
 // FlowSource identifies the origin of a Flow for traceability. It is not part
 // of the Flow contract and is excluded from the snapshot digest.
@@ -24,6 +35,14 @@ type FlowSnapshot struct {
 	Flow          Flow       `json:"flow"`
 }
 
+// CloneSnapshot returns a deep copy that does not share Flow collections or
+// pointers with snapshot.
+func CloneSnapshot(snapshot FlowSnapshot) FlowSnapshot {
+	clone := snapshot
+	clone.Flow = copyFlow(snapshot.Flow)
+	return clone
+}
+
 // BuildSnapshot creates a normalized, validated FlowSnapshot without changing
 // or sharing mutable memory with the input Flow.
 func BuildSnapshot(flow Flow, source FlowSource) (FlowSnapshot, error) {
@@ -32,18 +51,50 @@ func BuildSnapshot(flow Flow, source FlowSource) (FlowSnapshot, error) {
 		return FlowSnapshot{}, fmt.Errorf("validate flow snapshot: %w", err)
 	}
 
-	payload, err := canonicalJSON(normalized)
+	digest, err := snapshotDigest(normalized)
 	if err != nil {
-		return FlowSnapshot{}, fmt.Errorf("marshal canonical flow snapshot: %w", err)
+		return FlowSnapshot{}, err
 	}
-
-	digest := sha256.Sum256(payload)
 	return FlowSnapshot{
 		SchemaVersion: FlowSnapshotSchemaVersion,
-		Digest:        "sha256:" + hex.EncodeToString(digest[:]),
+		Digest:        digest,
 		Source:        source,
 		Flow:          normalized,
 	}, nil
+}
+
+// ValidateSnapshot verifies a persisted FlowSnapshot without changing it.
+func ValidateSnapshot(snapshot FlowSnapshot) error {
+	if snapshot.SchemaVersion != FlowSnapshotSchemaVersion {
+		return fmt.Errorf("%w: %d", ErrUnsupportedSnapshotSchema, snapshot.SchemaVersion)
+	}
+	if !flowSnapshotDigestPattern.MatchString(snapshot.Digest) {
+		return fmt.Errorf("%w: want sha256:<64 lowercase hex characters>", ErrInvalidSnapshotDigest)
+	}
+	normalized := Normalize(copyFlow(snapshot.Flow))
+	if !reflect.DeepEqual(snapshot.Flow, normalized) {
+		return ErrSnapshotNotNormalized
+	}
+	if err := Validate(normalized); err != nil {
+		return fmt.Errorf("validate flow snapshot: %w", err)
+	}
+	digest, err := snapshotDigest(normalized)
+	if err != nil {
+		return err
+	}
+	if snapshot.Digest != digest {
+		return fmt.Errorf("%w: got %q, want %q", ErrSnapshotDigestMismatch, snapshot.Digest, digest)
+	}
+	return nil
+}
+
+func snapshotDigest(flow Flow) (string, error) {
+	payload, err := canonicalJSON(flow)
+	if err != nil {
+		return "", fmt.Errorf("marshal canonical flow snapshot: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return "sha256:" + hex.EncodeToString(digest[:]), nil
 }
 
 type canonicalFlowSnapshot struct {
@@ -122,17 +173,25 @@ func copyFlow(flow Flow) Flow {
 		ID:          flow.ID,
 		Title:       flow.Title,
 		Description: flow.Description,
-		Steps:       make([]Step, len(flow.Steps)),
+	}
+	if flow.Steps != nil {
+		copy.Steps = make([]Step, len(flow.Steps))
 	}
 
 	for i, step := range flow.Steps {
 		copy.Steps[i] = Step{
-			ID:             step.ID,
-			Title:          step.Title,
-			Instruction:    step.Instruction,
-			Inputs:         append([]Artifact{}, step.Inputs...),
-			Artifacts:      append([]Artifact{}, step.Artifacts...),
-			RequiredChecks: append([]string{}, step.RequiredChecks...),
+			ID:          step.ID,
+			Title:       step.Title,
+			Instruction: step.Instruction,
+		}
+		if step.Inputs != nil {
+			copy.Steps[i].Inputs = append([]Artifact{}, step.Inputs...)
+		}
+		if step.Artifacts != nil {
+			copy.Steps[i].Artifacts = append([]Artifact{}, step.Artifacts...)
+		}
+		if step.RequiredChecks != nil {
+			copy.Steps[i].RequiredChecks = append([]string{}, step.RequiredChecks...)
 		}
 		if step.Approval != nil {
 			copy.Steps[i].Approval = &Approval{Required: step.Approval.Required}

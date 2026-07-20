@@ -5,8 +5,8 @@ import (
 	"github.com/8noki8/devflow/internal/state"
 )
 
-func ApplyStart(flow flow.Flow, current *state.State, flowRunID string) TransitionResult {
-	if len(flow.Steps) == 0 {
+func ApplyStart(snapshot flow.FlowSnapshot, current *state.State, flowRunID string) TransitionResult {
+	if len(snapshot.Flow.Steps) == 0 {
 		return failure(errorDiagnostic(CodeFlowHasNoSteps, ""))
 	}
 	if current != nil && current.Status == state.StatusRunning {
@@ -15,9 +15,9 @@ func ApplyStart(flow flow.Flow, current *state.State, flowRunID string) Transiti
 
 	next := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               flow.ID,
+		FlowSnapshot:         flow.CloneSnapshot(snapshot),
 		Status:               state.StatusRunning,
-		CurrentStepID:        flow.Steps[0].ID,
+		CurrentStepID:        snapshot.Flow.Steps[0].ID,
 		FlowRunID:            flowRunID,
 		CurrentEntrySequence: 1,
 	}

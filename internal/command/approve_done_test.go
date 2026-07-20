@@ -13,7 +13,7 @@ func TestApproveRecordsCurrentStepApproval(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("approval")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -31,7 +31,7 @@ func TestApproveRecordsSpecifiedStepApproval(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("first")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -49,7 +49,7 @@ func TestApproveRejectsStepWithoutRequiredApproval(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("first")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -64,7 +64,7 @@ func TestApproveRejectsMissingStep(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("first")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -85,7 +85,7 @@ func TestDoneMovesToNextStepWhenGateOK(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("first")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -106,7 +106,7 @@ func TestDoneCompletesFinalStepWhenGateOK(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("final")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,7 +127,7 @@ func TestDoneRejectsMissingRequiredArtifact(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("artifact")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -142,7 +142,7 @@ func TestDoneRejectsMissingRequiredApproval(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("approval")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -157,7 +157,7 @@ func TestDoneUsesGateArtifactCheck(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("artifact")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "artifact")
@@ -177,7 +177,7 @@ func TestDoneUsesGateApprovalCheckBeforeApplyingDone(t *testing.T) {
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("approval")
 	st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "ok"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,7 +196,7 @@ func TestDoneRemovesCurrentStepFromSkippedSteps(t *testing.T) {
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("first")
 	st.SkippedSteps["first"] = state.SkippedStep{Reason: "retry"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -248,7 +248,7 @@ func approveDoneTestFlow() string {
 func approveDoneState(currentStepID string) state.State {
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               "approve-done-flow",
+		FlowSnapshot:         testSnapshot("approve-done-flow"),
 		Status:               state.StatusRunning,
 		CurrentStepID:        currentStepID,
 		FlowRunID:            "run_00000000000000000000000000000000",
@@ -308,7 +308,7 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 			setup: func(t *testing.T, root string) {
 				st := approveDoneState("first")
 				st.Status = state.StatusCompleted
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+				if err := saveCommandState(t, root, st); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -319,7 +319,7 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 			setup: func(t *testing.T, root string) {
 				st := approveDoneState("first")
 				st.Status = state.StatusFinished
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+				if err := saveCommandState(t, root, st); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -333,25 +333,13 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 			wantStatus: CodeUnsupportedStateVersion,
 		},
 		{
-			name: "flow file missing",
+			name: "current step missing from snapshot",
 			setup: func(t *testing.T, root string) {
-				st := approveDoneState("first")
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
-					t.Fatal(err)
-				}
-			},
-			wantStatus: CodeStateFlowMismatch,
-		},
-		{
-			name: "current step missing from flow",
-			setup: func(t *testing.T, root string) {
-				writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 				st := approveDoneState("missing")
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
-					t.Fatal(err)
-				}
+				st.FlowSnapshot = approveDoneState("first").FlowSnapshot
+				writeCommandStateUnchecked(t, root, st)
 			},
-			wantStatus: CodeStateStepNotInFlow,
+			wantStatus: CodeInvalidState,
 		},
 	}
 
@@ -371,7 +359,7 @@ func TestDoneDoesNotCreateMissingArtifact(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("artifact")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	artifactPath := filepath.Join(root, "docs", "required.md")

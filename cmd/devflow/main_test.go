@@ -52,8 +52,8 @@ func TestRunStartPassesFlowID(t *testing.T) {
 	runSuccess(t, root, []string{"start", "post-task-review"})
 
 	st := loadCLIState(t, root)
-	if st.FlowID != "post-task-review" {
-		t.Fatalf("FlowID = %q, want post-task-review", st.FlowID)
+	if st.FlowSnapshot.Flow.ID != "post-task-review" {
+		t.Fatalf("FlowSnapshot.Flow.ID = %q, want post-task-review", st.FlowSnapshot.Flow.ID)
 	}
 }
 
