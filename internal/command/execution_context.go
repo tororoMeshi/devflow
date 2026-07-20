@@ -8,7 +8,7 @@ import (
 	"github.com/8noki8/devflow/internal/transition"
 )
 
-const executionContextSchemaVersion = 2
+const executionContextSchemaVersion = 3
 
 type CheckStatus string
 
@@ -34,6 +34,7 @@ type ExecutionContextResult struct {
 	Flow          ExecutionFlowResult        `json:"flow"`
 	TaskSnapshot  task.TaskSnapshot          `json:"task_snapshot"`
 	State         ExecutionStateResult       `json:"state"`
+	Attempt       *ExecutionAttemptResult    `json:"attempt"`
 	Step          *ExecutionStepResult       `json:"step"`
 	Completion    *ExecutionCompletionResult `json:"completion"`
 }
@@ -44,8 +45,12 @@ type ExecutionFlowResult struct {
 }
 
 type ExecutionStateResult struct {
-	Status        state.Status `json:"status"`
-	EntrySequence uint64       `json:"entry_sequence"`
+	Status state.Status `json:"status"`
+}
+
+type ExecutionAttemptResult struct {
+	ID            string `json:"id"`
+	EntrySequence uint64 `json:"entry_sequence"`
 }
 
 type ExecutionStepResult struct {
@@ -107,11 +112,18 @@ func CurrentContext(ctx Context) CommandResult {
 			Title: loaded.Flow.Title,
 		},
 		State: ExecutionStateResult{
-			Status:        loaded.State.Status,
-			EntrySequence: loaded.State.EntrySequence(),
+			Status: loaded.State.Status,
 		},
 	}
 	if loaded.Step != nil {
+		attempt, _, ok := loaded.State.CurrentAttempt()
+		if !ok || attempt.Status != state.StepAttemptActive || attempt.StepID != loaded.Step.ID {
+			return commandFailure(CodeInvalidState)
+		}
+		result.Attempt = &ExecutionAttemptResult{
+			ID:            attempt.ID,
+			EntrySequence: attempt.EntrySequence,
+		}
 		result.Step = executionStep(*loaded.Step, loaded.State, ctx.ProjectRoot)
 		gateResult := gate.CheckDoneGate(*loaded.Step, loaded.State, ctx.ProjectRoot)
 		result.Completion = executionCompletion(gateResult, loaded.Step.ID)

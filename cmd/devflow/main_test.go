@@ -128,7 +128,11 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &value); err != nil {
 		t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
 	}
-	if value["schema_version"].(float64) != 2 || value["completion"].(map[string]any)["ready"] != false {
+	attempt, ok := value["attempt"].(map[string]any)
+	stateValue := value["state"].(map[string]any)
+	_, hasTopLevelEntrySequence := value["entry_sequence"]
+	_, hasStateEntrySequence := stateValue["entry_sequence"]
+	if value["schema_version"].(float64) != 3 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != false {
 		t.Fatalf("context = %#v", value)
 	}
 }
@@ -170,7 +174,10 @@ func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
 				t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
 			}
 			state := value["state"].(map[string]any)
-			if state["status"] != tt.want || value["step"] != nil || value["completion"] != nil {
+			attempt, hasAttempt := value["attempt"]
+			_, hasTopLevelEntrySequence := value["entry_sequence"]
+			_, hasStateEntrySequence := state["entry_sequence"]
+			if value["schema_version"].(float64) != 3 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
 				t.Fatalf("context = %#v", value)
 			}
 		})

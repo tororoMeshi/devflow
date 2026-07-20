@@ -51,6 +51,9 @@ func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testin
 	if context.SchemaVersion != executionContextSchemaVersion || context.FlowRunID == "" {
 		t.Fatalf("Context header = %#v", context)
 	}
+	if context.Attempt == nil || context.Attempt.ID != currentState.CurrentAttemptID || context.Attempt.EntrySequence != currentState.Attempts[0].EntrySequence {
+		t.Fatalf("Attempt = %#v, state = %#v", context.Attempt, currentState)
+	}
 	if !reflect.DeepEqual(context.TaskSnapshot, executionTestState(state.StatusRunning).TaskSnapshot) {
 		t.Fatalf("TaskSnapshot = %#v", context.TaskSnapshot)
 	}
@@ -90,11 +93,118 @@ func TestCurrentContextReturnsTerminalState(t *testing.T) {
 			if got.ExitCode != 0 || got.ExecutionContext == nil {
 				t.Fatalf("CurrentContext() = %#v", got)
 			}
-			if got.ExecutionContext.State.Status != status || got.ExecutionContext.Step != nil || got.ExecutionContext.Completion != nil {
+			if got.ExecutionContext.State.Status != status || got.ExecutionContext.Attempt != nil || got.ExecutionContext.Step != nil || got.ExecutionContext.Completion != nil {
 				t.Fatalf("Context = %#v", got.ExecutionContext)
 			}
 			if !reflect.DeepEqual(got.ExecutionContext.TaskSnapshot, executionTestState(status).TaskSnapshot) {
 				t.Fatalf("terminal TaskSnapshot = %#v", got.ExecutionContext.TaskSnapshot)
+			}
+		})
+	}
+}
+
+func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
+	root := t.TempDir()
+	writeExecutionFlow(t, root, "context-flow", `flow: {
+		id: "context-flow"
+		title: "Context Flow"
+		steps: [
+			{id: "design", title: "Design", instruction: "Create the design.", required_checks: ["validate", "review"]},
+			{id: "review", title: "Review", instruction: "Review the design."},
+		]
+	}`)
+	currentState := executionTestState(state.StatusRunning)
+	first, err := state.CloseStepAttempt(currentState.Attempts[0], state.StepAttemptExitDone, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := state.NewStepAttempt("review", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err = state.CloseStepAttempt(second, state.StepAttemptExitBack, "retry design")
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := state.NewStepAttempt("design", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentState.Attempts = []state.StepAttempt{first, second, third}
+	currentState.CurrentAttemptID = third.ID
+	saveExecutionState(t, root, currentState)
+
+	got := CurrentContext(Context{ProjectRoot: root})
+	if got.ExitCode != 0 || got.ExecutionContext == nil {
+		t.Fatalf("CurrentContext() = %#v", got)
+	}
+	if got.ExecutionContext.Attempt == nil || got.ExecutionContext.Attempt.ID != "attempt_00000000000000000003" || got.ExecutionContext.Attempt.EntrySequence != 3 {
+		t.Fatalf("Attempt = %#v, want third Attempt", got.ExecutionContext.Attempt)
+	}
+	if got.ExecutionContext.Step == nil || got.ExecutionContext.Step.ID != "design" {
+		t.Fatalf("Step = %#v, want design", got.ExecutionContext.Step)
+	}
+}
+
+func TestCurrentContextJSONAttemptContract(t *testing.T) {
+	for _, status := range []state.Status{state.StatusRunning, state.StatusCompleted, state.StatusFinished} {
+		t.Run(string(status), func(t *testing.T) {
+			root := t.TempDir()
+			writeExecutionFlow(t, root, "context-flow", executionTestFlow())
+			currentState := executionTestState(status)
+			saveExecutionState(t, root, currentState)
+
+			got := CurrentContext(Context{ProjectRoot: root})
+			if got.ExitCode != 0 || got.ExecutionContext == nil {
+				t.Fatalf("CurrentContext() = %#v", got)
+			}
+			data, err := json.Marshal(got.ExecutionContext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value map[string]any
+			if err := json.Unmarshal(data, &value); err != nil {
+				t.Fatal(err)
+			}
+			if value["schema_version"] != float64(3) {
+				t.Fatalf("schema_version = %#v", value["schema_version"])
+			}
+			attempt, exists := value["attempt"]
+			if !exists {
+				t.Fatal("attempt is absent")
+			}
+			if _, exists := value["attempts"]; exists {
+				t.Fatal("attempts is present")
+			}
+			if _, exists := value["attempt_history"]; exists {
+				t.Fatal("attempt_history is present")
+			}
+			stateValue := value["state"].(map[string]any)
+			if _, exists := stateValue["entry_sequence"]; exists {
+				t.Fatal("state.entry_sequence is present")
+			}
+			if _, exists := value["entry_sequence"]; exists {
+				t.Fatal("top-level entry_sequence is present")
+			}
+			if status != state.StatusRunning {
+				if attempt != nil {
+					t.Fatalf("attempt = %#v, want null", attempt)
+				}
+				return
+			}
+			attemptValue, ok := attempt.(map[string]any)
+			if !ok || len(attemptValue) != 2 || attemptValue["id"] != currentState.CurrentAttemptID || attemptValue["entry_sequence"] != float64(currentState.Attempts[0].EntrySequence) {
+				t.Fatalf("attempt = %#v", attempt)
+			}
+			if _, exists := attemptValue["step_id"]; exists {
+				t.Fatal("attempt.step_id is present")
+			}
+			if _, exists := attemptValue["status"]; exists {
+				t.Fatal("attempt.status is present")
+			}
+			stepValue := value["step"].(map[string]any)
+			if _, exists := stepValue["entry_sequence"]; exists {
+				t.Fatal("step.entry_sequence is present")
 			}
 		})
 	}
