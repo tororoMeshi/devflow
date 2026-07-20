@@ -49,7 +49,6 @@ func TestBackKeepsApprovalsAndSkippedSteps(t *testing.T) {
 	st := backSkipFinishState("third")
 	st.CompletedSteps = []string{"first", "second"}
 	st.SkippedSteps["approval"] = state.SkippedStep{Reason: "skip approval"}
-	st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "ok"}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +57,8 @@ func TestBackKeepsApprovalsAndSkippedSteps(t *testing.T) {
 
 	assertCommandSuccess(t, got)
 	loaded := loadCommandState(t, root)
-	if len(loaded.SkippedSteps) != 0 || len(loaded.Approvals) != 0 {
-		t.Fatalf("downstream state was not invalidated: %#v %#v", loaded.SkippedSteps, loaded.Approvals)
+	if len(loaded.SkippedSteps) != 0 {
+		t.Fatalf("downstream skipped state was not invalidated: %#v", loaded.SkippedSteps)
 	}
 }
 
@@ -130,7 +129,6 @@ func TestBackMovesToSpecifiedUpstreamStep(t *testing.T) {
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("final_approval")
 	st.CompletedSteps = []string{"first", "second", "third", "approval", "artifact", "final_approval"}
-	st.Approvals["final_approval"] = state.ApprovalRecord{Approved: true}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +140,7 @@ func TestBackMovesToSpecifiedUpstreamStep(t *testing.T) {
 	if loaded.CurrentStepID != "second" {
 		t.Fatalf("CurrentStepID = %q, want second", loaded.CurrentStepID)
 	}
-	if len(loaded.CompletedSteps) != 1 || loaded.CompletedSteps[0] != "first" || len(loaded.Approvals) != 0 {
+	if len(loaded.CompletedSteps) != 1 || loaded.CompletedSteps[0] != "first" {
 		t.Fatalf("state = %#v", loaded)
 	}
 }
@@ -345,7 +343,6 @@ func TestFinishKeepsExistingProgress(t *testing.T) {
 	st := backSkipFinishState("artifact")
 	st.CompletedSteps = []string{"first"}
 	st.SkippedSteps["second"] = state.SkippedStep{Reason: "not needed"}
-	st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "ok"}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
@@ -357,9 +354,6 @@ func TestFinishKeepsExistingProgress(t *testing.T) {
 	assertStringSlice(t, loaded.CompletedSteps, []string{"first"})
 	if loaded.SkippedSteps["second"].Reason != "not needed" {
 		t.Fatalf("SkippedSteps = %#v", loaded.SkippedSteps)
-	}
-	if !loaded.Approvals["approval"].Approved || loaded.Approvals["approval"].Note != "ok" {
-		t.Fatalf("Approvals = %#v", loaded.Approvals)
 	}
 }
 

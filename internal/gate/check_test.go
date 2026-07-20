@@ -101,11 +101,7 @@ func TestCheckDoneGate(t *testing.T) {
 				ID:       "human_approval",
 				Approval: &flow.Approval{Required: true},
 			},
-			state: state.State{
-				Approvals: map[string]state.ApprovalRecord{
-					"human_approval": {Approved: true},
-				},
-			},
+			state:  approvalGateState(t, "human_approval", &state.ApprovalRecord{Note: "ok"}),
 			wantOK: true,
 		},
 		{
@@ -114,20 +110,16 @@ func TestCheckDoneGate(t *testing.T) {
 				ID:       "human_approval",
 				Approval: &flow.Approval{Required: true},
 			},
-			state:                state.State{Approvals: map[string]state.ApprovalRecord{}},
+			state:                approvalGateState(t, "human_approval", nil),
 			wantMissingApprovals: []string{"human_approval"},
 		},
 		{
-			name: "fails when required approval is false",
+			name: "does not use approval from a past attempt",
 			step: flow.Step{
 				ID:       "human_approval",
 				Approval: &flow.Approval{Required: true},
 			},
-			state: state.State{
-				Approvals: map[string]state.ApprovalRecord{
-					"human_approval": {Approved: false},
-				},
-			},
+			state:                approvalGateReentryState(t),
 			wantMissingApprovals: []string{"human_approval"},
 		},
 		{
@@ -136,11 +128,7 @@ func TestCheckDoneGate(t *testing.T) {
 				ID:       "human_approval",
 				Approval: &flow.Approval{Required: true},
 			},
-			state: state.State{
-				Approvals: map[string]state.ApprovalRecord{
-					"other_step": {Approved: true},
-				},
-			},
+			state:                approvalGateState(t, "other_step", &state.ApprovalRecord{Note: "ok"}),
 			wantMissingApprovals: []string{"human_approval"},
 		},
 		{
@@ -152,7 +140,7 @@ func TestCheckDoneGate(t *testing.T) {
 				},
 				Approval: &flow.Approval{Required: true},
 			},
-			state:                state.State{Approvals: map[string]state.ApprovalRecord{}},
+			state:                approvalGateState(t, "human_approval", nil),
 			wantMissingArtifacts: []string{"docs/code-review.md"},
 			wantMissingApprovals: []string{"human_approval"},
 		},
@@ -169,6 +157,24 @@ func TestCheckDoneGate(t *testing.T) {
 			assertGateResult(t, got, tt.wantOK, tt.wantMissingArtifacts, tt.wantMissingApprovals)
 		})
 	}
+}
+
+func approvalGateState(t testing.TB, stepID string, approval *state.ApprovalRecord) state.State {
+	t.Helper()
+	attempt, err := state.NewStepAttempt(stepID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt.Approval = approval
+	return state.State{Attempts: []state.StepAttempt{attempt}, CurrentAttemptID: attempt.ID}
+}
+
+func approvalGateReentryState(t testing.TB) state.State {
+	t.Helper()
+	first := approvalGateState(t, "human_approval", &state.ApprovalRecord{Note: "old"}).Attempts[0]
+	first, _ = state.CloseStepAttempt(first, state.StepAttemptExitBack, "retry")
+	current, _ := state.NewStepAttempt("human_approval", 2)
+	return state.State{Attempts: []state.StepAttempt{first, current}, CurrentAttemptID: current.ID}
 }
 
 func TestCheckDoneGatePreservesRequiredCheckOrder(t *testing.T) {

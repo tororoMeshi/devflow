@@ -241,6 +241,28 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 	if state.SchemaVersion != CurrentSchemaVersion {
 		return &UnsupportedSchemaVersionError{Actual: state.SchemaVersion}
 	}
+	if _, ok := raw["approvals"]; ok {
+		return errors.New("unsupported top-level field \"approvals\"")
+	}
+	if attemptsJSON, ok := raw["attempts"]; ok {
+		var attempts []map[string]json.RawMessage
+		if err := json.Unmarshal(attemptsJSON, &attempts); err != nil {
+			return fmt.Errorf("invalid attempts: %w", err)
+		}
+		for index, attempt := range attempts {
+			approvalJSON, ok := attempt["approval"]
+			if !ok || string(approvalJSON) == "null" {
+				continue
+			}
+			var approval map[string]json.RawMessage
+			if err := json.Unmarshal(approvalJSON, &approval); err != nil {
+				return fmt.Errorf("invalid attempt %d approval: %w", index, err)
+			}
+			if _, ok := approval["approved"]; ok {
+				return fmt.Errorf("unsupported field \"approved\" in attempt %d approval", index)
+			}
+		}
+	}
 	for _, field := range []string{"schema_version", "flow_snapshot", "task_snapshot", "status", "current_step_id", "attempts"} {
 		if _, ok := raw[field]; !ok {
 			return fmt.Errorf("missing required field %q", field)
@@ -268,7 +290,7 @@ func validateState(state State) error {
 	if !IsValidFlowRunID(state.FlowRunID) {
 		return errors.New("invalid flow_run_id")
 	}
-	if state.CompletedSteps == nil || state.SkippedSteps == nil || state.Approvals == nil || state.BackHistory == nil {
+	if state.CompletedSteps == nil || state.SkippedSteps == nil || state.BackHistory == nil {
 		return errors.New("state collections must not be null")
 	}
 	if !flowHasStep(state.FlowSnapshot.Flow, state.CurrentStepID) {
@@ -298,6 +320,9 @@ func validateState(state State) error {
 			return fmt.Errorf("attempt step_id %q is not in flow_snapshot", attempt.StepID)
 		}
 		step, _ := flowStep(state.FlowSnapshot.Flow, attempt.StepID)
+		if attempt.Approval != nil && (step.Approval == nil || !step.Approval.Required) {
+			return fmt.Errorf("attempt step %q does not require approval", attempt.StepID)
+		}
 		for checkID, result := range attempt.CheckResults {
 			if !containsString(step.RequiredChecks, checkID) {
 				return fmt.Errorf("attempt check %q is not required by step %q", checkID, attempt.StepID)
@@ -341,6 +366,8 @@ func validateState(state State) error {
 	}
 	return nil
 }
+
+func Validate(value State) error { return validateState(value) }
 
 func flowHasStep(snapshotFlow flow.Flow, stepID string) bool {
 	_, ok := flowStep(snapshotFlow, stepID)

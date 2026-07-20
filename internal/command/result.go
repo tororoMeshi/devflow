@@ -46,7 +46,7 @@ type StatusResult struct {
 	CurrentStepTitle string
 	CompletedSteps   []string
 	SkippedSteps     map[string]SkippedStepResult
-	Approvals        map[string]ApprovalResult
+	Approval         *ApprovalResult
 	EntrySequence    uint64
 	Checks           []CheckStatusResult
 }
@@ -56,6 +56,7 @@ type SkippedStepResult struct {
 }
 
 type ApprovalResult struct {
+	StepID   string
 	Approved bool
 	Note     string
 }
@@ -85,7 +86,8 @@ type ArtifactResult struct {
 }
 
 type RequiredApprovalResult struct {
-	StepID string
+	StepID    string
+	AttemptID string
 }
 
 type AfterCompletingResult struct {
@@ -93,13 +95,14 @@ type AfterCompletingResult struct {
 }
 
 type SuccessResult struct {
-	StartedFlowID   string
-	CurrentStepID   string
-	CompletedStepID string
-	NextStepID      string
-	CompletedFlowID string
-	ApprovedStepID  string
-	MovedBackToID   string
-	SkippedStepID   string
-	FinishedFlowID  string
+	StartedFlowID     string
+	CurrentStepID     string
+	CompletedStepID   string
+	NextStepID        string
+	CompletedFlowID   string
+	ApprovedStepID    string
+	ApprovedAttemptID string
+	MovedBackToID     string
+	SkippedStepID     string
+	FinishedFlowID    string
 }

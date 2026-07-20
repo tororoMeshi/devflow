@@ -75,6 +75,9 @@ func TestNewStepAttempt(t *testing.T) {
 	if attempt.CheckResults == nil {
 		t.Fatal("CheckResults is nil")
 	}
+	if attempt.Approval != nil {
+		t.Fatalf("Approval = %#v, want nil", attempt.Approval)
+	}
 
 	for _, stepID := range []string{"", " \t\n ", "\u3000\u2003"} {
 		if _, err := NewStepAttempt(stepID, 1); !errors.Is(err, ErrInvalidStepAttemptStepID) {
@@ -83,6 +86,65 @@ func TestNewStepAttempt(t *testing.T) {
 	}
 	if _, err := NewStepAttempt("step", 0); !errors.Is(err, ErrInvalidStepAttemptEntrySequence) {
 		t.Fatalf("NewStepAttempt sequence error = %v", err)
+	}
+}
+
+func TestApproveStepAttempt(t *testing.T) {
+	original := mustNewStepAttempt(t)
+	original.CheckResults["check"] = CheckResult{ExitCode: 0}
+	before := withAttempt(original, func(*StepAttempt) {})
+	approved, err := ApproveStepAttempt(original, " approved ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Approval == nil || approved.Approval.Note != " approved " {
+		t.Fatalf("Approval = %#v", approved.Approval)
+	}
+	if !reflect.DeepEqual(original, before) || original.Approval != nil {
+		t.Fatal("input attempt changed")
+	}
+	approved.CheckResults["check"] = CheckResult{ExitCode: 1}
+	if original.CheckResults["check"].ExitCode != 0 {
+		t.Fatal("CheckResults map is shared")
+	}
+
+	for _, note := range []string{"", " \t\n", "\u3000\u2003"} {
+		if _, err := ApproveStepAttempt(original, note); !errors.Is(err, ErrInvalidApprovalNote) {
+			t.Fatalf("note %q: %v", note, err)
+		}
+	}
+	closed := mustCloseStepAttempt(t, original, StepAttemptExitDone, "")
+	if _, err := ApproveStepAttempt(closed, "ok"); !errors.Is(err, ErrStepAttemptNotActive) {
+		t.Fatalf("closed: %v", err)
+	}
+	if _, err := ApproveStepAttempt(approved, "replacement"); !errors.Is(err, ErrStepAttemptAlreadyApproved) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	if approved.Approval.Note != " approved " {
+		t.Fatal("duplicate approval overwrote note")
+	}
+
+	closedApproved, err := CloseStepAttempt(approved, StepAttemptExitDone, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closedApproved.Approval == nil || closedApproved.Approval.Note != " approved " {
+		t.Fatal("close lost approval")
+	}
+	closedApproved.Approval.Note = "changed"
+	if approved.Approval.Note != " approved " {
+		t.Fatal("CloseStepAttempt shares Approval pointer")
+	}
+}
+
+func TestIsValidStepAttemptID(t *testing.T) {
+	if !IsValidStepAttemptID("attempt_00000000000000000001") {
+		t.Fatal("valid ID rejected")
+	}
+	for _, value := range []string{"", "attempt_1", "attempt_0000000000000000000", "attempt_000000000000000000001", "attempt_0000000000000000000x", "other_00000000000000000001", "attempt_00000000000000000000", "attempt_0000000000000000000/"} {
+		if IsValidStepAttemptID(value) {
+			t.Fatalf("invalid ID accepted: %q", value)
+		}
 	}
 }
 
@@ -123,6 +185,7 @@ func TestValidateStepAttempt(t *testing.T) {
 		{"back blank reason", withAttempt(validBack, func(a *StepAttempt) { a.Reason = " \t" }), ErrInvalidStepAttemptReason},
 		{"finish blank reason", withAttempt(validFinish, func(a *StepAttempt) { a.Reason = "\n" }), ErrInvalidStepAttemptReason},
 		{"nil check results", withAttempt(validActive, func(a *StepAttempt) { a.CheckResults = nil }), ErrNilStepAttemptCheckResults},
+		{"blank approval note", withAttempt(validActive, func(a *StepAttempt) { a.Approval = &ApprovalRecord{Note: " \t"} }), ErrInvalidApprovalNote},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateStepAttempt(tt.attempt)
@@ -234,6 +297,10 @@ func TestStepAttemptJSON(t *testing.T) {
 	active := mustNewStepAttempt(t)
 	active.StepID = "implement"
 	closed := mustCloseStepAttempt(t, active, StepAttemptExitSkip, "not applicable")
+	approved, err := ApproveStepAttempt(active, "ok")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tt := range []struct {
 		name    string
@@ -242,6 +309,7 @@ func TestStepAttemptJSON(t *testing.T) {
 	}{
 		{"active", active, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","check_results":{}}`},
 		{"closed skip", closed, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"closed","exit_reason":"skip","reason":"not applicable","check_results":{}}`},
+		{"approved", approved, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","check_results":{},"approval":{"note":"ok"}}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := json.Marshal(tt.attempt)

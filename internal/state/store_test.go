@@ -182,8 +182,48 @@ func TestStoreLoadRejectsOldSchemaAndMissingTaskSnapshot(t *testing.T) {
 		mutate func(map[string]any)
 	}{
 		{"schema 4", func(raw map[string]any) { raw["schema_version"] = float64(4) }},
+		{"schema 5", func(raw map[string]any) {
+			raw["schema_version"] = float64(5)
+			raw["approvals"] = map[string]any{"first": map[string]any{"approved": true, "note": "old"}}
+		}},
 		{"schema 3", func(raw map[string]any) { raw["schema_version"] = float64(3) }},
 		{"missing task snapshot", func(raw map[string]any) { delete(raw, "task_snapshot") }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := testStore(t)
+			value := testState(t, StatusRunning, "first")
+			data, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(raw)
+			path, _ := store.RunStatePath(value.FlowRunID)
+			writeJSON(t, path, raw)
+			writePointer(t, store, value.FlowRunID)
+			got := store.LoadCurrent()
+			if got.Status != LoadInvalid || got.Err == nil {
+				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
+	}
+}
+
+func TestStoreLoadRejectsLegacyApprovalFieldsInSchemaV6(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"top-level approvals", func(raw map[string]any) {
+			raw["approvals"] = map[string]any{"first": map[string]any{"note": "old"}}
+		}},
+		{"attempt approval approved", func(raw map[string]any) {
+			attempt := raw["attempts"].([]any)[0].(map[string]any)
+			attempt["approval"] = map[string]any{"approved": true, "note": "old"}
+		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			store := testStore(t)
@@ -363,10 +403,38 @@ func TestStorePreservesStateSchemaAndSnapshotValidation(t *testing.T) {
 			if err := store.CreateRun(value); err != nil {
 				t.Fatal(err)
 			}
-			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 5 {
+			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != CurrentSchemaVersion {
 				t.Fatalf("LoadCurrent = %#v", got)
 			}
 		})
+	}
+}
+
+func TestStoreRoundTripsAttemptApproval(t *testing.T) {
+	store := testStore(t)
+	value := testState(t, StatusRunning, "first")
+	fl := value.FlowSnapshot.Flow
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	var err error
+	value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "stored"}
+	if err := store.CreateRun(value); err != nil {
+		t.Fatal(err)
+	}
+	loaded := store.LoadCurrent()
+	if loaded.Status != LoadOK || loaded.State.Attempts[0].Approval == nil || loaded.State.Attempts[0].Approval.Note != "stored" {
+		t.Fatalf("LoadCurrent = %#v", loaded)
+	}
+	loaded.State.Attempts[0].Approval.Note = "saved"
+	if err := store.SaveCurrent(*loaded.State); err != nil {
+		t.Fatal(err)
+	}
+	again := store.LoadCurrent()
+	if again.Status != LoadOK || again.State.Attempts[0].Approval.Note != "saved" {
+		t.Fatalf("LoadCurrent after Save = %#v", again)
 	}
 }
 

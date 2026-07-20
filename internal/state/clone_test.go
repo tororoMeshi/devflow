@@ -12,9 +12,8 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 		SkippedSteps: map[string]SkippedStep{
 			"check_docs": {Reason: "not needed"},
 		},
-		Approvals: map[string]ApprovalRecord{
-			"human_approval": {Approved: true, Note: "ok"},
-		},
+		Attempts:         []StepAttempt{{ID: "attempt_00000000000000000001", StepID: "human_approval", EntrySequence: 1, Status: StepAttemptActive, CheckResults: map[string]CheckResult{}, Approval: &ApprovalRecord{Note: "ok"}}},
+		CurrentAttemptID: "attempt_00000000000000000001",
 		BackHistory: []BackHistory{
 			{FromStepID: "human_approval", ToStepID: "write_review", Reason: "revise", InvalidatedStepIDs: []string{"write_review", "human_approval"}},
 		},
@@ -25,7 +24,7 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 
 	cloned.CompletedSteps[0] = "changed"
 	cloned.SkippedSteps["check_docs"] = SkippedStep{Reason: "changed"}
-	cloned.Approvals["human_approval"] = ApprovalRecord{Approved: false, Note: "changed"}
+	cloned.Attempts[0].Approval.Note = "changed"
 	cloned.BackHistory[0].FromStepID = "changed"
 	cloned.BackHistory[0].InvalidatedStepIDs[0] = "changed"
 	cloned.BackHistory[0].InvalidatedStepIDs = append(cloned.BackHistory[0].InvalidatedStepIDs, "added")
@@ -40,8 +39,8 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	if original.SkippedSteps["check_docs"].Reason != "not needed" {
 		t.Fatalf("SkippedSteps shares map")
 	}
-	if !original.Approvals["human_approval"].Approved || original.Approvals["human_approval"].Note != "ok" {
-		t.Fatalf("Approvals shares map")
+	if original.Attempts[0].Approval.Note != "ok" {
+		t.Fatalf("Approval pointer is shared")
 	}
 	if original.BackHistory[0].FromStepID != "human_approval" {
 		t.Fatalf("BackHistory record was shared")
@@ -82,9 +81,6 @@ func TestStateCloneNormalizesNilCollections(t *testing.T) {
 	if original.SkippedSteps != nil {
 		t.Fatalf("Clone mutated original SkippedSteps")
 	}
-	if original.Approvals != nil {
-		t.Fatalf("Clone mutated original Approvals")
-	}
 	if original.BackHistory != nil {
 		t.Fatalf("Clone mutated original BackHistory")
 	}
@@ -112,9 +108,6 @@ func assertNonNilCollections(t *testing.T, state State) {
 	}
 	if state.SkippedSteps == nil {
 		t.Fatalf("SkippedSteps is nil")
-	}
-	if state.Approvals == nil {
-		t.Fatalf("Approvals is nil")
 	}
 	if state.BackHistory == nil {
 		t.Fatalf("BackHistory is nil")

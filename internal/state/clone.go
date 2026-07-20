@@ -23,12 +23,6 @@ func (s State) Clone() State {
 			next.SkippedSteps[stepID] = skipped
 		}
 	}
-	if s.Approvals != nil {
-		next.Approvals = make(map[string]ApprovalRecord, len(s.Approvals))
-		for stepID, approval := range s.Approvals {
-			next.Approvals[stepID] = approval
-		}
-	}
 	if s.BackHistory != nil {
 		next.BackHistory = make([]BackHistory, len(s.BackHistory))
 		for i, history := range s.BackHistory {
@@ -43,6 +37,7 @@ func (s State) Clone() State {
 		for i, attempt := range s.Attempts {
 			next.Attempts[i] = attempt
 			next.Attempts[i].CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
+			next.Attempts[i].Approval = cloneApprovalRecord(attempt.Approval)
 		}
 	}
 
@@ -59,9 +54,6 @@ func (s *State) Normalize() {
 	}
 	if s.SkippedSteps == nil {
 		s.SkippedSteps = map[string]SkippedStep{}
-	}
-	if s.Approvals == nil {
-		s.Approvals = map[string]ApprovalRecord{}
 	}
 	if s.BackHistory == nil {
 		s.BackHistory = []BackHistory{}

@@ -1,7 +1,25 @@
 package command
 
+import (
+	"github.com/8noki8/devflow/internal/state"
+	"github.com/8noki8/devflow/internal/transition"
+)
+
 func Status(ctx Context) CommandResult {
-	active, diagnostics := LoadActiveFlow(ctx)
+	loaded := NewStore(ctx).LoadCurrent()
+	if loaded.Status == state.LoadNoState {
+		return commandFailure(CodeNoActiveFlow)
+	}
+	if loaded.Status == state.LoadInvalid {
+		if isUnsupportedStateVersion(loaded.Err) {
+			return CommandResult{ExitCode: 1, Diagnostics: []transition.Diagnostic{unsupportedStateVersionDiagnostic()}}
+		}
+		return commandFailure(CodeInvalidState)
+	}
+	if loaded.State == nil {
+		return commandFailure(CodeInvalidState)
+	}
+	active, diagnostics := activeFlowFromState(*loaded.State)
 	if len(diagnostics) > 0 {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
 	}
@@ -15,7 +33,7 @@ func Status(ctx Context) CommandResult {
 			CurrentStepTitle: active.CurrentStep.Title,
 			CompletedSteps:   append([]string(nil), active.State.CompletedSteps...),
 			SkippedSteps:     skippedStepResults(active),
-			Approvals:        approvalResults(active),
+			Approval:         approvalResult(active),
 			EntrySequence:    active.State.EntrySequence(),
 			Checks:           checkStatusResults(active),
 		},
@@ -49,13 +67,10 @@ func skippedStepResults(active ActiveFlow) map[string]SkippedStepResult {
 	return results
 }
 
-func approvalResults(active ActiveFlow) map[string]ApprovalResult {
-	results := make(map[string]ApprovalResult, len(active.State.Approvals))
-	for stepID, approval := range active.State.Approvals {
-		results[stepID] = ApprovalResult{
-			Approved: approval.Approved,
-			Note:     approval.Note,
-		}
+func approvalResult(active ActiveFlow) *ApprovalResult {
+	attempt, _, ok := active.State.CurrentAttempt()
+	if !ok || attempt.Status != state.StepAttemptActive || attempt.Approval == nil {
+		return nil
 	}
-	return results
+	return &ApprovalResult{StepID: attempt.StepID, Approved: true, Note: attempt.Approval.Note}
 }

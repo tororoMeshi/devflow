@@ -8,7 +8,7 @@ import (
 	"github.com/8noki8/devflow/internal/flow"
 )
 
-func TestStateV5JSONContract(t *testing.T) {
+func TestStateV6JSONContract(t *testing.T) {
 	value := testStateWithRequiredCheck(t, "unused")
 	value.Attempts[0].CheckResults["unused"] = CheckResult{ExitCode: 0}
 	if err := validateState(value); err != nil {
@@ -22,8 +22,11 @@ func TestStateV5JSONContract(t *testing.T) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if value.SchemaVersion != 5 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
-		t.Fatalf("v5 fields missing: %s", data)
+	if value.SchemaVersion != 6 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
+		t.Fatalf("v6 fields missing: %s", data)
+	}
+	if _, ok := raw["approvals"]; ok {
+		t.Fatal("top-level approvals must not be present")
 	}
 	if _, ok := raw["current_entry_sequence"]; ok {
 		t.Fatal("current_entry_sequence must not be present")
@@ -47,7 +50,7 @@ func TestStateV5JSONContract(t *testing.T) {
 	}
 }
 
-func TestValidateStateV5AttemptInvariants(t *testing.T) {
+func TestValidateStateV6AttemptInvariants(t *testing.T) {
 	valid := testState(t, StatusRunning, "first")
 	closed, err := CloseStepAttempt(valid.Attempts[0], StepAttemptExitDone, "")
 	if err != nil {
@@ -72,7 +75,6 @@ func TestValidateStateV5AttemptInvariants(t *testing.T) {
 		{"attempts empty", valid, func(s *State) { s.Attempts = []StepAttempt{} }},
 		{"completed steps nil", valid, func(s *State) { s.CompletedSteps = nil }},
 		{"skipped steps nil", valid, func(s *State) { s.SkippedSteps = nil }},
-		{"approvals nil", valid, func(s *State) { s.Approvals = nil }},
 		{"back history nil", valid, func(s *State) { s.BackHistory = nil }},
 		{"sequence starts zero", valid, func(s *State) { s.Attempts[0].EntrySequence = 0 }},
 		{"sequence gap", twoAttempts, func(s *State) {
@@ -128,6 +130,87 @@ func TestValidateStateV5AttemptInvariants(t *testing.T) {
 	}
 }
 
+func TestValidateStateV6ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
+	value := testState(t, StatusRunning, "first")
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "ok"}
+	if err := validateState(value); err == nil {
+		t.Fatal("approval on non-required step accepted")
+	}
+	fl := value.FlowSnapshot.Flow
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	snapshot, err := flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.FlowSnapshot = snapshot
+	if err := validateState(value); err != nil {
+		t.Fatalf("required approval rejected: %v", err)
+	}
+	value.FlowSnapshot.Flow.Steps[0].Approval.Required = false
+	if err := validateState(value); err == nil {
+		t.Fatal("Required:false approval accepted")
+	}
+}
+
+func TestStateV6ApprovalJSONShapeAndRoundTrip(t *testing.T) {
+	value := testState(t, StatusRunning, "first")
+	fl := value.FlowSnapshot.Flow
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	var err error
+	value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: " keep whitespace "}
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["approvals"]; ok {
+		t.Fatal("top-level approvals is present")
+	}
+	attempt := raw["attempts"].([]any)[0].(map[string]any)
+	approval := attempt["approval"].(map[string]any)
+	if len(approval) != 1 || approval["note"] != " keep whitespace " {
+		t.Fatalf("approval JSON = %#v", approval)
+	}
+	if _, ok := approval["approved"]; ok {
+		t.Fatal("approved field is present")
+	}
+	var roundTrip State
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateState(roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, roundTrip) {
+		t.Fatalf("round trip mismatch")
+	}
+}
+
+func TestAttemptLookupDoesNotShareApproval(t *testing.T) {
+	value := testState(t, StatusRunning, "first")
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "original"}
+	current, _, ok := value.CurrentAttempt()
+	if !ok {
+		t.Fatal("current attempt missing")
+	}
+	current.Approval.Note = "changed"
+	last, ok := value.LastAttempt()
+	if !ok {
+		t.Fatal("last attempt missing")
+	}
+	last.Approval.Note = "changed again"
+	if value.Attempts[0].Approval.Note != "original" {
+		t.Fatal("lookup shares Approval pointer")
+	}
+}
+
 func testStateWithRequiredCheck(t testing.TB, checkID string) State {
 	t.Helper()
 	value := testState(t, StatusRunning, "first")
@@ -141,7 +224,7 @@ func testStateWithRequiredCheck(t testing.TB, checkID string) State {
 	return value
 }
 
-func TestValidateStateV5TerminalInvariants(t *testing.T) {
+func TestValidateStateV6TerminalInvariants(t *testing.T) {
 	completed := testState(t, StatusCompleted, "first")
 	finished := testState(t, StatusFinished, "first")
 	tests := []struct {
