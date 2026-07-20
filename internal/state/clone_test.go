@@ -4,7 +4,7 @@ import "testing"
 
 func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	original := State{
-		FlowID:         "post-task-review",
+		FlowSnapshot:   testState(t, StatusRunning, "first").FlowSnapshot,
 		Status:         StatusRunning,
 		CurrentStepID:  "check_changes",
 		CompletedSteps: []string{"check_changes"},
@@ -29,6 +29,7 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	cloned.BackHistory[0].InvalidatedStepIDs[0] = "changed"
 	cloned.BackHistory[0].InvalidatedStepIDs = append(cloned.BackHistory[0].InvalidatedStepIDs, "added")
 	cloned.Finish.Reason = "changed"
+	cloned.FlowSnapshot.Flow.Steps[0].Instruction = "changed"
 
 	if original.CompletedSteps[0] != "check_changes" {
 		t.Fatalf("CompletedSteps shares backing array")
@@ -54,11 +55,14 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	if original.Finish.Reason != "out of scope" {
 		t.Fatalf("Finish pointer was shared")
 	}
+	if original.FlowSnapshot.Flow.Steps[0].Instruction != "Do first." {
+		t.Fatalf("FlowSnapshot shares Flow memory")
+	}
 }
 
 func TestStateCloneNormalizesNilCollections(t *testing.T) {
 	original := State{
-		FlowID:        "post-task-review",
+		FlowSnapshot:  testState(t, StatusRunning, "first").FlowSnapshot,
 		Status:        StatusRunning,
 		CurrentStepID: "check_changes",
 	}

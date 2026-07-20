@@ -15,7 +15,7 @@ func TestStatusReturnsActiveFlowState(t *testing.T) {
 	st.CompletedSteps = []string{"first"}
 	st.SkippedSteps["skipped"] = state.SkippedStep{Reason: "not needed"}
 	st.Approvals["current"] = state.ApprovalRecord{Approved: true, Note: "ok"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,7 +52,7 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
 	st := statusPromptState("status-flow", state.StatusRunning, "current")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,7 +93,7 @@ func TestPromptTreatsNoArtifactsAndNoApprovalAsEmpty(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
 			st := statusPromptState("status-flow", state.StatusRunning, currentStepID)
-			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
 
@@ -135,7 +135,7 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 			name: "completed state",
 			setup: func(t *testing.T, root string) {
 				st := statusPromptState("status-flow", state.StatusCompleted, "current")
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+				if err := saveCommandState(t, root, st); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -145,7 +145,7 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 			name: "finished state",
 			setup: func(t *testing.T, root string) {
 				st := statusPromptState("status-flow", state.StatusFinished, "current")
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+				if err := saveCommandState(t, root, st); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -159,25 +159,13 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 			wantStatus: CodeUnsupportedStateVersion,
 		},
 		{
-			name: "flow file missing",
+			name: "current step missing from snapshot",
 			setup: func(t *testing.T, root string) {
-				st := statusPromptState("status-flow", state.StatusRunning, "current")
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
-					t.Fatal(err)
-				}
-			},
-			wantStatus: CodeStateFlowMismatch,
-		},
-		{
-			name: "current step missing from flow",
-			setup: func(t *testing.T, root string) {
-				writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
 				st := statusPromptState("status-flow", state.StatusRunning, "missing")
-				if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
-					t.Fatal(err)
-				}
+				st.FlowSnapshot = statusPromptState("status-flow", state.StatusRunning, "current").FlowSnapshot
+				writeCommandStateUnchecked(t, root, st)
 			},
-			wantStatus: CodeStateStepNotInFlow,
+			wantStatus: CodeInvalidState,
 		},
 	}
 
@@ -207,7 +195,7 @@ func TestStatusAndPromptDoNotUpdateState(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
 			st := statusPromptState("status-flow", state.StatusRunning, "current")
-			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
 			before := readCommandFile(t, StatePath(root))
@@ -227,7 +215,7 @@ func TestPromptDoesNotCheckArtifactExistence(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
 	st := statusPromptState("status-flow", state.StatusRunning, "current")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	assertNoFile(t, filepath.Join(root, "docs", "required.md"))
@@ -280,7 +268,7 @@ func statusPromptTestFlow() string {
 func statusPromptState(flowID string, status state.Status, currentStepID string) state.State {
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               flowID,
+		FlowSnapshot:         testSnapshot(flowID),
 		Status:               status,
 		CurrentStepID:        currentStepID,
 		FlowRunID:            "run_00000000000000000000000000000000",

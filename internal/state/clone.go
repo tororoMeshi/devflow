@@ -1,9 +1,11 @@
 package state
 
+import "github.com/8noki8/devflow/internal/flow"
+
 func (s State) Clone() State {
 	next := State{
 		SchemaVersion:        s.SchemaVersion,
-		FlowID:               s.FlowID,
+		FlowSnapshot:         flow.CloneSnapshot(s.FlowSnapshot),
 		Status:               s.Status,
 		CurrentStepID:        s.CurrentStepID,
 		Finish:               cloneFinish(s.Finish),

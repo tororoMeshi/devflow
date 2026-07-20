@@ -1,8 +1,12 @@
 package state
 
-import "regexp"
+import (
+	"regexp"
 
-const CurrentSchemaVersion = 2
+	"github.com/8noki8/devflow/internal/flow"
+)
+
+const CurrentSchemaVersion = 3
 
 var flowRunIDPattern = regexp.MustCompile(`^run_[0-9a-f]{32}$`)
 
@@ -16,7 +20,7 @@ const (
 
 type State struct {
 	SchemaVersion        int                       `json:"schema_version"`
-	FlowID               string                    `json:"flow_id"`
+	FlowSnapshot         flow.FlowSnapshot         `json:"flow_snapshot"`
 	Status               Status                    `json:"status"`
 	CurrentStepID        string                    `json:"current_step_id"`
 	CompletedSteps       []string                  `json:"completed_steps"`

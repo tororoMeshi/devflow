@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/8noki8/devflow/internal/flow"
 )
 
 type Store struct {
@@ -31,7 +33,7 @@ type UnsupportedSchemaVersionError struct {
 }
 
 func (e *UnsupportedSchemaVersionError) Error() string {
-	return fmt.Sprintf("unsupported state schema version %d", e.Actual)
+	return fmt.Sprintf("unsupported state schema version %d (supported: %d)", e.Actual, CurrentSchemaVersion)
 }
 
 func (s Store) Load() LoadResult {
@@ -104,7 +106,10 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 	if _, ok := raw["schema_version"]; !ok {
 		return &UnsupportedSchemaVersionError{}
 	}
-	for _, field := range []string{"schema_version", "flow_id", "status", "current_step_id"} {
+	if state.SchemaVersion != CurrentSchemaVersion {
+		return &UnsupportedSchemaVersionError{Actual: state.SchemaVersion}
+	}
+	for _, field := range []string{"schema_version", "flow_snapshot", "status", "current_step_id"} {
 		if _, ok := raw[field]; !ok {
 			return fmt.Errorf("missing required field %q", field)
 		}
@@ -116,8 +121,11 @@ func validateState(state State) error {
 	if state.SchemaVersion != CurrentSchemaVersion {
 		return &UnsupportedSchemaVersionError{Actual: state.SchemaVersion}
 	}
-	if state.FlowID == "" {
-		return errors.New("missing required field \"flow_id\"")
+	if err := flow.ValidateSnapshot(state.FlowSnapshot); err != nil {
+		return fmt.Errorf("invalid flow_snapshot: %w", err)
+	}
+	if state.FlowSnapshot.Flow.ID == "" {
+		return errors.New("missing required flow_snapshot.flow.id")
 	}
 	if state.CurrentStepID == "" {
 		return errors.New("missing required field \"current_step_id\"")
@@ -127,6 +135,9 @@ func validateState(state State) error {
 	}
 	if state.CurrentEntrySequence == 0 {
 		return errors.New("invalid current_entry_sequence")
+	}
+	if state.Status == StatusRunning && !flowHasStep(state.FlowSnapshot.Flow, state.CurrentStepID) {
+		return errors.New("current_step_id is not in flow_snapshot")
 	}
 	for _, result := range state.CheckResults {
 		if result.EntrySequence != state.CurrentEntrySequence {
@@ -139,4 +150,13 @@ func validateState(state State) error {
 	default:
 		return fmt.Errorf("unknown status %q", state.Status)
 	}
+}
+
+func flowHasStep(snapshotFlow flow.Flow, stepID string) bool {
+	for _, step := range snapshotFlow.Steps {
+		if step.ID == stepID {
+			return true
+		}
+	}
+	return false
 }

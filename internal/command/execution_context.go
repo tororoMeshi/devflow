@@ -131,7 +131,7 @@ func LoadExecutionContext(ctx Context) (LoadedExecutionContext, []transition.Dia
 		if loaded.State == nil {
 			return LoadedExecutionContext{}, []transition.Diagnostic{commandErrorDiagnostic(CodeInvalidState)}
 		}
-		active, diagnostics := loadAndValidateActiveFlow(ctx, *loaded.State)
+		active, diagnostics := activeFlowFromState(*loaded.State)
 		if len(diagnostics) > 0 {
 			return LoadedExecutionContext{}, diagnostics
 		}

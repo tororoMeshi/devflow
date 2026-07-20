@@ -1,8 +1,10 @@
 package command
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/8noki8/devflow/internal/flow"
@@ -22,6 +24,34 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 		t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 	}
 	assertStartedState(t, *loaded.State, "test-flow", "first")
+	flowPath := filepath.Join(FlowDir(root), "test-flow.cue")
+	if loaded.State.FlowSnapshot.Source.Path != flowPath {
+		t.Fatalf("FlowSnapshot.Source.Path = %q, want %q", loaded.State.FlowSnapshot.Source.Path, flowPath)
+	}
+	if !state.IsValidFlowRunID(loaded.State.FlowRunID) {
+		t.Fatalf("FlowRunID = %q", loaded.State.FlowRunID)
+	}
+	expectedFlow, err := flow.LoadFile(flowPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedSnapshot, err := flow.BuildSnapshot(expectedFlow, flow.FlowSource{Path: flowPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loaded.State.FlowSnapshot, expectedSnapshot) {
+		t.Fatalf("FlowSnapshot = %#v, want %#v", loaded.State.FlowSnapshot, expectedSnapshot)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(readCommandFile(t, StatePath(root)), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["flow_snapshot"]; !ok {
+		t.Fatal("top-level flow_snapshot is missing")
+	}
+	if _, ok := raw["flow_id"]; ok {
+		t.Fatal("legacy top-level flow_id is present")
+	}
 }
 
 func TestStartCurrentStateRecognizesTypedUnsupportedVersion(t *testing.T) {
@@ -38,7 +68,7 @@ func TestStartAllowsCompletedAndFinishedState(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
 			current := commandStartState("previous-flow", status, "done")
-			if err := NewStore(Context{ProjectRoot: root}).Save(current); err != nil {
+			if err := saveCommandState(t, root, current); err != nil {
 				t.Fatal(err)
 			}
 
@@ -58,7 +88,7 @@ func TestStartRejectsRunningStateWithoutSaving(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
 	current := commandStartState("running-flow", state.StatusRunning, "active")
-	if err := NewStore(Context{ProjectRoot: root}).Save(current); err != nil {
+	if err := saveCommandState(t, root, current); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -183,7 +213,7 @@ func TestStartRejectsInvalidFlowIDBeforeReadingFlow(t *testing.T) {
 func TestStartRejectsInvalidFlowIDWithoutOverwritingState(t *testing.T) {
 	root := t.TempDir()
 	current := commandStartState("existing-flow", state.StatusCompleted, "done")
-	if err := NewStore(Context{ProjectRoot: root}).Save(current); err != nil {
+	if err := saveCommandState(t, root, current); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -216,7 +246,7 @@ func startTestFlow(id string) string {
 func commandStartState(flowID string, status state.Status, currentStepID string) state.State {
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               flowID,
+		FlowSnapshot:         testSnapshotForStep(flowID, currentStepID),
 		Status:               status,
 		CurrentStepID:        currentStepID,
 		FlowRunID:            "run_00000000000000000000000000000000",
@@ -232,8 +262,8 @@ func assertStartedState(t *testing.T, got state.State, flowID string, currentSte
 	if got.SchemaVersion != state.CurrentSchemaVersion {
 		t.Fatalf("SchemaVersion = %d, want %d", got.SchemaVersion, state.CurrentSchemaVersion)
 	}
-	if got.FlowID != flowID {
-		t.Fatalf("FlowID = %q, want %q", got.FlowID, flowID)
+	if got.FlowSnapshot.Flow.ID != flowID {
+		t.Fatalf("FlowSnapshot.Flow.ID = %q, want %q", got.FlowSnapshot.Flow.ID, flowID)
 	}
 	if got.Status != state.StatusRunning {
 		t.Fatalf("Status = %q, want running", got.Status)

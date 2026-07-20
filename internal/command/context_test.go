@@ -58,19 +58,9 @@ func TestActiveFlowFromLoadResult(t *testing.T) {
 	})
 
 	t.Run("loads running state and validates current step", func(t *testing.T) {
-		root := t.TempDir()
-		writeFlow(t, root, "test-flow", `flow: {
-			id: "test-flow"
-			title: "Test Flow"
-			steps: [{
-				id: "first"
-				title: "First"
-				instruction: "Do first."
-			}]
-		}`)
 		st := validRunningState()
 
-		active, diagnostics := ActiveFlowFromLoadResult(Context{ProjectRoot: root}, state.LoadResult{Status: state.LoadOK, State: &st})
+		active, diagnostics := ActiveFlowFromLoadResult(Context{}, state.LoadResult{Status: state.LoadOK, State: &st})
 
 		assertNoDiagnostics(t, diagnostics)
 		if active.Flow.ID != "test-flow" {
@@ -81,30 +71,23 @@ func TestActiveFlowFromLoadResult(t *testing.T) {
 		}
 	})
 
-	t.Run("returns mismatch when flow file is missing", func(t *testing.T) {
+	t.Run("loads from snapshot when flow file is missing", func(t *testing.T) {
 		root := t.TempDir()
 		st := validRunningState()
 
-		_, diagnostics := ActiveFlowFromLoadResult(Context{ProjectRoot: root}, state.LoadResult{Status: state.LoadOK, State: &st})
+		active, diagnostics := ActiveFlowFromLoadResult(Context{ProjectRoot: root}, state.LoadResult{Status: state.LoadOK, State: &st})
 
-		assertDiagnosticCodes(t, diagnostics, []string{CodeStateFlowMismatch})
+		assertNoDiagnostics(t, diagnostics)
+		if active.Flow.ID != st.FlowSnapshot.Flow.ID {
+			t.Fatalf("Flow.ID = %q", active.Flow.ID)
+		}
 	})
 
 	t.Run("returns mismatch when current step is not in flow", func(t *testing.T) {
-		root := t.TempDir()
-		writeFlow(t, root, "test-flow", `flow: {
-			id: "test-flow"
-			title: "Test Flow"
-			steps: [{
-				id: "first"
-				title: "First"
-				instruction: "Do first."
-			}]
-		}`)
 		st := validRunningState()
 		st.CurrentStepID = "missing"
 
-		_, diagnostics := ActiveFlowFromLoadResult(Context{ProjectRoot: root}, state.LoadResult{Status: state.LoadOK, State: &st})
+		_, diagnostics := ActiveFlowFromLoadResult(Context{}, state.LoadResult{Status: state.LoadOK, State: &st})
 
 		assertDiagnosticCodes(t, diagnostics, []string{CodeStateStepNotInFlow})
 	})
@@ -158,7 +141,7 @@ func TestSaveTransitionState(t *testing.T) {
 func validRunningState() state.State {
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               "test-flow",
+		FlowSnapshot:         testSnapshot("test-flow"),
 		Status:               state.StatusRunning,
 		CurrentStepID:        "first",
 		FlowRunID:            "run_00000000000000000000000000000000",

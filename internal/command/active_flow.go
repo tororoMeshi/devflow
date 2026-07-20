@@ -1,22 +1,9 @@
 package command
 
 import (
-	"errors"
-	"fmt"
-	"path/filepath"
-
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/transition"
-)
-
-var (
-	ErrNoActiveFlow         = errors.New("no active flow")
-	ErrInvalidState         = errors.New("invalid state")
-	ErrStateFlowMismatch    = errors.New("state flow mismatch")
-	ErrStateStepNotInFlow   = errors.New("state current step is not in flow")
-	ErrMissingLoadedState   = errors.New("missing loaded state")
-	ErrUnexpectedLoadStatus = errors.New("unexpected state load status")
 )
 
 type ActiveFlow struct {
@@ -47,19 +34,14 @@ func ActiveFlowFromLoadResult(ctx Context, loaded state.LoadResult) (ActiveFlow,
 		if loaded.State.Status != state.StatusRunning {
 			return ActiveFlow{}, []transition.Diagnostic{commandErrorDiagnostic(CodeNoActiveFlow)}
 		}
-		return loadAndValidateActiveFlow(ctx, *loaded.State)
+		return activeFlowFromState(*loaded.State)
 	default:
 		return ActiveFlow{}, []transition.Diagnostic{commandErrorDiagnostic(CodeInvalidState)}
 	}
 }
 
-func loadAndValidateActiveFlow(ctx Context, st state.State) (ActiveFlow, []transition.Diagnostic) {
-	flowPath := filepath.Join(FlowDir(ctx.ProjectRoot), st.FlowID+".cue")
-	loadedFlow, err := flow.LoadFile(flowPath)
-	if err != nil {
-		return ActiveFlow{}, []transition.Diagnostic{commandErrorDiagnostic(CodeStateFlowMismatch)}
-	}
-
+func activeFlowFromState(st state.State) (ActiveFlow, []transition.Diagnostic) {
+	loadedFlow := st.FlowSnapshot.Flow
 	currentStep, ok := findStep(loadedFlow, st.CurrentStepID)
 	if !ok {
 		return ActiveFlow{}, []transition.Diagnostic{commandErrorDiagnostic(CodeStateStepNotInFlow)}
@@ -79,17 +61,4 @@ func findStep(fl flow.Flow, stepID string) (flow.Step, bool) {
 		}
 	}
 	return flow.Step{}, false
-}
-
-func (a ActiveFlow) Validate() error {
-	if a.State.FlowID == "" {
-		return fmt.Errorf("%w: empty flow_id", ErrInvalidState)
-	}
-	if a.Flow.ID != a.State.FlowID {
-		return fmt.Errorf("%w: state flow_id %q, flow id %q", ErrStateFlowMismatch, a.State.FlowID, a.Flow.ID)
-	}
-	if _, ok := findStep(a.Flow, a.State.CurrentStepID); !ok {
-		return fmt.Errorf("%w: %s", ErrStateStepNotInFlow, a.State.CurrentStepID)
-	}
-	return nil
 }

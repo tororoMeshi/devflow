@@ -14,7 +14,7 @@ func TestBackMovesToPreviousStep(t *testing.T) {
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("third")
 	st.CompletedSteps = []string{"first", "second", "third"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,7 +32,7 @@ func TestBackRemovesOnlyDestinationStepFromCompletedSteps(t *testing.T) {
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("third")
 	st.CompletedSteps = []string{"first", "second", "third"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,7 +50,7 @@ func TestBackKeepsApprovalsAndSkippedSteps(t *testing.T) {
 	st.CompletedSteps = []string{"first", "second"}
 	st.SkippedSteps["approval"] = state.SkippedStep{Reason: "skip approval"}
 	st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "ok"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +67,7 @@ func TestBackRecordsHistory(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("third")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,7 +89,7 @@ func TestBackRejectsFirstStep(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("first")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	before := readCommandFile(t, StatePath(root))
@@ -106,7 +106,7 @@ func TestBackRejectsEmptyReason(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 			st := backSkipFinishState("second")
-			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
 			before := readCommandFile(t, StatePath(root))
@@ -131,7 +131,7 @@ func TestBackMovesToSpecifiedUpstreamStep(t *testing.T) {
 	st := backSkipFinishState("final_approval")
 	st.CompletedSteps = []string{"first", "second", "third", "approval", "artifact", "final_approval"}
 	st.Approvals["final_approval"] = state.ApprovalRecord{Approved: true}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,7 +151,7 @@ func TestBackKeepsArtifactFile(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("artifact")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 	artifactPath := filepath.Join(root, "docs", "required.md")
@@ -181,7 +181,7 @@ func TestBackRejectsInvalidTargetWithoutSaving(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 			st := backSkipFinishState("third")
-			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
 			before := readCommandFile(t, StatePath(root))
@@ -198,7 +198,7 @@ func TestSkipRecordsSkippedStepAndMovesNext(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("second")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -221,7 +221,7 @@ func TestSkipCompletesFinalStep(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("final_approval")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,7 +243,7 @@ func TestSkipWarnsForRequiredApproval(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("approval")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -256,7 +256,7 @@ func TestSkipWarnsForRequiredArtifact(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("artifact")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -269,7 +269,7 @@ func TestSkipWarnsForFinalStep(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("final_approval")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -282,7 +282,7 @@ func TestSkipWarnsForFinalApprovalStep(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("final_approval")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -297,7 +297,7 @@ func TestSkipRejectsEmptyReason(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 			st := backSkipFinishState("second")
-			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
 			before := readCommandFile(t, StatePath(root))
@@ -320,7 +320,7 @@ func TestFinishMarksFlowFinished(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 	st := backSkipFinishState("artifact")
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -346,7 +346,7 @@ func TestFinishKeepsExistingProgress(t *testing.T) {
 	st.CompletedSteps = []string{"first"}
 	st.SkippedSteps["second"] = state.SkippedStep{Reason: "not needed"}
 	st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "ok"}
-	if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -369,7 +369,7 @@ func TestFinishRejectsEmptyReason(t *testing.T) {
 			root := t.TempDir()
 			writeCommandFlow(t, root, "back-skip-finish-flow", backSkipFinishTestFlow())
 			st := backSkipFinishState("artifact")
-			if err := NewStore(Context{ProjectRoot: root}).Save(st); err != nil {
+			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
 			before := readCommandFile(t, StatePath(root))
@@ -433,7 +433,7 @@ func backSkipFinishTestFlow() string {
 func backSkipFinishState(currentStepID string) state.State {
 	st := state.State{
 		SchemaVersion:        state.CurrentSchemaVersion,
-		FlowID:               "back-skip-finish-flow",
+		FlowSnapshot:         testSnapshot("back-skip-finish-flow"),
 		Status:               state.StatusRunning,
 		CurrentStepID:        currentStepID,
 		FlowRunID:            "run_00000000000000000000000000000000",

@@ -13,12 +13,12 @@ func TestApplyStart(t *testing.T) {
 	fl := testFlow()
 
 	t.Run("starts when no current state exists", func(t *testing.T) {
-		got := ApplyStart(fl, nil, "run_test")
+		got := ApplyStart(testSnapshot(fl), nil, "run_test")
 
 		assertSuccess(t, got)
 		assertStateEqual(t, *got.State, state.State{
 			SchemaVersion:        state.CurrentSchemaVersion,
-			FlowID:               "test-flow",
+			FlowSnapshot:         testSnapshot(fl),
 			Status:               state.StatusRunning,
 			CurrentStepID:        "first",
 			FlowRunID:            "run_test",
@@ -35,7 +35,7 @@ func TestApplyStart(t *testing.T) {
 		current := runningState()
 		current.Status = state.StatusCompleted
 
-		got := ApplyStart(fl, &current, "run_test")
+		got := ApplyStart(testSnapshot(fl), &current, "run_test")
 
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
@@ -47,7 +47,7 @@ func TestApplyStart(t *testing.T) {
 		current := runningState()
 		current.Status = state.StatusFinished
 
-		got := ApplyStart(fl, &current, "run_test")
+		got := ApplyStart(testSnapshot(fl), &current, "run_test")
 
 		assertSuccess(t, got)
 		if got.State.CurrentStepID != "first" {
@@ -55,17 +55,34 @@ func TestApplyStart(t *testing.T) {
 		}
 	})
 
+	t.Run("does not share snapshot memory with input", func(t *testing.T) {
+		snapshot := testSnapshot(fl)
+		got := ApplyStart(snapshot, nil, "run_test")
+		assertSuccess(t, got)
+
+		snapshot.Flow.Steps[0].Instruction = "changed input"
+		snapshot.Flow.Steps[2].Approval.Required = false
+		if got.State.FlowSnapshot.Flow.Steps[0].Instruction != "Do first." || !got.State.FlowSnapshot.Flow.Steps[2].Approval.Required {
+			t.Fatal("State snapshot shares memory with input snapshot")
+		}
+		got.State.FlowSnapshot.Flow.Steps[0].Instruction = "changed state"
+		got.State.FlowSnapshot.Flow.Steps[2].Approval.Required = true
+		if snapshot.Flow.Steps[0].Instruction != "changed input" || snapshot.Flow.Steps[2].Approval.Required {
+			t.Fatal("input snapshot shares memory with State snapshot")
+		}
+	})
+
 	t.Run("fails when flow is already running", func(t *testing.T) {
 		current := runningState()
 
-		got := ApplyStart(fl, &current, "run_test")
+		got := ApplyStart(testSnapshot(fl), &current, "run_test")
 
 		assertFailure(t, got, CodeFlowAlreadyRunning)
 		assertStateEqual(t, current, runningState())
 	})
 
 	t.Run("fails when flow has no steps", func(t *testing.T) {
-		got := ApplyStart(flow.Flow{ID: "empty"}, nil, "run_test")
+		got := ApplyStart(flow.FlowSnapshot{Flow: flow.Flow{ID: "empty"}}, nil, "run_test")
 
 		assertFailure(t, got, CodeFlowHasNoSteps)
 	})
@@ -519,7 +536,7 @@ func testFlow() flow.Flow {
 
 func runningState() state.State {
 	st := state.State{
-		FlowID:        "test-flow",
+		FlowSnapshot:  stateSnapshot("test-flow"),
 		Status:        state.StatusRunning,
 		CurrentStepID: "first",
 	}
