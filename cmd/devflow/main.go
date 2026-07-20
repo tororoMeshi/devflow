@@ -18,7 +18,7 @@ const usage = `Usage:
   devflow status
   devflow prompt
   devflow context
-  devflow approve [--step <step>] [--note <note>]
+  devflow approve --step <step-id> --attempt <attempt-id> --note <note>
   devflow done
   devflow back [--to <step>] --reason <reason>
   devflow skip --reason <reason>
@@ -88,12 +88,12 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 		}
 		result = command.CurrentContext(ctx)
 	case "approve":
-		stepID, note, ok := parseApproveArgs(args[1:])
+		stepID, attemptID, note, ok := parseApproveArgs(args[1:])
 		if !ok {
 			writeUsage(stderr)
 			return 1
 		}
-		result = command.Approve(ctx, stepID, note)
+		result = command.Approve(ctx, stepID, attemptID, note)
 	case "done":
 		if len(args) != 1 {
 			writeUsage(stderr)
@@ -154,28 +154,14 @@ func parseStartArgs(args []string) (string, string, bool) {
 	return args[0], args[2], true
 }
 
-func parseApproveArgs(args []string) (string, string, bool) {
-	var stepID string
-	var note string
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--step":
-			if i+1 >= len(args) {
-				return "", "", false
-			}
-			stepID = args[i+1]
-			i++
-		case "--note":
-			if i+1 >= len(args) {
-				return "", "", false
-			}
-			note = args[i+1]
-			i++
-		default:
-			return "", "", false
-		}
+func parseApproveArgs(args []string) (string, string, string, bool) {
+	if len(args) != 6 || args[0] != "--step" || args[2] != "--attempt" || args[4] != "--note" {
+		return "", "", "", false
 	}
-	return stepID, note, true
+	if strings.TrimSpace(args[1]) == "" || strings.TrimSpace(args[3]) == "" || strings.TrimSpace(args[5]) == "" {
+		return "", "", "", false
+	}
+	return args[1], args[3], args[5], true
 }
 
 func parseReasonArgs(args []string) (string, bool) {
@@ -263,6 +249,9 @@ func writeSuccess(stdout io.Writer, success command.SuccessResult) {
 	if success.ApprovedStepID != "" {
 		_, _ = fmt.Fprintf(stdout, "Approved step: %s\n", success.ApprovedStepID)
 	}
+	if success.ApprovedAttemptID != "" {
+		_, _ = fmt.Fprintf(stdout, "Approved attempt: %s\n", success.ApprovedAttemptID)
+	}
 	if success.MovedBackToID != "" {
 		_, _ = fmt.Fprintf(stdout, "Moved back to: %s\n", success.MovedBackToID)
 	}
@@ -321,12 +310,10 @@ func writeStatus(stdout io.Writer, status command.StatusResult) {
 	}
 
 	_, _ = fmt.Fprintln(stdout, "Approvals:")
-	for _, stepID := range sortedApprovalKeys(status.Approvals) {
-		approval := status.Approvals[stepID]
-		_, _ = fmt.Fprintf(stdout, "- %s: approved=%t note=%s\n", stepID, approval.Approved, approval.Note)
-	}
-	if len(status.Approvals) == 0 {
+	if status.Approval == nil {
 		_, _ = fmt.Fprintln(stdout, "- none")
+	} else {
+		_, _ = fmt.Fprintf(stdout, "- %s: approved=%t note=%s\n", status.Approval.StepID, status.Approval.Approved, status.Approval.Note)
 	}
 
 	_, _ = fmt.Fprintln(stdout, "Checks:")
@@ -393,15 +380,6 @@ func writeStringList(stdout io.Writer, label string, values []string) {
 }
 
 func sortedSkippedStepKeys(values map[string]command.SkippedStepResult) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedApprovalKeys(values map[string]command.ApprovalResult) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)

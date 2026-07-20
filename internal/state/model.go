@@ -7,7 +7,7 @@ import (
 	"github.com/8noki8/devflow/internal/task"
 )
 
-const CurrentSchemaVersion = 5
+const CurrentSchemaVersion = 6
 
 var flowRunIDPattern = regexp.MustCompile(`^run_[0-9a-f]{32}$`)
 
@@ -20,30 +20,24 @@ const (
 )
 
 type State struct {
-	SchemaVersion    int                       `json:"schema_version"`
-	FlowSnapshot     flow.FlowSnapshot         `json:"flow_snapshot"`
-	TaskSnapshot     task.TaskSnapshot         `json:"task_snapshot"`
-	Status           Status                    `json:"status"`
-	CurrentStepID    string                    `json:"current_step_id"`
-	CompletedSteps   []string                  `json:"completed_steps"`
-	SkippedSteps     map[string]SkippedStep    `json:"skipped_steps"`
-	Approvals        map[string]ApprovalRecord `json:"approvals"`
-	BackHistory      []BackHistory             `json:"back_history"`
-	Finish           *Finish                   `json:"finish"`
-	FlowRunID        string                    `json:"flow_run_id,omitempty"`
-	Attempts         []StepAttempt             `json:"attempts"`
-	CurrentAttemptID string                    `json:"current_attempt_id,omitempty"`
+	SchemaVersion    int                    `json:"schema_version"`
+	FlowSnapshot     flow.FlowSnapshot      `json:"flow_snapshot"`
+	TaskSnapshot     task.TaskSnapshot      `json:"task_snapshot"`
+	Status           Status                 `json:"status"`
+	CurrentStepID    string                 `json:"current_step_id"`
+	CompletedSteps   []string               `json:"completed_steps"`
+	SkippedSteps     map[string]SkippedStep `json:"skipped_steps"`
+	BackHistory      []BackHistory          `json:"back_history"`
+	Finish           *Finish                `json:"finish"`
+	FlowRunID        string                 `json:"flow_run_id,omitempty"`
+	Attempts         []StepAttempt          `json:"attempts"`
+	CurrentAttemptID string                 `json:"current_attempt_id,omitempty"`
 }
 
 func IsValidFlowRunID(value string) bool { return flowRunIDPattern.MatchString(value) }
 
 type SkippedStep struct {
 	Reason string `json:"reason"`
-}
-
-type ApprovalRecord struct {
-	Approved bool   `json:"approved"`
-	Note     string `json:"note"`
 }
 
 type BackHistory struct {
@@ -70,6 +64,7 @@ func (s State) CurrentAttempt() (StepAttempt, int, bool) {
 		if s.Attempts[i].ID == s.CurrentAttemptID {
 			attempt := s.Attempts[i]
 			attempt.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
+			attempt.Approval = cloneApprovalRecord(attempt.Approval)
 			return attempt, i, true
 		}
 	}
@@ -82,6 +77,7 @@ func (s State) LastAttempt() (StepAttempt, bool) {
 	}
 	attempt := s.Attempts[len(s.Attempts)-1]
 	attempt.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
+	attempt.Approval = cloneApprovalRecord(attempt.Approval)
 	return attempt, true
 }
 

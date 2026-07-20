@@ -15,6 +15,8 @@ var (
 	ErrInvalidStepAttemptReason        = errors.New("invalid step attempt reason")
 	ErrNilStepAttemptCheckResults      = errors.New("nil step attempt check results")
 	ErrStepAttemptNotActive            = errors.New("step attempt is not active")
+	ErrInvalidApprovalNote             = errors.New("invalid approval note")
+	ErrStepAttemptAlreadyApproved      = errors.New("step attempt already approved")
 )
 
 type StepAttemptStatus string
@@ -41,6 +43,23 @@ type StepAttempt struct {
 	ExitReason    StepAttemptExitReason  `json:"exit_reason,omitempty"`
 	Reason        string                 `json:"reason,omitempty"`
 	CheckResults  map[string]CheckResult `json:"check_results"`
+	Approval      *ApprovalRecord        `json:"approval,omitempty"`
+}
+
+type ApprovalRecord struct {
+	Note string `json:"note"`
+}
+
+func IsValidStepAttemptID(value string) bool {
+	if len(value) != len("attempt_")+20 || !strings.HasPrefix(value, "attempt_") {
+		return false
+	}
+	for _, character := range value[len("attempt_"):] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return value != "attempt_00000000000000000000"
 }
 
 func StepAttemptID(entrySequence uint64) (string, error) {
@@ -88,6 +107,9 @@ func ValidateStepAttempt(attempt StepAttempt) error {
 	if attempt.CheckResults == nil {
 		return ErrNilStepAttemptCheckResults
 	}
+	if attempt.Approval != nil && strings.TrimSpace(attempt.Approval.Note) == "" {
+		return ErrInvalidApprovalNote
+	}
 
 	switch attempt.Status {
 	case StepAttemptActive:
@@ -118,6 +140,7 @@ func CloseStepAttempt(attempt StepAttempt, exitReason StepAttemptExitReason, rea
 
 	closed := attempt
 	closed.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
+	closed.Approval = cloneApprovalRecord(attempt.Approval)
 	closed.Status = StepAttemptClosed
 	closed.ExitReason = exitReason
 	closed.Reason = reason
@@ -126,6 +149,28 @@ func CloseStepAttempt(attempt StepAttempt, exitReason StepAttemptExitReason, rea
 	}
 
 	return closed, nil
+}
+
+func ApproveStepAttempt(attempt StepAttempt, note string) (StepAttempt, error) {
+	if err := ValidateStepAttempt(attempt); err != nil {
+		return StepAttempt{}, err
+	}
+	if attempt.Status != StepAttemptActive {
+		return StepAttempt{}, ErrStepAttemptNotActive
+	}
+	if attempt.Approval != nil {
+		return StepAttempt{}, ErrStepAttemptAlreadyApproved
+	}
+	if strings.TrimSpace(note) == "" {
+		return StepAttempt{}, ErrInvalidApprovalNote
+	}
+	approved := attempt
+	approved.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
+	approved.Approval = &ApprovalRecord{Note: note}
+	if err := ValidateStepAttempt(approved); err != nil {
+		return StepAttempt{}, err
+	}
+	return approved, nil
 }
 
 func validateStepAttemptClosure(exitReason StepAttemptExitReason, reason string) error {
@@ -162,4 +207,12 @@ func cloneStepAttemptCheckResults(source map[string]CheckResult) map[string]Chec
 		cloned[name] = result
 	}
 	return cloned
+}
+
+func cloneApprovalRecord(source *ApprovalRecord) *ApprovalRecord {
+	if source == nil {
+		return nil
+	}
+	cloned := *source
+	return &cloned
 }

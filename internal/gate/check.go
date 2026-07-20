@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 
 	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
+	statepkg "github.com/8noki8/devflow/internal/state"
 )
 
-func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result {
+func CheckDoneGate(step flow.Step, currentState statepkg.State, projectRoot string) Result {
 	result := Result{
 		MissingInputs:    []string{},
 		MissingArtifacts: []string{},
@@ -35,13 +35,13 @@ func CheckDoneGate(step flow.Step, state state.State, projectRoot string) Result
 	}
 
 	if step.Approval != nil && step.Approval.Required {
-		approval := state.Approvals[step.ID]
-		if !approval.Approved {
+		attempt, _, ok := currentState.CurrentAttempt()
+		if !ok || attempt.Status != statepkg.StepAttemptActive || attempt.StepID != step.ID || attempt.Approval == nil {
 			result.MissingApprovals = append(result.MissingApprovals, step.ID)
 		}
 	}
 
-	attempt, _, hasCurrentAttempt := state.CurrentAttempt()
+	attempt, _, hasCurrentAttempt := currentState.CurrentAttempt()
 	for _, checkID := range step.RequiredChecks {
 		checkResult, ok := attempt.CheckResults[checkID]
 		if !hasCurrentAttempt || attempt.StepID != step.ID || !ok {

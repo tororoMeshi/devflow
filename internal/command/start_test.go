@@ -407,9 +407,6 @@ func assertStartedState(t *testing.T, got state.State, flowID string, currentSte
 	if len(got.SkippedSteps) != 0 {
 		t.Fatalf("SkippedSteps = %#v, want empty", got.SkippedSteps)
 	}
-	if len(got.Approvals) != 0 {
-		t.Fatalf("Approvals = %#v, want empty", got.Approvals)
-	}
 	if len(got.BackHistory) != 0 {
 		t.Fatalf("BackHistory = %#v, want empty", got.BackHistory)
 	}

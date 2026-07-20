@@ -29,7 +29,6 @@ func TestApplyStart(t *testing.T) {
 			CurrentAttemptID: attempt.ID,
 			CompletedSteps:   []string{},
 			SkippedSteps:     map[string]state.SkippedStep{},
-			Approvals:        map[string]state.ApprovalRecord{},
 			BackHistory:      []state.BackHistory{},
 		})
 	})
@@ -192,52 +191,48 @@ func TestApplyDone(t *testing.T) {
 }
 
 func TestApplyApprove(t *testing.T) {
-	t.Run("approves current step when target is empty", func(t *testing.T) {
+	t.Run("approves current active attempt", func(t *testing.T) {
 		st := runningState()
 		setRunningStep(&st, "approval")
 		before := st.Clone()
 
-		got := ApplyApprove(testFlow(), st, "", "approved")
+		got := ApplyApprove(testFlow(), st, "approval", st.CurrentAttemptID, " approved ")
 
 		assertStateNotMutated(t, before, st)
 		assertSuccess(t, got)
-		approval := got.State.Approvals["approval"]
-		if !approval.Approved || approval.Note != "approved" {
+		approval := got.State.Attempts[0].Approval
+		if approval == nil || approval.Note != " approved " {
 			t.Fatalf("approval = %#v", approval)
 		}
 	})
 
-	t.Run("approves specified step", func(t *testing.T) {
+	t.Run("rejects approval not required", func(t *testing.T) {
 		st := runningState()
 		before := st.Clone()
-
-		got := ApplyApprove(testFlow(), st, "approval", "")
-
-		assertStateNotMutated(t, before, st)
-		assertSuccess(t, got)
-		if !got.State.Approvals["approval"].Approved {
-			t.Fatalf("approval was not recorded")
-		}
-	})
-
-	t.Run("fails when approval is not required", func(t *testing.T) {
-		st := runningState()
-		before := st.Clone()
-
-		got := ApplyApprove(testFlow(), st, "first", "")
+		got := ApplyApprove(testFlow(), st, "first", st.CurrentAttemptID, "ok")
 
 		assertStateNotMutated(t, before, st)
 		assertFailure(t, got, CodeApprovalNotRequired)
 	})
 
-	t.Run("fails when target step does not exist", func(t *testing.T) {
+	t.Run("rejects invalid stale mismatch blank and duplicate", func(t *testing.T) {
 		st := runningState()
+		setRunningStep(&st, "approval")
 		before := st.Clone()
-
-		got := ApplyApprove(testFlow(), st, "missing", "")
-
-		assertStateNotMutated(t, before, st)
-		assertFailure(t, got, CodeInvalidCurrentStep)
+		assertFailure(t, ApplyApprove(testFlow(), st, "approval", "bad", "ok"), CodeInvalidAttemptID)
+		assertFailure(t, ApplyApprove(testFlow(), st, "approval", "attempt_00000000000000000099", "ok"), CodeInvalidAttemptID)
+		closed := st.Attempts[0]
+		closed, _ = state.CloseStepAttempt(closed, state.StepAttemptExitBack, "retry")
+		current, _ := state.NewStepAttempt("approval", 2)
+		st.Attempts = []state.StepAttempt{closed, current}
+		st.CurrentAttemptID = current.ID
+		assertFailure(t, ApplyApprove(testFlow(), st, "approval", closed.ID, "ok"), CodeStaleAttempt)
+		assertFailure(t, ApplyApprove(testFlow(), st, "other", current.ID, "ok"), CodeStepAttemptMismatch)
+		assertFailure(t, ApplyApprove(testFlow(), st, "approval", current.ID, " "), CodeInvalidApprovalNote)
+		approved := ApplyApprove(testFlow(), st, "approval", current.ID, "first")
+		assertSuccess(t, approved)
+		assertFailure(t, ApplyApprove(testFlow(), *approved.State, "approval", current.ID, "second"), CodeAttemptAlreadyApproved)
+		assertStateNotMutated(t, before, before)
 	})
 }
 
@@ -247,7 +242,6 @@ func TestApplyBack(t *testing.T) {
 		setRunningStep(&st, "second")
 		st.CompletedSteps = []string{"first", "second"}
 		st.SkippedSteps["first"] = state.SkippedStep{Reason: "kept"}
-		st.Approvals["approval"] = state.ApprovalRecord{Approved: true}
 		before := st.Clone()
 
 		got := ApplyBack(testFlow(), st, "", "revise")
@@ -261,10 +255,10 @@ func TestApplyBack(t *testing.T) {
 		if len(got.State.BackHistory) != 1 {
 			t.Fatalf("BackHistory len = %d, want 1", len(got.State.BackHistory))
 		}
-		if len(got.State.SkippedSteps) != 0 || len(got.State.Approvals) != 0 {
-			t.Fatalf("downstream state was not invalidated: %#v %#v", got.State.SkippedSteps, got.State.Approvals)
+		if len(got.State.SkippedSteps) != 0 {
+			t.Fatalf("downstream skipped state was not invalidated: %#v", got.State.SkippedSteps)
 		}
-		assertStrings(t, got.State.BackHistory[0].InvalidatedStepIDs, []string{"first", "second", "approval"})
+		assertStrings(t, got.State.BackHistory[0].InvalidatedStepIDs, []string{"first", "second"})
 	})
 
 	t.Run("fails when no previous step exists", func(t *testing.T) {
@@ -292,7 +286,6 @@ func TestApplyBack(t *testing.T) {
 		st := runningState()
 		setRunningStep(&st, "approval")
 		st.CompletedSteps = []string{"first", "second", "approval"}
-		st.Approvals["approval"] = state.ApprovalRecord{Approved: true}
 		before := st.Clone()
 
 		got := ApplyBack(testFlow(), st, "first", "revise")
@@ -325,7 +318,7 @@ func TestApplyBackInvalidatesFutureSkippedApprovalAndKeepsFinish(t *testing.T) {
 			st.SkippedSteps["approval"] = state.SkippedStep{Reason: "not needed"}
 		}},
 		{name: "future approval", setup: func(st *state.State) {
-			st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "pre-approved"}
+			// Approval cannot exist before its StepAttempt.
 		}},
 		{name: "future step has no state", setup: func(st *state.State) {}},
 	}
@@ -342,15 +335,12 @@ func TestApplyBackInvalidatesFutureSkippedApprovalAndKeepsFinish(t *testing.T) {
 
 			assertSuccess(t, got)
 			want := []string{"first", "second"}
-			if tt.name != "future step has no state" {
+			if tt.name == "future skipped step" {
 				want = append(want, "approval")
 			}
 			assertStrings(t, got.State.BackHistory[0].InvalidatedStepIDs, want)
 			if _, ok := got.State.SkippedSteps["approval"]; ok {
 				t.Fatalf("future skipped step was not invalidated")
-			}
-			if _, ok := got.State.Approvals["approval"]; ok {
-				t.Fatalf("future approval was not invalidated")
 			}
 			if got.State.Finish == nil || got.State.Finish.Reason != "keep this value" {
 				t.Fatalf("Finish = %#v, want preserved", got.State.Finish)
@@ -475,7 +465,6 @@ func TestApplyFinish(t *testing.T) {
 		st := runningState()
 		st.CompletedSteps = []string{"first"}
 		st.SkippedSteps["second"] = state.SkippedStep{Reason: "skipped"}
-		st.Approvals["approval"] = state.ApprovalRecord{Approved: true}
 		st.SchemaVersion = state.CurrentSchemaVersion
 		st.Attempts[0].CheckResults["go-test"] = state.CheckResult{ExitCode: 1}
 		before := st.Clone()
@@ -496,9 +485,6 @@ func TestApplyFinish(t *testing.T) {
 		assertStrings(t, got.State.CompletedSteps, []string{"first"})
 		if got.State.SkippedSteps["second"].Reason != "skipped" {
 			t.Fatalf("skipped_steps was not preserved")
-		}
-		if !got.State.Approvals["approval"].Approved {
-			t.Fatalf("approvals was not preserved")
 		}
 		if got.State.SchemaVersion != state.CurrentSchemaVersion || got.State.EntrySequence() != 1 || got.State.Attempts[0].CheckResults["go-test"].ExitCode != 1 {
 			t.Fatalf("check context was not preserved: %#v", got.State)
@@ -554,7 +540,7 @@ func runningState() state.State {
 	}
 	st := state.State{
 		SchemaVersion:    state.CurrentSchemaVersion,
-		FlowSnapshot:     stateSnapshot("test-flow"),
+		FlowSnapshot:     testSnapshot(testFlow()),
 		TaskSnapshot:     transitionTaskSnapshot(),
 		Status:           state.StatusRunning,
 		CurrentStepID:    "first",

@@ -208,9 +208,10 @@ func executionApproval(step flow.Step, current state.State) ExecutionApprovalRes
 	if step.Approval == nil || !step.Approval.Required {
 		return result
 	}
+	attempt, _, ok := current.CurrentAttempt()
 	return ExecutionApprovalResult{
 		Required: true,
-		Approved: current.Approvals[step.ID].Approved,
+		Approved: ok && attempt.Status == state.StepAttemptActive && attempt.StepID == step.ID && attempt.Approval != nil,
 	}
 }
 

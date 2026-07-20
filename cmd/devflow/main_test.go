@@ -58,16 +58,22 @@ func TestRunStartPassesFlowID(t *testing.T) {
 	}
 }
 
-func TestRunApproveParsesStepAndNote(t *testing.T) {
+func TestRunApproveParsesStepAttemptAndNote(t *testing.T) {
 	root := t.TempDir()
 	runSuccess(t, root, []string{"init"})
 	runSuccess(t, root, []string{"start", "post-task-review"})
 
-	runSuccess(t, root, []string{"approve", "--step", "human_approval", "--note", "ok"})
+	runSuccess(t, root, []string{"done"})
+	runSuccess(t, root, []string{"done"})
+	runSuccess(t, root, []string{"done"})
+	writeCLITestFile(t, root, "docs/code-review.md")
+	runSuccess(t, root, []string{"done"})
+	before := loadCLIState(t, root)
+	runSuccess(t, root, []string{"approve", "--step", "human_approval", "--attempt", before.CurrentAttemptID, "--note", "ok"})
 
 	st := loadCLIState(t, root)
-	approval := st.Approvals["human_approval"]
-	if !approval.Approved || approval.Note != "ok" {
+	approval := st.Attempts[len(st.Attempts)-1].Approval
+	if approval == nil || approval.Note != "ok" {
 		t.Fatalf("approval = %#v", approval)
 	}
 }
@@ -487,6 +493,40 @@ func TestRunApproveRejectsUnknownOption(t *testing.T) {
 	}
 }
 
+func TestParseApproveArgsAcceptsOnlyCanonicalSyntax(t *testing.T) {
+	valid := []string{"--step", "step", "--attempt", "attempt_00000000000000000001", "--note", " note "}
+	stepID, attemptID, note, ok := parseApproveArgs(valid)
+	if !ok || stepID != "step" || attemptID != valid[3] || note != " note " {
+		t.Fatalf("parse = %q %q %q %t", stepID, attemptID, note, ok)
+	}
+	invalid := [][]string{
+		nil,
+		{"--step", "step"},
+		append(valid, "extra"),
+		{"--attempt", valid[3], "--step", "step", "--note", "note"},
+		{"--step", "step", "--step", "step", "--note", "note"},
+		{"--step", "step", "--attempt", valid[3], "--unknown", "note"},
+		{"--step=step", "--attempt", valid[3], "--note", "note"},
+		{"--step", "step", "--attempt=" + valid[3], "--note", "note"},
+		{"--step", "step", "--attempt", valid[3], "--note=note"},
+		{"--step", "", "--attempt", valid[3], "--note", "note"},
+		{"--step", " ", "--attempt", valid[3], "--note", "note"},
+		{"--step", "\u3000", "--attempt", valid[3], "--note", "note"},
+		{"--step", "step", "--attempt", "", "--note", "note"},
+		{"--step", "step", "--attempt", " ", "--note", "note"},
+		{"--step", "step", "--attempt", "\u3000", "--note", "note"},
+		{"--step", "step", "--attempt", valid[3], "--note", ""},
+		{"--step", "step", "--attempt", valid[3], "--note", " \t"},
+		{"--step", "step", "--attempt", valid[3], "--note", "\u3000"},
+		{}, {"--note", "note"}, {"--step", "step"},
+	}
+	for _, args := range invalid {
+		if _, _, _, ok := parseApproveArgs(args); ok {
+			t.Fatalf("accepted %#v", args)
+		}
+	}
+}
+
 func TestRunReasonCommandsRejectMissingReasonValue(t *testing.T) {
 	for _, commandName := range []string{"back", "skip", "finish"} {
 		t.Run(commandName, func(t *testing.T) {
@@ -578,7 +618,8 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		runSuccess(t, root, []string{"done"})
 		writeCLITestFile(t, root, "docs/code-review.md")
 		runSuccess(t, root, []string{"done"})
-		runSuccess(t, root, []string{"approve", "--note", "ok"})
+		st := loadCLIState(t, root)
+		runSuccess(t, root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"})
 
 		stdout, stderr, exitCode := runCapture(root, []string{"done"})
 
@@ -591,11 +632,18 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
+		runSuccess(t, root, []string{"done"})
+		runSuccess(t, root, []string{"done"})
+		runSuccess(t, root, []string{"done"})
+		writeCLITestFile(t, root, "docs/code-review.md")
+		runSuccess(t, root, []string{"done"})
+		st := loadCLIState(t, root)
 
-		stdout, stderr, exitCode := runCapture(root, []string{"approve", "--step", "human_approval"})
+		stdout, stderr, exitCode := runCapture(root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"})
 
 		assertExitCode(t, exitCode, 0, stderr)
 		assertContains(t, stdout, "Approved step: human_approval")
+		assertContains(t, stdout, "Approved attempt: "+st.CurrentAttemptID)
 	})
 
 	t.Run("back", func(t *testing.T) {

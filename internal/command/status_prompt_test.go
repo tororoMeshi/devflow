@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
 )
 
@@ -14,7 +15,7 @@ func TestStatusReturnsActiveFlowState(t *testing.T) {
 	st := statusPromptState("status-flow", state.StatusRunning, "current")
 	st.CompletedSteps = []string{"first"}
 	st.SkippedSteps["skipped"] = state.SkippedStep{Reason: "not needed"}
-	st.Approvals["current"] = state.ApprovalRecord{Approved: true, Note: "ok"}
+	st.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok"}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
@@ -43,8 +44,36 @@ func TestStatusReturnsActiveFlowState(t *testing.T) {
 	if got.Status.SkippedSteps["skipped"].Reason != "not needed" {
 		t.Fatalf("SkippedSteps = %#v", got.Status.SkippedSteps)
 	}
-	if !got.Status.Approvals["current"].Approved || got.Status.Approvals["current"].Note != "ok" {
-		t.Fatalf("Approvals = %#v", got.Status.Approvals)
+	if got.Status.Approval == nil || !got.Status.Approval.Approved || got.Status.Approval.Note != "ok" {
+		t.Fatalf("Approval = %#v", got.Status.Approval)
+	}
+}
+
+func TestStatusDoesNotExposePastAttemptApproval(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
+	st := statusPromptState("status-flow", state.StatusRunning, "current")
+	approved, err := state.ApproveStepAttempt(st.Attempts[0], "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := state.CloseStepAttempt(approved, state.StepAttemptExitBack, "retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := state.NewStepAttempt("current", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Attempts = []state.StepAttempt{closed, current}
+	st.CurrentAttemptID = current.ID
+	if err := saveCommandState(t, root, st); err != nil {
+		t.Fatal(err)
+	}
+	got := Status(Context{ProjectRoot: root})
+	assertCommandSuccess(t, got)
+	if got.Status == nil || got.Status.Approval != nil {
+		t.Fatalf("Status = %#v", got.Status)
 	}
 }
 
@@ -85,8 +114,15 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.RequiredApproval.StepID != "current" {
 		t.Fatalf("RequiredApproval.StepID = %q", got.Prompt.RequiredApproval.StepID)
 	}
+	if got.Prompt.RequiredApproval.AttemptID != st.CurrentAttemptID {
+		t.Fatalf("AttemptID = %q", got.Prompt.RequiredApproval.AttemptID)
+	}
 	if len(got.Prompt.AfterCompleting.Commands) != 2 {
 		t.Fatalf("AfterCompleting.Commands = %#v", got.Prompt.AfterCompleting.Commands)
+	}
+	wantApprove := `devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`
+	if got.Prompt.AfterCompleting.Commands[0] != wantApprove {
+		t.Fatalf("approve command = %q, want %q", got.Prompt.AfterCompleting.Commands[0], wantApprove)
 	}
 }
 
@@ -135,26 +171,6 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 			wantStatus: CodeNoActiveFlow,
 		},
 		{
-			name: "completed state",
-			setup: func(t *testing.T, root string) {
-				st := statusPromptState("status-flow", state.StatusCompleted, "current")
-				if err := saveCommandState(t, root, st); err != nil {
-					t.Fatal(err)
-				}
-			},
-			wantStatus: CodeNoActiveFlow,
-		},
-		{
-			name: "finished state",
-			setup: func(t *testing.T, root string) {
-				st := statusPromptState("status-flow", state.StatusFinished, "current")
-				if err := saveCommandState(t, root, st); err != nil {
-					t.Fatal(err)
-				}
-			},
-			wantStatus: CodeNoActiveFlow,
-		},
-		{
 			name: "invalid state",
 			setup: func(t *testing.T, root string) {
 				writeCommandTestFile(t, LegacyStatePath(root), `{"not":"valid state"}`)
@@ -182,6 +198,32 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 
 			assertCommandFailure(t, statusResult, tt.wantStatus)
 			assertCommandFailure(t, promptResult, tt.wantStatus)
+		})
+	}
+}
+
+func TestStatusTerminalDoesNotExposeHistoricalApproval(t *testing.T) {
+	for _, status := range []state.Status{state.StatusCompleted, state.StatusFinished} {
+		t.Run(string(status), func(t *testing.T) {
+			root := t.TempDir()
+			st := statusPromptState("status-flow", status, "current")
+			fl := st.FlowSnapshot.Flow
+			fl.Steps[0].Approval = &flow.Approval{Required: true}
+			var err error
+			st.FlowSnapshot, err = flow.BuildSnapshot(fl, st.FlowSnapshot.Source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			st.Attempts[0].Approval = &state.ApprovalRecord{Note: "historical"}
+			if err := saveCommandState(t, root, st); err != nil {
+				t.Fatal(err)
+			}
+			got := Status(Context{ProjectRoot: root})
+			assertCommandSuccess(t, got)
+			if got.Status == nil || got.Status.Approval != nil {
+				t.Fatalf("Status = %#v", got.Status)
+			}
+			assertCommandFailure(t, Prompt(Context{ProjectRoot: root}), CodeNoActiveFlow)
 		})
 	}
 }

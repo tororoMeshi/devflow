@@ -109,12 +109,16 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 		id: "context-flow"
 		title: "Context Flow"
 		steps: [
-			{id: "design", title: "Design", instruction: "Create the design.", required_checks: ["validate", "review"]},
+			{id: "design", title: "Design", instruction: "Create the design.", required_checks: ["validate", "review"], approval: {required: true}},
 			{id: "review", title: "Review", instruction: "Review the design."},
 		]
 	}`)
 	currentState := executionTestState(state.StatusRunning)
-	first, err := state.CloseStepAttempt(currentState.Attempts[0], state.StepAttemptExitDone, "")
+	firstApproved, err := state.ApproveStepAttempt(currentState.Attempts[0], "old approval")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := state.CloseStepAttempt(firstApproved, state.StepAttemptExitDone, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +147,21 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 	}
 	if got.ExecutionContext.Step == nil || got.ExecutionContext.Step.ID != "design" {
 		t.Fatalf("Step = %#v, want design", got.ExecutionContext.Step)
+	}
+	if got.ExecutionContext.Step.Approval.Approved {
+		t.Fatal("historical approval leaked into current context")
+	}
+	if got.ExecutionContext.Completion.Ready {
+		t.Fatal("missing current approval did not block completion")
+	}
+	currentState.Attempts[2], err = state.ApproveStepAttempt(currentState.Attempts[2], "current approval")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveExecutionState(t, root, currentState)
+	got = CurrentContext(Context{ProjectRoot: root})
+	if got.ExecutionContext == nil || !got.ExecutionContext.Step.Approval.Approved {
+		t.Fatal("current approval not exposed")
 	}
 }
 

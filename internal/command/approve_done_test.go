@@ -17,17 +17,47 @@ func TestApproveRecordsCurrentStepApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Approve(Context{ProjectRoot: root}, "", "approved")
+	got := Approve(Context{ProjectRoot: root}, "approval", st.CurrentAttemptID, "approved")
 
 	assertCommandSuccess(t, got)
+	if got.Success == nil || got.Success.ApprovedStepID != "approval" || got.Success.ApprovedAttemptID != st.CurrentAttemptID {
+		t.Fatalf("Success = %#v", got.Success)
+	}
 	loaded := loadCommandState(t, root)
-	approval := loaded.Approvals["approval"]
-	if !approval.Approved || approval.Note != "approved" {
+	approval := loaded.Attempts[0].Approval
+	if approval == nil || approval.Note != "approved" {
 		t.Fatalf("approval = %#v", approval)
 	}
 }
 
-func TestApproveRecordsSpecifiedStepApproval(t *testing.T) {
+func TestApproveSaveFailureDoesNotPersistApproval(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
+	st := approveDoneState("approval")
+	if err := saveCommandState(t, root, st); err != nil {
+		t.Fatal(err)
+	}
+	statePath, err := NewStore(Context{ProjectRoot: root}).RunStatePath(st.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Dir(statePath)
+	if err := os.Chmod(runDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(runDir, 0o755) })
+	got := Approve(Context{ProjectRoot: root}, "approval", st.CurrentAttemptID, "ok")
+	assertCommandFailure(t, got, CodeStateSaveFailed)
+	if err := os.Chmod(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadCommandState(t, root)
+	if loaded.Attempts[0].Approval != nil {
+		t.Fatal("approval persisted after save failure")
+	}
+}
+
+func TestApproveRejectsFutureStep(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("first")
@@ -35,14 +65,9 @@ func TestApproveRecordsSpecifiedStepApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Approve(Context{ProjectRoot: root}, "approval", "")
+	got := Approve(Context{ProjectRoot: root}, "approval", st.CurrentAttemptID, "approved")
 
-	assertCommandSuccess(t, got)
-	loaded := loadCommandState(t, root)
-	approval := loaded.Approvals["approval"]
-	if !approval.Approved || approval.Note != "" {
-		t.Fatalf("approval = %#v", approval)
-	}
+	assertCommandFailure(t, got, transition.CodeStepAttemptMismatch)
 }
 
 func TestApproveRejectsStepWithoutRequiredApproval(t *testing.T) {
@@ -54,7 +79,7 @@ func TestApproveRejectsStepWithoutRequiredApproval(t *testing.T) {
 	}
 	before := readCommandFile(t, currentStatePath(t, root))
 
-	got := Approve(Context{ProjectRoot: root}, "first", "not needed")
+	got := Approve(Context{ProjectRoot: root}, "first", st.CurrentAttemptID, "not needed")
 
 	assertCommandFailure(t, got, transition.CodeApprovalNotRequired)
 	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
@@ -69,15 +94,15 @@ func TestApproveRejectsMissingStep(t *testing.T) {
 	}
 	before := readCommandFile(t, currentStatePath(t, root))
 
-	got := Approve(Context{ProjectRoot: root}, "missing", "")
+	got := Approve(Context{ProjectRoot: root}, "missing", st.CurrentAttemptID, "ok")
 
-	assertCommandFailure(t, got, transition.CodeInvalidCurrentStep)
+	assertCommandFailure(t, got, transition.CodeStepAttemptMismatch)
 	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
 func TestApproveRequiresActiveFlow(t *testing.T) {
 	assertActiveFlowRequiredByCommand(t, func(ctx Context) CommandResult {
-		return Approve(ctx, "", "")
+		return Approve(ctx, "approval", "attempt_00000000000000000001", "ok")
 	})
 }
 
@@ -176,7 +201,7 @@ func TestDoneUsesGateApprovalCheckBeforeApplyingDone(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("approval")
-	st.Approvals["approval"] = state.ApprovalRecord{Approved: true, Note: "ok"}
+	st.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok"}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}

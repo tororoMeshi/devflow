@@ -21,7 +21,7 @@ func Prompt(ctx Context) CommandResult {
 			OptionalArtifacts:      optionalArtifacts,
 			RequiredApproval:       requiredApproval,
 			RequiredChecks:         append([]string(nil), active.CurrentStep.RequiredChecks...),
-			AfterCompleting:        promptAfterCompleting(requiredApproval != nil),
+			AfterCompleting:        promptAfterCompleting(requiredApproval),
 		},
 	}
 }
@@ -46,13 +46,17 @@ func promptRequiredApproval(active ActiveFlow) *RequiredApprovalResult {
 	if active.CurrentStep.Approval == nil || !active.CurrentStep.Approval.Required {
 		return nil
 	}
-	return &RequiredApprovalResult{StepID: active.CurrentStep.ID}
+	attempt, _, ok := active.State.CurrentAttempt()
+	if !ok {
+		return nil
+	}
+	return &RequiredApprovalResult{StepID: active.CurrentStep.ID, AttemptID: attempt.ID}
 }
 
-func promptAfterCompleting(requiresApproval bool) AfterCompletingResult {
-	if requiresApproval {
+func promptAfterCompleting(approval *RequiredApprovalResult) AfterCompletingResult {
+	if approval != nil {
 		return AfterCompletingResult{Commands: []string{
-			`devflow approve --note "<note>"`,
+			`devflow approve --step "` + approval.StepID + `" --attempt "` + approval.AttemptID + `" --note "<note>"`,
 			"devflow done",
 		}}
 	}

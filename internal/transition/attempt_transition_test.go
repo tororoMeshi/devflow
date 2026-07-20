@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 )
@@ -66,6 +67,60 @@ func TestAttemptLifecycleAcrossTransitions(t *testing.T) {
 		assertTerminalAttempt(t, *got.State, state.StatusFinished, state.StepAttemptExitFinish, "out of scope")
 		if len(got.State.Attempts) != 1 || got.State.Finish == nil || got.State.Finish.Reason != "out of scope" {
 			t.Fatalf("finished State = %#v", got.State)
+		}
+	})
+}
+
+func TestApprovalLifecycleAcrossTransitions(t *testing.T) {
+	withRequiredCurrent := func(t *testing.T, stepID string) (flow.Flow, state.State) {
+		t.Helper()
+		fl := testFlow()
+		for i := range fl.Steps {
+			if fl.Steps[i].ID == stepID {
+				fl.Steps[i].Approval = &flow.Approval{Required: true}
+			}
+		}
+		st := runningState()
+		setRunningStep(&st, stepID)
+		st.FlowSnapshot = testSnapshot(fl)
+		approved, err := state.ApproveStepAttempt(st.Attempts[0], "ok")
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.Attempts[0] = approved
+		return fl, st
+	}
+
+	t.Run("done preserves old approval and creates unapproved attempt", func(t *testing.T) {
+		fl, st := withRequiredCurrent(t, "first")
+		got := ApplyDone(fl, st, gate.Result{OK: true})
+		assertSuccess(t, got)
+		if got.State.Attempts[0].Approval == nil || got.State.Attempts[1].Approval != nil {
+			t.Fatalf("Attempts = %#v", got.State.Attempts)
+		}
+	})
+	t.Run("skip preserves old approval and creates unapproved attempt", func(t *testing.T) {
+		fl, st := withRequiredCurrent(t, "first")
+		got := ApplySkip(fl, st, "skip")
+		assertSuccess(t, got, CodeSkippedRequiredApproval)
+		if got.State.Attempts[0].Approval == nil || got.State.Attempts[1].Approval != nil {
+			t.Fatalf("Attempts = %#v", got.State.Attempts)
+		}
+	})
+	t.Run("back preserves source approval and creates unapproved attempt", func(t *testing.T) {
+		fl, st := withRequiredCurrent(t, "second")
+		got := ApplyBack(fl, st, "first", "retry")
+		assertSuccess(t, got)
+		if got.State.Attempts[0].Approval == nil || got.State.Attempts[1].Approval != nil {
+			t.Fatalf("Attempts = %#v", got.State.Attempts)
+		}
+	})
+	t.Run("finish preserves approval", func(t *testing.T) {
+		_, st := withRequiredCurrent(t, "first")
+		got := ApplyFinish(st, "finish")
+		assertSuccess(t, got)
+		if got.State.Attempts[0].Approval == nil {
+			t.Fatal("finish lost approval")
 		}
 	})
 }

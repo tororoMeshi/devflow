@@ -47,11 +47,6 @@ func ApplyBack(flow flow.Flow, st state.State, toStepID string, reason string) T
 			delete(next.SkippedSteps, stepID)
 		}
 	}
-	for stepID := range next.Approvals {
-		if _, ok := invalidated[stepID]; ok {
-			delete(next.Approvals, stepID)
-		}
-	}
 	next.BackHistory = append(next.BackHistory, state.BackHistory{
 		FromStepID:         fromStepID,
 		ToStepID:           toStepID,
@@ -85,8 +80,12 @@ func hasStateForStep(st state.State, stepID string) bool {
 	if _, ok := st.SkippedSteps[stepID]; ok {
 		return true
 	}
-	_, ok := st.Approvals[stepID]
-	return ok
+	for _, attempt := range st.Attempts {
+		if attempt.StepID == stepID {
+			return true
+		}
+	}
+	return false
 }
 
 func removeInvalidatedSteps(values []string, invalidated map[string]struct{}) []string {
