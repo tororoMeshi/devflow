@@ -154,7 +154,7 @@ func TestStatusAndPromptRequireActiveFlow(t *testing.T) {
 		{
 			name: "invalid state",
 			setup: func(t *testing.T, root string) {
-				writeCommandTestFile(t, StatePath(root), `{"not":"valid state"}`)
+				writeCommandTestFile(t, LegacyStatePath(root), `{"not":"valid state"}`)
 			},
 			wantStatus: CodeUnsupportedStateVersion,
 		},
@@ -198,12 +198,12 @@ func TestStatusAndPromptDoNotUpdateState(t *testing.T) {
 			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
-			before := readCommandFile(t, StatePath(root))
+			before := readCommandFile(t, currentStatePath(t, root))
 
 			got := command.run(Context{ProjectRoot: root})
 
 			assertCommandSuccess(t, got)
-			after := readCommandFile(t, StatePath(root))
+			after := readCommandFile(t, currentStatePath(t, root))
 			if string(after) != string(before) {
 				t.Fatalf("state.json was modified")
 			}

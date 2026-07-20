@@ -52,12 +52,12 @@ func TestApproveRejectsStepWithoutRequiredApproval(t *testing.T) {
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
 
 	got := Approve(Context{ProjectRoot: root}, "first", "not needed")
 
 	assertCommandFailure(t, got, transition.CodeApprovalNotRequired)
-	assertCommandFileUnchanged(t, StatePath(root), before)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
 func TestApproveRejectsMissingStep(t *testing.T) {
@@ -67,12 +67,12 @@ func TestApproveRejectsMissingStep(t *testing.T) {
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
 
 	got := Approve(Context{ProjectRoot: root}, "missing", "")
 
 	assertCommandFailure(t, got, transition.CodeInvalidCurrentStep)
-	assertCommandFileUnchanged(t, StatePath(root), before)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
 func TestApproveRequiresActiveFlow(t *testing.T) {
@@ -130,12 +130,12 @@ func TestDoneRejectsMissingRequiredArtifact(t *testing.T) {
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
 
 	got := Done(Context{ProjectRoot: root})
 
 	assertCommandFailure(t, got, transition.CodeMissingRequiredArtifact)
-	assertCommandFileUnchanged(t, StatePath(root), before)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
 func TestDoneRejectsMissingRequiredApproval(t *testing.T) {
@@ -145,12 +145,12 @@ func TestDoneRejectsMissingRequiredApproval(t *testing.T) {
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
 
 	got := Done(Context{ProjectRoot: root})
 
 	assertCommandFailure(t, got, transition.CodeMissingRequiredApproval)
-	assertCommandFileUnchanged(t, StatePath(root), before)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
 func TestDoneUsesGateArtifactCheck(t *testing.T) {
@@ -261,7 +261,7 @@ func approveDoneState(currentStepID string) state.State {
 func loadCommandState(t *testing.T, root string) state.State {
 	t.Helper()
 
-	loaded := NewStore(Context{ProjectRoot: root}).Load()
+	loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
 	if loaded.Status != state.LoadOK {
 		t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 	}
@@ -328,7 +328,7 @@ func assertActiveFlowRequiredByCommand(t *testing.T, run func(Context) CommandRe
 		{
 			name: "invalid state",
 			setup: func(t *testing.T, root string) {
-				writeCommandTestFile(t, StatePath(root), `{"not":"valid state"}`)
+				writeCommandTestFile(t, LegacyStatePath(root), `{"not":"valid state"}`)
 			},
 			wantStatus: CodeUnsupportedStateVersion,
 		},

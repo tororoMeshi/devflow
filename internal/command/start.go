@@ -27,7 +27,7 @@ func Start(ctx Context, flowID string) CommandResult {
 	}
 
 	store := NewStore(ctx)
-	loaded := store.Load()
+	loaded := store.LoadCurrent()
 	current, diagnostics := startCurrentState(loaded)
 	if len(diagnostics) > 0 {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
@@ -38,8 +38,14 @@ func Start(ctx Context, flowID string) CommandResult {
 		return commandFailure(CodeFlowRunIDGenerationFailed)
 	}
 	result := transition.ApplyStart(snapshot, current, flowRunID)
-	if saveDiagnostics := SaveTransitionState(ctx, result); len(saveDiagnostics) > 0 {
-		result.Diagnostics = append(result.Diagnostics, saveDiagnostics...)
+	if result.State != nil && result.ExitCode == 0 {
+		if err := store.CreateRun(*result.State); err != nil {
+			result.Diagnostics = append(result.Diagnostics, commandErrorDiagnostic(CodeStateSaveFailed))
+			return CommandResult{ExitCode: 1, Diagnostics: result.Diagnostics}
+		}
+	}
+	if result.State == nil && result.ExitCode == 0 {
+		result.Diagnostics = append(result.Diagnostics, commandErrorDiagnostic(CodeStateSaveFailed))
 		return CommandResult{ExitCode: 1, Diagnostics: result.Diagnostics}
 	}
 

@@ -92,12 +92,12 @@ func TestBackRejectsFirstStep(t *testing.T) {
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
 
 	got := Back(Context{ProjectRoot: root}, "", "revise")
 
 	assertCommandFailure(t, got, transition.CodeNoPreviousStep)
-	assertCommandFileUnchanged(t, StatePath(root), before)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
 func TestBackRejectsEmptyReason(t *testing.T) {
@@ -109,12 +109,12 @@ func TestBackRejectsEmptyReason(t *testing.T) {
 			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
-			before := readCommandFile(t, StatePath(root))
+			before := readCommandFile(t, currentStatePath(t, root))
 
 			got := Back(Context{ProjectRoot: root}, "", reason)
 
 			assertCommandFailure(t, got, transition.CodeEmptyReason)
-			assertCommandFileUnchanged(t, StatePath(root), before)
+			assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 		})
 	}
 }
@@ -184,12 +184,12 @@ func TestBackRejectsInvalidTargetWithoutSaving(t *testing.T) {
 			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
-			before := readCommandFile(t, StatePath(root))
+			before := readCommandFile(t, currentStatePath(t, root))
 
 			got := Back(Context{ProjectRoot: root}, target, "revise")
 
 			assertCommandFailure(t, got, transition.CodeInvalidBackTarget)
-			assertCommandFileUnchanged(t, StatePath(root), before)
+			assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 		})
 	}
 }
@@ -300,12 +300,12 @@ func TestSkipRejectsEmptyReason(t *testing.T) {
 			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
-			before := readCommandFile(t, StatePath(root))
+			before := readCommandFile(t, currentStatePath(t, root))
 
 			got := Skip(Context{ProjectRoot: root}, reason)
 
 			assertCommandFailure(t, got, transition.CodeEmptyReason)
-			assertCommandFileUnchanged(t, StatePath(root), before)
+			assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 		})
 	}
 }
@@ -372,12 +372,12 @@ func TestFinishRejectsEmptyReason(t *testing.T) {
 			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}
-			before := readCommandFile(t, StatePath(root))
+			before := readCommandFile(t, currentStatePath(t, root))
 
 			got := Finish(Context{ProjectRoot: root}, reason)
 
 			assertCommandFailure(t, got, transition.CodeEmptyReason)
-			assertCommandFileUnchanged(t, StatePath(root), before)
+			assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 		})
 	}
 }

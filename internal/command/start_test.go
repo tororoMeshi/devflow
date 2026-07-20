@@ -19,7 +19,7 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 	got := Start(Context{ProjectRoot: root}, "test-flow")
 
 	assertCommandSuccess(t, got)
-	loaded := NewStore(Context{ProjectRoot: root}).Load()
+	loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
 	if loaded.Status != state.LoadOK {
 		t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 	}
@@ -31,6 +31,17 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 	if !state.IsValidFlowRunID(loaded.State.FlowRunID) {
 		t.Fatalf("FlowRunID = %q", loaded.State.FlowRunID)
 	}
+	if currentStatePath(t, root) != filepath.Join(RunsDir(root), loaded.State.FlowRunID, "state.json") {
+		t.Fatalf("current state path = %q", currentStatePath(t, root))
+	}
+	var pointer state.CurrentPointer
+	if err := json.Unmarshal(readCommandFile(t, CurrentPath(root)), &pointer); err != nil {
+		t.Fatal(err)
+	}
+	if pointer.SchemaVersion != state.CurrentPointerSchemaVersion || pointer.FlowRunID != loaded.State.FlowRunID {
+		t.Fatalf("current pointer = %#v", pointer)
+	}
+	assertNoFile(t, LegacyStatePath(root))
 	expectedFlow, err := flow.LoadFile(flowPath)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +54,7 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 		t.Fatalf("FlowSnapshot = %#v, want %#v", loaded.State.FlowSnapshot, expectedSnapshot)
 	}
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(readCommandFile(t, StatePath(root)), &raw); err != nil {
+	if err := json.Unmarshal(readCommandFile(t, currentStatePath(t, root)), &raw); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := raw["flow_snapshot"]; !ok {
@@ -71,15 +82,27 @@ func TestStartAllowsCompletedAndFinishedState(t *testing.T) {
 			if err := saveCommandState(t, root, current); err != nil {
 				t.Fatal(err)
 			}
+			previousPath := currentStatePath(t, root)
+			previousData := readCommandFile(t, previousPath)
 
 			got := Start(Context{ProjectRoot: root}, "test-flow")
 
 			assertCommandSuccess(t, got)
-			loaded := NewStore(Context{ProjectRoot: root}).Load()
+			loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
 			if loaded.Status != state.LoadOK {
 				t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 			}
 			assertStartedState(t, *loaded.State, "test-flow", "first")
+			if loaded.State.FlowRunID == current.FlowRunID {
+				t.Fatal("current pointer did not switch to the new Run")
+			}
+			if got := readCommandFile(t, previousPath); !reflect.DeepEqual(got, previousData) {
+				t.Fatal("previous terminal Run state changed")
+			}
+			entries, err := os.ReadDir(RunsDir(root))
+			if err != nil || len(entries) != 2 {
+				t.Fatalf("Run directories = %d, err = %v", len(entries), err)
+			}
 		})
 	}
 }
@@ -91,27 +114,38 @@ func TestStartRejectsRunningStateWithoutSaving(t *testing.T) {
 	if err := saveCommandState(t, root, current); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
+	entriesBefore, err := os.ReadDir(RunsDir(root))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := Start(Context{ProjectRoot: root}, "test-flow")
 
 	assertCommandFailure(t, got, transition.CodeFlowAlreadyRunning)
-	after := readCommandFile(t, StatePath(root))
+	after := readCommandFile(t, currentStatePath(t, root))
 	if string(after) != string(before) {
 		t.Fatalf("state.json was modified")
+	}
+	entriesAfter, err := os.ReadDir(RunsDir(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entriesAfter) != len(entriesBefore) {
+		t.Fatalf("Run directories increased: %d -> %d", len(entriesBefore), len(entriesAfter))
 	}
 }
 
 func TestStartRejectsInvalidStateWithoutSaving(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "test-flow", startTestFlow("test-flow"))
-	writeCommandTestFile(t, StatePath(root), `{"not":"valid state"}`)
-	before := readCommandFile(t, StatePath(root))
+	writeCommandTestFile(t, LegacyStatePath(root), `{"not":"valid state"}`)
+	before := readCommandFile(t, LegacyStatePath(root))
 
 	got := Start(Context{ProjectRoot: root}, "test-flow")
 
 	assertCommandFailure(t, got, CodeUnsupportedStateVersion)
-	after := readCommandFile(t, StatePath(root))
+	after := readCommandFile(t, LegacyStatePath(root))
 	if string(after) != string(before) {
 		t.Fatalf("state.json was modified")
 	}
@@ -124,7 +158,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 		got := Start(Context{ProjectRoot: root}, "missing-flow")
 
 		assertCommandFailure(t, got, CodeStateFlowMismatch)
-		assertNoFile(t, StatePath(root))
+		assertNoFile(t, LegacyStatePath(root))
 	})
 
 	t.Run("invalid flow definition", func(t *testing.T) {
@@ -138,7 +172,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 		got := Start(Context{ProjectRoot: root}, "broken-flow")
 
 		assertCommandFailure(t, got, CodeStateFlowMismatch)
-		assertNoFile(t, StatePath(root))
+		assertNoFile(t, LegacyStatePath(root))
 	})
 
 	t.Run("flow id does not match requested id", func(t *testing.T) {
@@ -148,7 +182,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 		got := Start(Context{ProjectRoot: root}, "requested-flow")
 
 		assertCommandFailure(t, got, CodeStateFlowMismatch)
-		assertNoFile(t, StatePath(root))
+		assertNoFile(t, LegacyStatePath(root))
 	})
 }
 
@@ -174,7 +208,7 @@ func TestStartDoesNotCheckArtifactsOrGate(t *testing.T) {
 	got := Start(Context{ProjectRoot: root}, "artifact-flow")
 
 	assertCommandSuccess(t, got)
-	loaded := NewStore(Context{ProjectRoot: root}).Load()
+	loaded := NewStore(Context{ProjectRoot: root}).LoadCurrent()
 	if loaded.Status != state.LoadOK {
 		t.Fatalf("Load status = %q, err = %v", loaded.Status, loaded.Err)
 	}
@@ -205,7 +239,7 @@ func TestStartRejectsInvalidFlowIDBeforeReadingFlow(t *testing.T) {
 			got := Start(Context{ProjectRoot: root}, tt.flowID)
 
 			assertCommandFailure(t, got, tt.code)
-			assertNoFile(t, StatePath(root))
+			assertNoFile(t, LegacyStatePath(root))
 		})
 	}
 }
@@ -216,12 +250,12 @@ func TestStartRejectsInvalidFlowIDWithoutOverwritingState(t *testing.T) {
 	if err := saveCommandState(t, root, current); err != nil {
 		t.Fatal(err)
 	}
-	before := readCommandFile(t, StatePath(root))
+	before := readCommandFile(t, currentStatePath(t, root))
 
 	got := Start(Context{ProjectRoot: root}, "../outside")
 
 	assertCommandFailure(t, got, string(flow.ErrorInvalidFlowID))
-	after := readCommandFile(t, StatePath(root))
+	after := readCommandFile(t, currentStatePath(t, root))
 	if string(after) != string(before) {
 		t.Fatalf("state.json was modified")
 	}

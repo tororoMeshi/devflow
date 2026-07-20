@@ -120,7 +120,7 @@ func TestListDoesNotDependOnState(t *testing.T) {
 		t.Fatalf("ExitCode without state = %d, want 0", gotWithoutState.ExitCode)
 	}
 
-	writeCommandTestFile(t, StatePath(root), `{"not":"valid state"}`)
+	writeCommandTestFile(t, LegacyStatePath(root), `{"not":"valid state"}`)
 	gotWithBrokenState := List(Context{ProjectRoot: root})
 	if gotWithBrokenState.ExitCode != 0 {
 		t.Fatalf("ExitCode with broken state = %d, want 0", gotWithBrokenState.ExitCode)
@@ -178,7 +178,7 @@ func TestListReturnsZeroWhenFlowDirIsMissing(t *testing.T) {
 	if len(got.Flows) != 0 {
 		t.Fatalf("len(Flows) = %d, want 0", len(got.Flows))
 	}
-	if _, err := os.Stat(StatePath(root)); !os.IsNotExist(err) {
+	if _, err := os.Stat(LegacyStatePath(root)); !os.IsNotExist(err) {
 		t.Fatalf("state.json was read or created: %v", err)
 	}
 }

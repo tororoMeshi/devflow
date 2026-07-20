@@ -24,7 +24,11 @@ func saveCommandState(t testing.TB, root string, value state.State) error {
 		}
 		value.FlowSnapshot = snapshot
 	}
-	return NewStore(Context{ProjectRoot: root}).Save(value)
+	store := NewStore(Context{ProjectRoot: root})
+	if loaded := store.LoadCurrent(); loaded.Status == state.LoadNoState {
+		return store.CreateRun(value)
+	}
+	return store.SaveCurrent(value)
 }
 
 func writeCommandStateUnchecked(t *testing.T, root string, value state.State) {
@@ -33,5 +37,28 @@ func writeCommandStateUnchecked(t *testing.T, root string, value state.State) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeCommandTestFile(t, StatePath(root), string(data))
+	statePath, err := NewStore(Context{ProjectRoot: root}).RunStatePath(value.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCommandTestFile(t, statePath, string(data))
+	pointer, err := json.Marshal(state.CurrentPointer{SchemaVersion: state.CurrentPointerSchemaVersion, FlowRunID: value.FlowRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCommandTestFile(t, CurrentPath(root), string(pointer))
+}
+
+func currentStatePath(t testing.TB, root string) string {
+	t.Helper()
+	store := NewStore(Context{ProjectRoot: root})
+	loaded := store.LoadCurrent()
+	if loaded.Status != state.LoadOK || loaded.State == nil {
+		t.Fatalf("LoadCurrent() = %#v", loaded)
+	}
+	path, err := store.RunStatePath(loaded.State.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

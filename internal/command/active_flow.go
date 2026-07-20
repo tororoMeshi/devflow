@@ -14,7 +14,7 @@ type ActiveFlow struct {
 
 func LoadActiveFlow(ctx Context) (ActiveFlow, []transition.Diagnostic) {
 	store := NewStore(ctx)
-	loaded := store.Load()
+	loaded := store.LoadCurrent()
 	return ActiveFlowFromLoadResult(ctx, loaded)
 }
 

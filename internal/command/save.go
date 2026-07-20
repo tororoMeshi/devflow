@@ -8,7 +8,7 @@ func SaveTransitionState(ctx Context, result transition.TransitionResult) []tran
 	if result.State == nil {
 		return nil
 	}
-	if err := NewStore(ctx).Save(*result.State); err != nil {
+	if err := NewStore(ctx).SaveCurrent(*result.State); err != nil {
 		return []transition.Diagnostic{commandErrorDiagnostic(CodeStateSaveFailed)}
 	}
 	return nil

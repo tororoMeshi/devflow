@@ -13,14 +13,19 @@ type Context struct {
 	Stderr      io.Writer
 }
 
-func StatePath(projectRoot string) string {
+func LegacyStatePath(projectRoot string) string {
 	return filepath.Join(projectRoot, ".devflow", "state.json")
 }
+
+func CurrentPath(projectRoot string) string {
+	return filepath.Join(projectRoot, ".devflow", "current.json")
+}
+func RunsDir(projectRoot string) string { return filepath.Join(projectRoot, ".devflow", "runs") }
 
 func FlowDir(projectRoot string) string {
 	return filepath.Join(projectRoot, ".devflow", "flows")
 }
 
 func NewStore(ctx Context) state.Store {
-	return state.Store{Path: StatePath(ctx.ProjectRoot)}
+	return state.Store{Root: filepath.Join(ctx.ProjectRoot, ".devflow")}
 }
