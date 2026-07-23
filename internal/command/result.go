@@ -94,6 +94,7 @@ type PromptResult struct {
 	RequiredChecks         []string
 	AfterCompleting        AfterCompletingResult
 	ArtifactBlockers       []string
+	CheckBlockers          []string
 }
 
 type ArtifactResult struct {
@@ -125,4 +126,9 @@ type SuccessResult struct {
 	RecordedAttemptID         string
 	RecordedArtifactDigest    string
 	RecordedArtifactSize      int64
+	RecordedCheckRunID        string `json:"recorded_check_run_id,omitempty"`
+	RecordedCheckStepID       string `json:"recorded_check_step_id,omitempty"`
+	RecordedCheckAttemptID    string `json:"recorded_check_attempt_id,omitempty"`
+	RecordedCheckID           string `json:"recorded_check_id,omitempty"`
+	RecordedCheckExitCode     *int   `json:"recorded_check_exit_code,omitempty"`
 }

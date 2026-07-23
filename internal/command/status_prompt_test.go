@@ -69,7 +69,7 @@ func TestPromptCompoundArtifactStateOnlySuggestsRecordableEvidence(t *testing.T)
 		{Path: "optional.md", Required: false},
 	}
 	approval := &RequiredApprovalResult{StepID: "step", AttemptID: attempt.ID}
-	assertCommands(t, promptAfterCompleting(active, inspections, approval).Commands, []string{
+	assertCommands(t, promptAfterCompleting(active, inspections, approval, gate.Result{}).Commands, []string{
 		`devflow artifact record --step "step" --attempt "` + attempt.ID + `" --path "missing.md"`,
 	})
 	wantBlockers := []string{
@@ -285,7 +285,6 @@ func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
 	assertCommandSuccess(t, got)
 	assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{
 		`devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`,
-		"devflow done",
 	})
 
 	approvalDigest, err := state.ArtifactEvidenceSetDigest([]string{"docs/required.md"}, st.Attempts[0].ArtifactEvidence)

@@ -75,9 +75,10 @@ func TestCommandsUseSnapshotAfterFlowDeletion(t *testing.T) {
 	assertCommandSuccess(t, Status(Context{ProjectRoot: root}))
 	assertCommandSuccess(t, Prompt(Context{ProjectRoot: root}))
 	assertCommandSuccess(t, CurrentContext(Context{ProjectRoot: root}))
-	request := CheckRequest(Context{ProjectRoot: root}, "verify")
+	st := loadCommandState(t, root)
+	request := CheckRequest(Context{ProjectRoot: root}, "first", st.CurrentAttemptID, "verify")
 	assertCommandSuccess(t, request)
-	if request.CheckRequest.FlowID != "checked-flow" || request.CheckRequest.StepID != "first" || request.CheckRequest.EntrySequence != 1 {
+	if request.CheckRequest.FlowRunID != st.FlowRunID || request.CheckRequest.StepID != "first" || request.CheckRequest.AttemptID != st.CurrentAttemptID {
 		t.Fatalf("CheckRequest = %#v", request.CheckRequest)
 	}
 }
