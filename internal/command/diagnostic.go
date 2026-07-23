@@ -27,6 +27,14 @@ const (
 	CodeInvalidCheckRecord        = "error_invalid_check_record"
 	CodeUnsupportedCheckSchema    = "error_unsupported_check_schema"
 	CodeCheckContextMismatch      = "error_check_context_mismatch"
+	CodeInvalidArtifactPath       = "error_invalid_artifact_path"
+	CodeArtifactFileMissing       = "error_artifact_file_missing"
+	CodeArtifactNotRegular        = "error_artifact_not_regular"
+	CodeArtifactSymlink           = "error_artifact_symlink"
+	CodeArtifactOutsideProject    = "error_artifact_outside_project"
+	CodeArtifactInsideDevflow     = "error_artifact_inside_devflow"
+	CodeArtifactUnreadable        = "error_artifact_unreadable"
+	CodeArtifactChanged           = "error_artifact_changed_while_hashing"
 )
 
 func WriteDiagnostics(ctx Context, diagnostics []transition.Diagnostic) {

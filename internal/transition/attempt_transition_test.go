@@ -125,6 +125,50 @@ func TestApprovalLifecycleAcrossTransitions(t *testing.T) {
 	})
 }
 
+func TestArtifactEvidenceLifecycleAcrossTransitions(t *testing.T) {
+	evidence := state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	withEvidence := func(t *testing.T, stepID string) (flow.Flow, state.State) {
+		t.Helper()
+		fl := testFlow()
+		for i := range fl.Steps {
+			if fl.Steps[i].ID == stepID {
+				fl.Steps[i].Artifacts = []flow.Artifact{{Path: "out/report.md", Required: true}}
+			}
+		}
+		st := runningState()
+		setRunningStep(&st, stepID)
+		st.FlowSnapshot = testSnapshot(fl)
+		st.Attempts[0].ArtifactEvidence["out/report.md"] = evidence
+		return fl, st
+	}
+	assertHistoryAndFreshAttempt := func(t *testing.T, got TransitionResult, codes ...string) {
+		t.Helper()
+		assertSuccess(t, got, codes...)
+		if got.State.Attempts[0].ArtifactEvidence["out/report.md"] != evidence {
+			t.Fatal("historical Evidence was lost")
+		}
+		if len(got.State.Attempts) != 2 || got.State.Attempts[1].ArtifactEvidence == nil || len(got.State.Attempts[1].ArtifactEvidence) != 0 {
+			t.Fatalf("new Attempt Evidence = %#v", got.State.Attempts)
+		}
+	}
+
+	fl, st := withEvidence(t, "first")
+	assertHistoryAndFreshAttempt(t, ApplyDone(fl, st, gate.Result{OK: true}))
+	fl, st = withEvidence(t, "first")
+	assertHistoryAndFreshAttempt(t, ApplySkip(fl, st, "skip"), CodeSkippedRequiredArtifact)
+	fl, st = withEvidence(t, "second")
+	assertHistoryAndFreshAttempt(t, ApplyBack(fl, st, "first", "retry"))
+	_, st = withEvidence(t, "first")
+	finished := ApplyFinish(st, "finish")
+	assertSuccess(t, finished)
+	if finished.State.Attempts[0].ArtifactEvidence["out/report.md"] != evidence || len(finished.State.Attempts) != 1 {
+		t.Fatalf("finish Evidence = %#v", finished.State.Attempts)
+	}
+}
+
 func TestEnterStepRejectsSequenceOverflowWithoutMutation(t *testing.T) {
 	attempt, err := state.NewStepAttempt("first", math.MaxUint64)
 	if err != nil {

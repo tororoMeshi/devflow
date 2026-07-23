@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/8noki8/devflow/internal/flow"
@@ -250,6 +251,13 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 			return fmt.Errorf("invalid attempts: %w", err)
 		}
 		for index, attempt := range attempts {
+			evidenceJSON, ok := attempt["artifact_evidence"]
+			if !ok {
+				return fmt.Errorf("missing required field \"artifact_evidence\" in attempt %d", index)
+			}
+			if string(evidenceJSON) == "null" {
+				return fmt.Errorf("artifact_evidence must not be null in attempt %d", index)
+			}
 			approvalJSON, ok := attempt["approval"]
 			if !ok || string(approvalJSON) == "null" {
 				continue
@@ -320,6 +328,32 @@ func validateState(state State) error {
 			return fmt.Errorf("attempt step_id %q is not in flow_snapshot", attempt.StepID)
 		}
 		step, _ := flowStep(state.FlowSnapshot.Flow, attempt.StepID)
+		requiredArtifacts := map[string]struct{}{}
+		for _, artifact := range step.Artifacts {
+			if artifact.Required {
+				requiredArtifacts[artifact.Path] = struct{}{}
+			}
+		}
+		evidencePaths := make([]string, 0, len(attempt.ArtifactEvidence))
+		for path := range attempt.ArtifactEvidence {
+			evidencePaths = append(evidencePaths, path)
+		}
+		sort.Strings(evidencePaths)
+		for _, path := range evidencePaths {
+			if _, ok := requiredArtifacts[path]; !ok {
+				return fmt.Errorf("attempt artifact evidence %q is not required by step %q", path, attempt.StepID)
+			}
+		}
+		if attempt.Status == StepAttemptClosed && attempt.ExitReason == StepAttemptExitDone {
+			for _, artifact := range step.Artifacts {
+				if !artifact.Required {
+					continue
+				}
+				if _, ok := attempt.ArtifactEvidence[artifact.Path]; !ok {
+					return fmt.Errorf("done attempt missing artifact evidence %q", artifact.Path)
+				}
+			}
+		}
 		if attempt.Approval != nil && (step.Approval == nil || !step.Approval.Required) {
 			return fmt.Errorf("attempt step %q does not require approval", attempt.StepID)
 		}

@@ -104,10 +104,10 @@ func Validate(flow Flow) error {
 			return validationError(ErrorMissingStepInstruction, nil)
 		}
 
-		if err := validateArtifacts(step.Inputs, ErrorMissingInputPath, ErrorInvalidInputPath, ErrorDuplicateInputPath); err != nil {
+		if err := validateArtifacts(step.Inputs, ErrorMissingInputPath, ErrorInvalidInputPath, ErrorDuplicateInputPath, false); err != nil {
 			return err
 		}
-		if err := validateArtifacts(step.Artifacts, ErrorMissingArtifactPath, ErrorInvalidArtifactPath, ErrorDuplicateArtifactPath); err != nil {
+		if err := validateArtifacts(step.Artifacts, ErrorMissingArtifactPath, ErrorInvalidArtifactPath, ErrorDuplicateArtifactPath, true); err != nil {
 			return err
 		}
 	}
@@ -115,7 +115,7 @@ func Validate(flow Flow) error {
 	return nil
 }
 
-func validateArtifacts(artifacts []Artifact, missingCode ErrorCode, invalidCode ErrorCode, duplicateCode ErrorCode) error {
+func validateArtifacts(artifacts []Artifact, missingCode ErrorCode, invalidCode ErrorCode, duplicateCode ErrorCode, rejectManaged bool) error {
 	seen := map[string]struct{}{}
 	for _, artifact := range artifacts {
 		if blank(artifact.Path) {
@@ -123,6 +123,9 @@ func validateArtifacts(artifacts []Artifact, missingCode ErrorCode, invalidCode 
 		}
 		if err := pathcheck.ValidateArtifactPath(artifact.Path); err != nil {
 			return validationError(invalidCode, err)
+		}
+		if rejectManaged && strings.Split(artifact.Path, "/")[0] == ".devflow" {
+			return validationError(invalidCode, nil)
 		}
 		if _, ok := seen[artifact.Path]; ok {
 			return validationError(duplicateCode, nil)

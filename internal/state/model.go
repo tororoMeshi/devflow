@@ -7,7 +7,7 @@ import (
 	"github.com/8noki8/devflow/internal/task"
 )
 
-const CurrentSchemaVersion = 6
+const CurrentSchemaVersion = 7
 
 var flowRunIDPattern = regexp.MustCompile(`^run_[0-9a-f]{32}$`)
 
@@ -63,6 +63,7 @@ func (s State) CurrentAttempt() (StepAttempt, int, bool) {
 	for i := range s.Attempts {
 		if s.Attempts[i].ID == s.CurrentAttemptID {
 			attempt := s.Attempts[i]
+			attempt.ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 			attempt.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 			attempt.Approval = cloneApprovalRecord(attempt.Approval)
 			return attempt, i, true
@@ -76,6 +77,7 @@ func (s State) LastAttempt() (StepAttempt, bool) {
 		return StepAttempt{}, false
 	}
 	attempt := s.Attempts[len(s.Attempts)-1]
+	attempt.ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 	attempt.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 	attempt.Approval = cloneApprovalRecord(attempt.Approval)
 	return attempt, true

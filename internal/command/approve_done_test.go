@@ -159,7 +159,7 @@ func TestDoneRejectsMissingRequiredArtifact(t *testing.T) {
 
 	got := Done(Context{ProjectRoot: root})
 
-	assertCommandFailure(t, got, transition.CodeMissingRequiredArtifact)
+	assertCommandFailure(t, got, transition.CodeMissingArtifactEvidence)
 	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
 }
 
@@ -186,6 +186,8 @@ func TestDoneUsesGateArtifactCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "artifact")
+	recorded := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/required.md")
+	assertCommandSuccess(t, recorded)
 
 	got := Done(Context{ProjectRoot: root})
 
@@ -381,7 +383,7 @@ func TestDoneDoesNotCreateMissingArtifact(t *testing.T) {
 
 	got := Done(Context{ProjectRoot: root})
 
-	assertCommandFailure(t, got, transition.CodeMissingRequiredArtifact)
+	assertCommandFailure(t, got, transition.CodeMissingArtifactEvidence)
 	if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
 		t.Fatalf("artifact unexpectedly exists or stat failed: %v", err)
 	}

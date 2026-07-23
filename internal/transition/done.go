@@ -26,13 +26,17 @@ func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) Transitio
 				Artifacts: []string{input},
 			})
 		}
-		for _, artifact := range gateResult.MissingArtifacts {
-			diagnostics = append(diagnostics, Diagnostic{
-				Level:     LevelError,
-				Code:      CodeMissingRequiredArtifact,
-				StepID:    currentStep.ID,
-				Artifacts: []string{artifact},
-			})
+		for _, problem := range gateResult.ArtifactProblems {
+			code := CodeMissingRequiredArtifact
+			switch problem.Kind {
+			case gate.ArtifactEvidenceMissing:
+				code = CodeMissingArtifactEvidence
+			case gate.ArtifactUnsafe:
+				code = CodeArtifactUnsafe
+			case gate.ArtifactMismatch:
+				code = CodeArtifactEvidenceMismatch
+			}
+			diagnostics = append(diagnostics, Diagnostic{Level: LevelError, Code: code, StepID: currentStep.ID, Artifacts: []string{problem.Path}})
 		}
 		for _, stepID := range gateResult.MissingApprovals {
 			diagnostics = append(diagnostics, errorDiagnostic(CodeMissingRequiredApproval, stepID))

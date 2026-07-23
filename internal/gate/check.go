@@ -1,9 +1,11 @@
 package gate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
+	"github.com/8noki8/devflow/internal/artifact"
 	"github.com/8noki8/devflow/internal/flow"
 	statepkg "github.com/8noki8/devflow/internal/state"
 )
@@ -25,12 +27,31 @@ func CheckDoneGate(step flow.Step, currentState statepkg.State, projectRoot stri
 		}
 	}
 
-	for _, artifact := range step.Artifacts {
-		if !artifact.Required {
+	attempt, _, hasCurrentAttempt := currentState.CurrentAttempt()
+	for _, requirement := range step.Artifacts {
+		if !requirement.Required {
 			continue
 		}
-		if !FileExists(projectRoot, artifact.Path) {
-			result.MissingArtifacts = append(result.MissingArtifacts, artifact.Path)
+		recorded, ok := attempt.ArtifactEvidence[requirement.Path]
+		if !hasCurrentAttempt || attempt.StepID != step.ID || !ok {
+			result.MissingEvidence = append(result.MissingEvidence, requirement.Path)
+			result.ArtifactProblems = append(result.ArtifactProblems, ArtifactProblem{Path: requirement.Path, Kind: ArtifactEvidenceMissing})
+			continue
+		}
+		actual, err := artifact.ReadFile(projectRoot, requirement.Path)
+		if err != nil {
+			if errors.Is(err, artifact.ErrMissing) {
+				result.MissingArtifacts = append(result.MissingArtifacts, requirement.Path)
+				result.ArtifactProblems = append(result.ArtifactProblems, ArtifactProblem{Path: requirement.Path, Kind: ArtifactFileMissing})
+			} else {
+				result.UnsafeArtifacts = append(result.UnsafeArtifacts, requirement.Path)
+				result.ArtifactProblems = append(result.ArtifactProblems, ArtifactProblem{Path: requirement.Path, Kind: ArtifactUnsafe})
+			}
+			continue
+		}
+		if actual.Digest != recorded.Digest || actual.Size != recorded.Size {
+			result.MismatchedArtifacts = append(result.MismatchedArtifacts, requirement.Path)
+			result.ArtifactProblems = append(result.ArtifactProblems, ArtifactProblem{Path: requirement.Path, Kind: ArtifactMismatch})
 		}
 	}
 
@@ -41,7 +62,6 @@ func CheckDoneGate(step flow.Step, currentState statepkg.State, projectRoot stri
 		}
 	}
 
-	attempt, _, hasCurrentAttempt := currentState.CurrentAttempt()
 	for _, checkID := range step.RequiredChecks {
 		checkResult, ok := attempt.CheckResults[checkID]
 		if !hasCurrentAttempt || attempt.StepID != step.ID || !ok {
@@ -53,7 +73,7 @@ func CheckDoneGate(step flow.Step, currentState statepkg.State, projectRoot stri
 		}
 	}
 
-	result.OK = len(result.MissingInputs) == 0 && len(result.MissingArtifacts) == 0 && len(result.MissingApprovals) == 0 && len(result.CheckProblems) == 0
+	result.OK = len(result.MissingInputs) == 0 && len(result.MissingEvidence) == 0 && len(result.MissingArtifacts) == 0 && len(result.UnsafeArtifacts) == 0 && len(result.MismatchedArtifacts) == 0 && len(result.MissingApprovals) == 0 && len(result.CheckProblems) == 0
 	return result
 }
 

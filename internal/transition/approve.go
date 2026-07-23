@@ -41,6 +41,11 @@ func ApplyApprove(_ flow.Flow, st state.State, stepID string, attemptID string, 
 	if !hasRequiredApproval(targetStep) {
 		return failure(errorDiagnostic(CodeApprovalNotRequired, stepID))
 	}
+	for _, path := range requiredArtifactPaths(targetStep) {
+		if _, ok := current.ArtifactEvidence[path]; !ok {
+			return failure(Diagnostic{Level: LevelError, Code: CodeMissingArtifactEvidence, StepID: stepID, Artifacts: []string{path}})
+		}
+	}
 	approved, err := state.ApproveStepAttempt(current, note)
 	if errors.Is(err, state.ErrStepAttemptAlreadyApproved) {
 		return failure(errorDiagnostic(CodeAttemptAlreadyApproved, stepID))

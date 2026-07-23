@@ -63,17 +63,21 @@ func TestNewStepAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := StepAttempt{
-		ID:            "attempt_00000000000000000001",
-		StepID:        " implement ",
-		EntrySequence: 1,
-		Status:        StepAttemptActive,
-		CheckResults:  map[string]CheckResult{},
+		ID:               "attempt_00000000000000000001",
+		StepID:           " implement ",
+		EntrySequence:    1,
+		Status:           StepAttemptActive,
+		ArtifactEvidence: map[string]ArtifactEvidence{},
+		CheckResults:     map[string]CheckResult{},
 	}
 	if !reflect.DeepEqual(attempt, want) {
 		t.Fatalf("NewStepAttempt() = %#v, want %#v", attempt, want)
 	}
 	if attempt.CheckResults == nil {
 		t.Fatal("CheckResults is nil")
+	}
+	if attempt.ArtifactEvidence == nil {
+		t.Fatal("ArtifactEvidence is nil")
 	}
 	if attempt.Approval != nil {
 		t.Fatalf("Approval = %#v, want nil", attempt.Approval)
@@ -185,6 +189,7 @@ func TestValidateStepAttempt(t *testing.T) {
 		{"back blank reason", withAttempt(validBack, func(a *StepAttempt) { a.Reason = " \t" }), ErrInvalidStepAttemptReason},
 		{"finish blank reason", withAttempt(validFinish, func(a *StepAttempt) { a.Reason = "\n" }), ErrInvalidStepAttemptReason},
 		{"nil check results", withAttempt(validActive, func(a *StepAttempt) { a.CheckResults = nil }), ErrNilStepAttemptCheckResults},
+		{"nil artifact evidence", withAttempt(validActive, func(a *StepAttempt) { a.ArtifactEvidence = nil }), ErrNilArtifactEvidence},
 		{"blank approval note", withAttempt(validActive, func(a *StepAttempt) { a.Approval = &ApprovalRecord{Note: " \t"} }), ErrInvalidApprovalNote},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -307,9 +312,9 @@ func TestStepAttemptJSON(t *testing.T) {
 		attempt StepAttempt
 		want    string
 	}{
-		{"active", active, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","check_results":{}}`},
-		{"closed skip", closed, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"closed","exit_reason":"skip","reason":"not applicable","check_results":{}}`},
-		{"approved", approved, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","check_results":{},"approval":{"note":"ok"}}`},
+		{"active", active, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","artifact_evidence":{},"check_results":{}}`},
+		{"closed skip", closed, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"closed","exit_reason":"skip","reason":"not applicable","artifact_evidence":{},"check_results":{}}`},
+		{"approved", approved, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","artifact_evidence":{},"check_results":{},"approval":{"note":"ok"}}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := json.Marshal(tt.attempt)
@@ -374,6 +379,7 @@ func mustCloseStepAttempt(t *testing.T, attempt StepAttempt, exitReason StepAtte
 
 func withAttempt(attempt StepAttempt, mutate func(*StepAttempt)) StepAttempt {
 	copy := attempt
+	copy.ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 	copy.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 	mutate(&copy)
 	return copy

@@ -36,14 +36,15 @@ const (
 )
 
 type StepAttempt struct {
-	ID            string                 `json:"id"`
-	StepID        string                 `json:"step_id"`
-	EntrySequence uint64                 `json:"entry_sequence"`
-	Status        StepAttemptStatus      `json:"status"`
-	ExitReason    StepAttemptExitReason  `json:"exit_reason,omitempty"`
-	Reason        string                 `json:"reason,omitempty"`
-	CheckResults  map[string]CheckResult `json:"check_results"`
-	Approval      *ApprovalRecord        `json:"approval,omitempty"`
+	ID               string                      `json:"id"`
+	StepID           string                      `json:"step_id"`
+	EntrySequence    uint64                      `json:"entry_sequence"`
+	Status           StepAttemptStatus           `json:"status"`
+	ExitReason       StepAttemptExitReason       `json:"exit_reason,omitempty"`
+	Reason           string                      `json:"reason,omitempty"`
+	ArtifactEvidence map[string]ArtifactEvidence `json:"artifact_evidence"`
+	CheckResults     map[string]CheckResult      `json:"check_results"`
+	Approval         *ApprovalRecord             `json:"approval,omitempty"`
 }
 
 type ApprovalRecord struct {
@@ -81,11 +82,12 @@ func NewStepAttempt(stepID string, entrySequence uint64) (StepAttempt, error) {
 	}
 
 	return StepAttempt{
-		ID:            id,
-		StepID:        stepID,
-		EntrySequence: entrySequence,
-		Status:        StepAttemptActive,
-		CheckResults:  map[string]CheckResult{},
+		ID:               id,
+		StepID:           stepID,
+		EntrySequence:    entrySequence,
+		Status:           StepAttemptActive,
+		ArtifactEvidence: map[string]ArtifactEvidence{},
+		CheckResults:     map[string]CheckResult{},
 	}, nil
 }
 
@@ -106,6 +108,9 @@ func ValidateStepAttempt(attempt StepAttempt) error {
 	}
 	if attempt.CheckResults == nil {
 		return ErrNilStepAttemptCheckResults
+	}
+	if err := validateArtifactEvidenceMap(attempt.ArtifactEvidence); err != nil {
+		return err
 	}
 	if attempt.Approval != nil && strings.TrimSpace(attempt.Approval.Note) == "" {
 		return ErrInvalidApprovalNote
@@ -139,6 +144,7 @@ func CloseStepAttempt(attempt StepAttempt, exitReason StepAttemptExitReason, rea
 	}
 
 	closed := attempt
+	closed.ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 	closed.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 	closed.Approval = cloneApprovalRecord(attempt.Approval)
 	closed.Status = StepAttemptClosed
@@ -165,6 +171,7 @@ func ApproveStepAttempt(attempt StepAttempt, note string) (StepAttempt, error) {
 		return StepAttempt{}, ErrInvalidApprovalNote
 	}
 	approved := attempt
+	approved.ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 	approved.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 	approved.Approval = &ApprovalRecord{Note: note}
 	if err := ValidateStepAttempt(approved); err != nil {

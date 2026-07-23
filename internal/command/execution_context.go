@@ -216,12 +216,12 @@ func executionApproval(step flow.Step, current state.State) ExecutionApprovalRes
 }
 
 func executionCompletion(gateResult gate.Result, stepID string) *ExecutionCompletionResult {
-	blockers := make([]ExecutionContextBlocker, 0, len(gateResult.MissingInputs)+len(gateResult.MissingArtifacts)+len(gateResult.CheckProblems)+len(gateResult.MissingApprovals))
+	blockers := make([]ExecutionContextBlocker, 0, len(gateResult.MissingInputs)+len(gateResult.ArtifactProblems)+len(gateResult.CheckProblems)+len(gateResult.MissingApprovals))
 	for _, path := range gateResult.MissingInputs {
 		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingInput, Path: path})
 	}
-	for _, path := range gateResult.MissingArtifacts {
-		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingArtifact, Path: path})
+	for _, problem := range gateResult.ArtifactProblems {
+		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingArtifact, Path: problem.Path})
 	}
 	for _, problem := range gateResult.CheckProblems {
 		blockerType := CompletionBlockerMissingCheck
