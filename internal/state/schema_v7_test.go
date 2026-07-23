@@ -3,12 +3,13 @@ package state
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/8noki8/devflow/internal/flow"
 )
 
-func TestStateV6JSONContract(t *testing.T) {
+func TestStateV7JSONContract(t *testing.T) {
 	value := testStateWithRequiredCheck(t, "unused")
 	value.Attempts[0].CheckResults["unused"] = CheckResult{ExitCode: 0}
 	if err := validateState(value); err != nil {
@@ -22,8 +23,8 @@ func TestStateV6JSONContract(t *testing.T) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if value.SchemaVersion != 6 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
-		t.Fatalf("v6 fields missing: %s", data)
+	if value.SchemaVersion != 7 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
+		t.Fatalf("v7 fields missing: %s", data)
 	}
 	if _, ok := raw["approvals"]; ok {
 		t.Fatal("top-level approvals must not be present")
@@ -41,6 +42,9 @@ func TestStateV6JSONContract(t *testing.T) {
 	if len(attempts) != 1 || attempts[0]["check_results"] == nil {
 		t.Fatalf("nested check_results missing: %s", raw["attempts"])
 	}
+	if attempts[0]["artifact_evidence"] == nil {
+		t.Fatalf("nested artifact_evidence missing: %s", raw["attempts"])
+	}
 	var roundTrip State
 	if err := json.Unmarshal(data, &roundTrip); err != nil {
 		t.Fatal(err)
@@ -50,7 +54,7 @@ func TestStateV6JSONContract(t *testing.T) {
 	}
 }
 
-func TestValidateStateV6AttemptInvariants(t *testing.T) {
+func TestValidateStateV7AttemptInvariants(t *testing.T) {
 	valid := testState(t, StatusRunning, "first")
 	closed, err := CloseStepAttempt(valid.Attempts[0], StepAttemptExitDone, "")
 	if err != nil {
@@ -100,6 +104,7 @@ func TestValidateStateV6AttemptInvariants(t *testing.T) {
 		{"unknown step", valid, func(s *State) { s.Attempts[0].StepID = "missing"; s.CurrentStepID = "missing" }},
 		{"unknown attempt status", valid, func(s *State) { s.Attempts[0].Status = "unknown" }},
 		{"nil attempt checks", valid, func(s *State) { s.Attempts[0].CheckResults = nil }},
+		{"nil attempt evidence", valid, func(s *State) { s.Attempts[0].ArtifactEvidence = nil }},
 		{"running missing current id", valid, func(s *State) { s.CurrentAttemptID = "" }},
 		{"running no active", valid, func(s *State) { s.Attempts[0] = closed }},
 		{"running multiple active", twoAttempts, func(s *State) { s.Attempts[0], _ = NewStepAttempt("first", 1) }},
@@ -130,7 +135,7 @@ func TestValidateStateV6AttemptInvariants(t *testing.T) {
 	}
 }
 
-func TestValidateStateV6ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
+func TestValidateStateV7ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
 	value := testState(t, StatusRunning, "first")
 	value.Attempts[0].Approval = &ApprovalRecord{Note: "ok"}
 	if err := validateState(value); err == nil {
@@ -152,7 +157,7 @@ func TestValidateStateV6ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
 	}
 }
 
-func TestStateV6ApprovalJSONShapeAndRoundTrip(t *testing.T) {
+func TestStateV7ApprovalJSONShapeAndRoundTrip(t *testing.T) {
 	value := testState(t, StatusRunning, "first")
 	fl := value.FlowSnapshot.Flow
 	fl.Steps[0].Approval = &flow.Approval{Required: true}
@@ -211,6 +216,99 @@ func TestAttemptLookupDoesNotShareApproval(t *testing.T) {
 	}
 }
 
+func TestValidateStateV7ArtifactEvidenceRequirementRules(t *testing.T) {
+	required := testState(t, StatusRunning, "first")
+	fl := required.FlowSnapshot.Flow
+	fl.Steps[0].Inputs = []flow.Artifact{{Path: "input/request.md", Required: true}}
+	fl.Steps[0].Artifacts = []flow.Artifact{
+		{Path: "out/required.md", Required: true},
+		{Path: "out/optional.md", Required: false},
+	}
+	var err error
+	required.FlowSnapshot, err = flow.BuildSnapshot(fl, required.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := ArtifactEvidence{Digest: "sha256:" + strings.Repeat("a", 64), Size: 1}
+	if err := validateState(required); err != nil {
+		t.Fatalf("active partial evidence rejected: %v", err)
+	}
+	for _, tt := range []struct {
+		name string
+		path string
+	}{
+		{"unknown", "out/unknown.md"},
+		{"optional", "out/optional.md"},
+		{"input only", "input/request.md"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := required.Clone()
+			candidate.Attempts[0].ArtifactEvidence[tt.path] = evidence
+			if err := validateState(candidate); err == nil {
+				t.Fatalf("Evidence path %q accepted", tt.path)
+			}
+		})
+	}
+
+	doneMissing := required.Clone()
+	doneMissing.Attempts[0], err = CloseStepAttempt(doneMissing.Attempts[0], StepAttemptExitDone, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doneMissing.Status = StatusCompleted
+	doneMissing.CurrentAttemptID = ""
+	if err := validateState(doneMissing); err == nil {
+		t.Fatal("done Attempt without required Evidence accepted")
+	}
+
+	doneComplete := required.Clone()
+	doneComplete.Attempts[0].ArtifactEvidence["out/required.md"] = evidence
+	doneComplete.Attempts[0], err = CloseStepAttempt(doneComplete.Attempts[0], StepAttemptExitDone, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doneComplete.Status = StatusCompleted
+	doneComplete.CurrentAttemptID = ""
+	if err := validateState(doneComplete); err != nil {
+		t.Fatalf("done Attempt with complete Evidence rejected: %v", err)
+	}
+
+	for _, exit := range []StepAttemptExitReason{StepAttemptExitSkip, StepAttemptExitFinish} {
+		t.Run(string(exit), func(t *testing.T) {
+			candidate := required.Clone()
+			candidate.Attempts[0], err = CloseStepAttempt(candidate.Attempts[0], exit, "reason")
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate.CurrentAttemptID = ""
+			if exit == StepAttemptExitSkip {
+				candidate.Status = StatusCompleted
+			} else {
+				candidate.Status = StatusFinished
+				candidate.Finish = &Finish{Reason: "reason"}
+			}
+			if err := validateState(candidate); err != nil {
+				t.Fatalf("partial Evidence rejected: %v", err)
+			}
+		})
+	}
+
+	back := required.Clone()
+	back.Attempts[0], err = CloseStepAttempt(back.Attempts[0], StepAttemptExitBack, "retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := NewStepAttempt("first", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back.Attempts = append(back.Attempts, next)
+	back.CurrentAttemptID = next.ID
+	if err := validateState(back); err != nil {
+		t.Fatalf("back partial Evidence rejected: %v", err)
+	}
+}
+
 func testStateWithRequiredCheck(t testing.TB, checkID string) State {
 	t.Helper()
 	value := testState(t, StatusRunning, "first")
@@ -224,7 +322,7 @@ func testStateWithRequiredCheck(t testing.TB, checkID string) State {
 	return value
 }
 
-func TestValidateStateV6TerminalInvariants(t *testing.T) {
+func TestValidateStateV7TerminalInvariants(t *testing.T) {
 	completed := testState(t, StatusCompleted, "first")
 	finished := testState(t, StatusFinished, "first")
 	tests := []struct {

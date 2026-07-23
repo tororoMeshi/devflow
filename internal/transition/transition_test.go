@@ -159,13 +159,33 @@ func TestApplyDone(t *testing.T) {
 		before := st.Clone()
 
 		got := ApplyDone(testFlow(), st, gate.Result{
-			OK:               false,
-			MissingArtifacts: []string{"docs/code-review.md"},
+			OK: false,
+			ArtifactProblems: []gate.ArtifactProblem{
+				{Path: "docs/code-review.md", Kind: gate.ArtifactFileMissing},
+			},
 			MissingApprovals: []string{"first"},
 		})
 
 		assertStateNotMutated(t, before, st)
 		assertFailure(t, got, CodeMissingRequiredArtifact, CodeMissingRequiredApproval)
+	})
+
+	t.Run("preserves Flow artifact problem order across kinds", func(t *testing.T) {
+		st := runningState()
+		got := ApplyDone(testFlow(), st, gate.Result{
+			ArtifactProblems: []gate.ArtifactProblem{
+				{Path: "out/evidence.md", Kind: gate.ArtifactEvidenceMissing},
+				{Path: "out/file.md", Kind: gate.ArtifactFileMissing},
+				{Path: "out/unsafe.md", Kind: gate.ArtifactUnsafe},
+				{Path: "out/mismatch.md", Kind: gate.ArtifactMismatch},
+			},
+		})
+		assertFailure(t, got,
+			CodeMissingArtifactEvidence,
+			CodeMissingRequiredArtifact,
+			CodeArtifactUnsafe,
+			CodeArtifactEvidenceMismatch,
+		)
 	})
 
 	t.Run("returns diagnostic when gate result is inconsistent", func(t *testing.T) {
@@ -234,6 +254,29 @@ func TestApplyApprove(t *testing.T) {
 		assertFailure(t, ApplyApprove(testFlow(), *approved.State, "approval", current.ID, "second"), CodeAttemptAlreadyApproved)
 		assertStateNotMutated(t, before, before)
 	})
+}
+
+func TestApplyApproveRequiresCurrentAttemptArtifactEvidence(t *testing.T) {
+	fl := testFlow()
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	fl.Steps[0].Artifacts = []flow.Artifact{{Path: "out/report.md", Required: true}}
+	st := runningState()
+	st.FlowSnapshot = testSnapshot(fl)
+	before := st.Clone()
+
+	missing := ApplyApprove(fl, st, "first", st.CurrentAttemptID, "ok")
+	assertFailure(t, missing, CodeMissingArtifactEvidence)
+	assertStateNotMutated(t, before, st)
+
+	st.Attempts[0].ArtifactEvidence["out/report.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	got := ApplyApprove(fl, st, "first", st.CurrentAttemptID, "ok")
+	assertSuccess(t, got)
+	if got.State.Attempts[0].Approval == nil || got.State.Attempts[0].ArtifactEvidence["out/report.md"].Size != 1 {
+		t.Fatalf("Attempt = %#v", got.State.Attempts[0])
+	}
 }
 
 func TestApplyBack(t *testing.T) {

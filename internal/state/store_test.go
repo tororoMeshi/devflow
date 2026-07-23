@@ -149,6 +149,75 @@ func TestStoreRejectsInvalidState(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsMissingNullEvidenceAndSchemaV6(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		value  func(*testing.T) State
+		mutate func(map[string]any)
+	}{
+		{"missing evidence", nil, func(raw map[string]any) {
+			delete(raw["attempts"].([]any)[0].(map[string]any), "artifact_evidence")
+		}},
+		{"null evidence", nil, func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["artifact_evidence"] = nil
+		}},
+		{"invalid digest", nil, func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["artifact_evidence"] = map[string]any{
+				"out/report.md": map[string]any{"digest": "SHA256:bad", "size": float64(1)},
+			}
+		}},
+		{"negative size", nil, func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["artifact_evidence"] = map[string]any{
+				"out/report.md": map[string]any{"digest": "sha256:" + strings.Repeat("a", 64), "size": float64(-1)},
+			}
+		}},
+		{"unknown evidence path", nil, func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["artifact_evidence"] = map[string]any{
+				"out/unknown.md": map[string]any{"digest": "sha256:" + strings.Repeat("a", 64), "size": float64(1)},
+			}
+		}},
+		{"optional evidence path", func(t *testing.T) State {
+			value := testState(t, StatusRunning, "first")
+			fl := value.FlowSnapshot.Flow
+			fl.Steps[0].Artifacts = []flow.Artifact{{Path: "out/optional.md", Required: false}}
+			var err error
+			value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return value
+		}, func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["artifact_evidence"] = map[string]any{
+				"out/optional.md": map[string]any{"digest": "sha256:" + strings.Repeat("a", 64), "size": float64(1)},
+			}
+		}},
+		{"schema v6", nil, func(raw map[string]any) { raw["schema_version"] = float64(6) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := testStore(t)
+			value := testState(t, StatusRunning, "first")
+			if tt.value != nil {
+				value = tt.value(t)
+			}
+			data, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(raw)
+			path, _ := store.RunStatePath(value.FlowRunID)
+			writeJSON(t, path, raw)
+			writePointer(t, store, value.FlowRunID)
+			if got := store.LoadCurrent(); got.Status != LoadInvalid {
+				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
+	}
+}
+
 func TestStoreRejectsInvalidTaskSnapshots(t *testing.T) {
 	tests := []struct {
 		name   string

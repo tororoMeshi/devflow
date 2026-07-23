@@ -36,6 +36,7 @@ func (s State) Clone() State {
 		next.Attempts = make([]StepAttempt, len(s.Attempts))
 		for i, attempt := range s.Attempts {
 			next.Attempts[i] = attempt
+			next.Attempts[i].ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 			next.Attempts[i].CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
 			next.Attempts[i].Approval = cloneApprovalRecord(attempt.Approval)
 		}

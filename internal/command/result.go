@@ -95,14 +95,18 @@ type AfterCompletingResult struct {
 }
 
 type SuccessResult struct {
-	StartedFlowID     string
-	CurrentStepID     string
-	CompletedStepID   string
-	NextStepID        string
-	CompletedFlowID   string
-	ApprovedStepID    string
-	ApprovedAttemptID string
-	MovedBackToID     string
-	SkippedStepID     string
-	FinishedFlowID    string
+	StartedFlowID          string
+	CurrentStepID          string
+	CompletedStepID        string
+	NextStepID             string
+	CompletedFlowID        string
+	ApprovedStepID         string
+	ApprovedAttemptID      string
+	MovedBackToID          string
+	SkippedStepID          string
+	FinishedFlowID         string
+	RecordedArtifactPath   string
+	RecordedAttemptID      string
+	RecordedArtifactDigest string
+	RecordedArtifactSize   int64
 }

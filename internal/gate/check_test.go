@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	artifactpkg "github.com/8noki8/devflow/internal/artifact"
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
 )
@@ -93,7 +94,7 @@ func TestCheckDoneGate(t *testing.T) {
 				},
 			},
 			dirs:                 []string{"docs/code-review.md"},
-			wantMissingArtifacts: []string{"docs/code-review.md"},
+			wantMissingArtifacts: []string{},
 		},
 		{
 			name: "passes when required approval is approved",
@@ -151,6 +152,31 @@ func TestCheckDoneGate(t *testing.T) {
 			root := t.TempDir()
 			createFiles(t, root, tt.files)
 			createDirs(t, root, tt.dirs)
+			if len(tt.files) > 0 && tt.state.CurrentAttemptID == "" {
+				tt.state = approvalGateState(t, tt.step.ID, nil)
+			}
+			if tt.state.CurrentAttemptID == "" {
+				tt.state = approvalGateState(t, tt.step.ID, nil)
+			}
+			attempt, index, ok := tt.state.CurrentAttempt()
+			if ok {
+				for _, requirement := range tt.step.Artifacts {
+					if requirement.Required {
+						attempt.ArtifactEvidence[requirement.Path] = state.ArtifactEvidence{
+							Digest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+							Size:   0,
+						}
+					}
+				}
+				for _, file := range tt.files {
+					value, err := artifactpkg.ReadFile(root, file)
+					if err != nil {
+						t.Fatal(err)
+					}
+					attempt.ArtifactEvidence[file] = state.ArtifactEvidence{Digest: value.Digest, Size: value.Size}
+				}
+				tt.state.Attempts[index] = attempt
+			}
 
 			got := CheckDoneGate(tt.step, tt.state, root)
 
@@ -206,6 +232,66 @@ func TestCheckDoneGatePreservesRequiredCheckOrder(t *testing.T) {
 
 	if got := CheckDoneGate(flow.Step{ID: "quality"}, state.State{}, t.TempDir()); !got.OK || len(got.CheckProblems) != 0 {
 		t.Fatalf("required_checksなしの結果=%#v", got)
+	}
+}
+
+func TestCheckDoneGateArtifactEvidenceProblemsFollowFlowOrder(t *testing.T) {
+	root := t.TempDir()
+	createFiles(t, root, []string{"out/mismatch.md", "out/ok.md"})
+	step := flow.Step{
+		ID: "artifact",
+		Artifacts: []flow.Artifact{
+			{Path: "out/no-evidence.md", Required: true},
+			{Path: "out/missing-file.md", Required: true},
+			{Path: "out/mismatch.md", Required: true},
+			{Path: "out/ok.md", Required: true},
+		},
+	}
+	st := approvalGateState(t, step.ID, nil)
+	attempt := st.Attempts[0]
+	attempt.ArtifactEvidence["out/missing-file.md"] = state.ArtifactEvidence{
+		Digest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		Size:   0,
+	}
+	attempt.ArtifactEvidence["out/mismatch.md"] = state.ArtifactEvidence{
+		Digest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		Size:   0,
+	}
+	ok, err := artifactpkg.ReadFile(root, "out/ok.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt.ArtifactEvidence["out/ok.md"] = state.ArtifactEvidence{Digest: ok.Digest, Size: ok.Size}
+	st.Attempts[0] = attempt
+
+	got := CheckDoneGate(step, st, root)
+	want := []ArtifactProblem{
+		{Path: "out/no-evidence.md", Kind: ArtifactEvidenceMissing},
+		{Path: "out/missing-file.md", Kind: ArtifactFileMissing},
+		{Path: "out/mismatch.md", Kind: ArtifactMismatch},
+	}
+	if got.OK || !reflect.DeepEqual(got.ArtifactProblems, want) {
+		t.Fatalf("ArtifactProblems = %#v, want %#v", got.ArtifactProblems, want)
+	}
+}
+
+func TestCheckDoneGateUsesOnlyCurrentAttemptEvidence(t *testing.T) {
+	root := t.TempDir()
+	createFiles(t, root, []string{"out/report.md"})
+	value, err := artifactpkg.ReadFile(root, "out/report.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := state.NewStepAttempt("artifact", 1)
+	first.ArtifactEvidence["out/report.md"] = state.ArtifactEvidence{Digest: value.Digest, Size: value.Size}
+	first, _ = state.CloseStepAttempt(first, state.StepAttemptExitBack, "retry")
+	current, _ := state.NewStepAttempt("artifact", 2)
+	st := state.State{Attempts: []state.StepAttempt{first, current}, CurrentAttemptID: current.ID}
+	step := flow.Step{ID: "artifact", Artifacts: []flow.Artifact{{Path: "out/report.md", Required: true}}}
+
+	got := CheckDoneGate(step, st, root)
+	if got.OK || !reflect.DeepEqual(got.ArtifactProblems, []ArtifactProblem{{Path: "out/report.md", Kind: ArtifactEvidenceMissing}}) {
+		t.Fatalf("result = %#v", got)
 	}
 }
 

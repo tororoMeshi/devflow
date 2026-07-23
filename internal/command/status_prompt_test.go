@@ -117,13 +117,53 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.RequiredApproval.AttemptID != st.CurrentAttemptID {
 		t.Fatalf("AttemptID = %q", got.Prompt.RequiredApproval.AttemptID)
 	}
-	if len(got.Prompt.AfterCompleting.Commands) != 2 {
+	if len(got.Prompt.AfterCompleting.Commands) != 3 {
 		t.Fatalf("AfterCompleting.Commands = %#v", got.Prompt.AfterCompleting.Commands)
 	}
-	wantApprove := `devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`
-	if got.Prompt.AfterCompleting.Commands[0] != wantApprove {
-		t.Fatalf("approve command = %q, want %q", got.Prompt.AfterCompleting.Commands[0], wantApprove)
+	wantRecord := `devflow artifact record --step "current" --attempt "` + st.CurrentAttemptID + `" --path "docs/required.md"`
+	if got.Prompt.AfterCompleting.Commands[0] != wantRecord {
+		t.Fatalf("record command = %q, want %q", got.Prompt.AfterCompleting.Commands[0], wantRecord)
 	}
+	wantApprove := `devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`
+	if got.Prompt.AfterCompleting.Commands[1] != wantApprove {
+		t.Fatalf("approve command = %q, want %q", got.Prompt.AfterCompleting.Commands[1], wantApprove)
+	}
+}
+
+func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
+	st := statusPromptState("status-flow", state.StatusRunning, "current")
+	if err := saveCommandState(t, root, st); err != nil {
+		t.Fatal(err)
+	}
+	st = loadCommandState(t, root)
+	st.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	if err := NewStore(Context{ProjectRoot: root}).SaveCurrent(st); err != nil {
+		t.Fatal(err)
+	}
+	got := Prompt(Context{ProjectRoot: root})
+	assertCommandSuccess(t, got)
+	assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{
+		`devflow artifact record --step "current" --attempt "` + st.CurrentAttemptID + `" --path "docs/required.md"`,
+		`devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`,
+		"devflow done",
+	})
+
+	approved, err := state.ApproveStepAttempt(st.Attempts[0], "ok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Attempts[0] = approved
+	if err := NewStore(Context{ProjectRoot: root}).SaveCurrent(st); err != nil {
+		t.Fatal(err)
+	}
+	got = Prompt(Context{ProjectRoot: root})
+	assertCommandSuccess(t, got)
+	assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{"devflow done"})
 }
 
 func TestPromptTreatsNoArtifactsAndNoApprovalAsEmpty(t *testing.T) {

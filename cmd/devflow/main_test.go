@@ -15,6 +15,12 @@ import (
 	"github.com/8noki8/devflow/internal/transition"
 )
 
+func recordCLIArtifact(t *testing.T, root, path string) {
+	t.Helper()
+	st := loadCLIState(t, root)
+	runSuccess(t, root, []string{"artifact", "record", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID, "--path", path})
+}
+
 func TestRunInit(t *testing.T) {
 	root := t.TempDir()
 	var stdout bytes.Buffer
@@ -67,6 +73,7 @@ func TestRunApproveParsesStepAttemptAndNote(t *testing.T) {
 	runSuccess(t, root, []string{"done"})
 	runSuccess(t, root, []string{"done"})
 	writeCLITestFile(t, root, "docs/code-review.md")
+	recordCLIArtifact(t, root, "docs/code-review.md")
 	runSuccess(t, root, []string{"done"})
 	before := loadCLIState(t, root)
 	runSuccess(t, root, []string{"approve", "--step", "human_approval", "--attempt", before.CurrentAttemptID, "--note", "ok"})
@@ -75,6 +82,43 @@ func TestRunApproveParsesStepAttemptAndNote(t *testing.T) {
 	approval := st.Attempts[len(st.Attempts)-1].Approval
 	if approval == nil || approval.Note != "ok" {
 		t.Fatalf("approval = %#v", approval)
+	}
+}
+
+func TestParseArtifactRecordArgs(t *testing.T) {
+	valid := []string{"--path", "out/report.md", "--attempt", "attempt_00000000000000000001", "--step", "review"}
+	step, attempt, path, ok := parseArtifactRecordArgs(valid)
+	if !ok || step != "review" || attempt != valid[3] || path != "out/report.md" {
+		t.Fatalf("parse = %q %q %q %t", step, attempt, path, ok)
+	}
+	for _, args := range [][]string{
+		nil,
+		{"--step", "review"},
+		{"--step", "review", "--step", "again", "--path", "out"},
+		{"--step=review", "--attempt", valid[3], "--path", "out"},
+		{"--step", "review", "--attempt", valid[3], "--unknown", "out"},
+		{"--step", "\u3000", "--attempt", valid[3], "--path", "out"},
+		{"--step", "review", "--attempt", valid[3], "--path", ""},
+	} {
+		if _, _, _, ok := parseArtifactRecordArgs(args); ok {
+			t.Fatalf("accepted %#v", args)
+		}
+	}
+}
+
+func TestRunArtifactRecordWritesSuccess(t *testing.T) {
+	root := t.TempDir()
+	runSuccess(t, root, []string{"init"})
+	runSuccess(t, root, []string{"start", "post-task-review"})
+	runSuccess(t, root, []string{"done"})
+	runSuccess(t, root, []string{"done"})
+	runSuccess(t, root, []string{"done"})
+	writeCLITestFile(t, root, "docs/code-review.md")
+	st := loadCLIState(t, root)
+	stdout, stderr, exitCode := runCapture(root, []string{"artifact", "record", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID, "--path", "docs/code-review.md"})
+	assertExitCode(t, exitCode, 0, stderr)
+	for _, text := range []string{"Recorded artifact: docs/code-review.md", "Attempt: " + st.CurrentAttemptID, "Digest: sha256:", "Size: 3"} {
+		assertContains(t, stdout, text)
 	}
 }
 
@@ -617,6 +661,7 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		runSuccess(t, root, []string{"done"})
 		runSuccess(t, root, []string{"done"})
 		writeCLITestFile(t, root, "docs/code-review.md")
+		recordCLIArtifact(t, root, "docs/code-review.md")
 		runSuccess(t, root, []string{"done"})
 		st := loadCLIState(t, root)
 		runSuccess(t, root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"})
@@ -636,6 +681,7 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		runSuccess(t, root, []string{"done"})
 		runSuccess(t, root, []string{"done"})
 		writeCLITestFile(t, root, "docs/code-review.md")
+		recordCLIArtifact(t, root, "docs/code-review.md")
 		runSuccess(t, root, []string{"done"})
 		st := loadCLIState(t, root)
 

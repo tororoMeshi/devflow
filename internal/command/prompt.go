@@ -21,7 +21,7 @@ func Prompt(ctx Context) CommandResult {
 			OptionalArtifacts:      optionalArtifacts,
 			RequiredApproval:       requiredApproval,
 			RequiredChecks:         append([]string(nil), active.CurrentStep.RequiredChecks...),
-			AfterCompleting:        promptAfterCompleting(requiredApproval),
+			AfterCompleting:        promptAfterCompleting(active, requiredArtifacts, requiredApproval),
 		},
 	}
 }
@@ -53,12 +53,19 @@ func promptRequiredApproval(active ActiveFlow) *RequiredApprovalResult {
 	return &RequiredApprovalResult{StepID: active.CurrentStep.ID, AttemptID: attempt.ID}
 }
 
-func promptAfterCompleting(approval *RequiredApprovalResult) AfterCompletingResult {
-	if approval != nil {
-		return AfterCompletingResult{Commands: []string{
-			`devflow approve --step "` + approval.StepID + `" --attempt "` + approval.AttemptID + `" --note "<note>"`,
-			"devflow done",
-		}}
+func promptAfterCompleting(active ActiveFlow, artifacts []ArtifactResult, approval *RequiredApprovalResult) AfterCompletingResult {
+	attempt, _, ok := active.State.CurrentAttempt()
+	commands := []string{}
+	if ok && attempt.Approval == nil {
+		for _, artifact := range artifacts {
+			commands = append(commands, `devflow artifact record --step "`+active.CurrentStep.ID+`" --attempt "`+attempt.ID+`" --path "`+artifact.Path+`"`)
+		}
 	}
-	return AfterCompletingResult{Commands: []string{"devflow done"}}
+	if approval != nil && ok && attempt.Approval == nil {
+		commands = append(commands,
+			`devflow approve --step "`+approval.StepID+`" --attempt "`+approval.AttemptID+`" --note "<note>"`,
+		)
+	}
+	commands = append(commands, "devflow done")
+	return AfterCompletingResult{Commands: commands}
 }

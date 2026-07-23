@@ -331,6 +331,25 @@ func TestExecutionChecksTreatsStaleResultAsPendingAndBlocksCompletion(t *testing
 	}
 }
 
+func TestExecutionCompletionMapsAllArtifactEvidenceProblemsWithoutChangingSchema(t *testing.T) {
+	problems := []gate.ArtifactProblem{
+		{Path: "out/evidence.md", Kind: gate.ArtifactEvidenceMissing},
+		{Path: "out/file.md", Kind: gate.ArtifactFileMissing},
+		{Path: "out/unsafe.md", Kind: gate.ArtifactUnsafe},
+		{Path: "out/mismatch.md", Kind: gate.ArtifactMismatch},
+	}
+	completion := executionCompletion(gate.Result{ArtifactProblems: problems}, "step")
+	want := []ExecutionContextBlocker{
+		{Type: CompletionBlockerMissingArtifact, Path: "out/evidence.md"},
+		{Type: CompletionBlockerMissingArtifact, Path: "out/file.md"},
+		{Type: CompletionBlockerMissingArtifact, Path: "out/unsafe.md"},
+		{Type: CompletionBlockerMissingArtifact, Path: "out/mismatch.md"},
+	}
+	if completion.Ready || !reflect.DeepEqual(completion.Blockers, want) {
+		t.Fatalf("completion = %#v", completion)
+	}
+}
+
 func executionTestFlow() string {
 	return `flow: {
 		id: "context-flow"

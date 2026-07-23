@@ -19,6 +19,7 @@ const usage = `Usage:
   devflow prompt
   devflow context
   devflow approve --step <step-id> --attempt <attempt-id> --note <note>
+  devflow artifact record --step <step-id> --attempt <attempt-id> --path <project-relative-path>
   devflow done
   devflow back [--to <step>] --reason <reason>
   devflow skip --reason <reason>
@@ -94,6 +95,17 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 			return 1
 		}
 		result = command.Approve(ctx, stepID, attemptID, note)
+	case "artifact":
+		if len(args) < 2 || args[1] != "record" {
+			writeUsage(stderr)
+			return 1
+		}
+		stepID, attemptID, path, ok := parseArtifactRecordArgs(args[2:])
+		if !ok {
+			writeUsage(stderr)
+			return 1
+		}
+		result = command.RecordArtifact(ctx, stepID, attemptID, path)
 	case "done":
 		if len(args) != 1 {
 			writeUsage(stderr)
@@ -162,6 +174,25 @@ func parseApproveArgs(args []string) (string, string, string, bool) {
 		return "", "", "", false
 	}
 	return args[1], args[3], args[5], true
+}
+
+func parseArtifactRecordArgs(args []string) (string, string, string, bool) {
+	if len(args) != 6 {
+		return "", "", "", false
+	}
+	values := map[string]string{}
+	for i := 0; i < len(args); i += 2 {
+		option := args[i]
+		if option != "--step" && option != "--attempt" && option != "--path" {
+			return "", "", "", false
+		}
+		if _, duplicate := values[option]; duplicate || strings.TrimSpace(args[i+1]) == "" {
+			return "", "", "", false
+		}
+		values[option] = args[i+1]
+	}
+	return values["--step"], values["--attempt"], values["--path"],
+		values["--step"] != "" && values["--attempt"] != "" && values["--path"] != ""
 }
 
 func parseReasonArgs(args []string) (string, bool) {
@@ -251,6 +282,12 @@ func writeSuccess(stdout io.Writer, success command.SuccessResult) {
 	}
 	if success.ApprovedAttemptID != "" {
 		_, _ = fmt.Fprintf(stdout, "Approved attempt: %s\n", success.ApprovedAttemptID)
+	}
+	if success.RecordedArtifactPath != "" {
+		_, _ = fmt.Fprintf(stdout, "Recorded artifact: %s\n", success.RecordedArtifactPath)
+		_, _ = fmt.Fprintf(stdout, "Attempt: %s\n", success.RecordedAttemptID)
+		_, _ = fmt.Fprintf(stdout, "Digest: %s\n", success.RecordedArtifactDigest)
+		_, _ = fmt.Fprintf(stdout, "Size: %d\n", success.RecordedArtifactSize)
 	}
 	if success.MovedBackToID != "" {
 		_, _ = fmt.Fprintf(stdout, "Moved back to: %s\n", success.MovedBackToID)
