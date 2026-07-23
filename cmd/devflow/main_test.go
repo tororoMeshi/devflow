@@ -21,6 +21,42 @@ func recordCLIArtifact(t *testing.T, root, path string) {
 	runSuccess(t, root, []string{"artifact", "record", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID, "--path", path})
 }
 
+func TestArtifactStateHumanOutput(t *testing.T) {
+	var statusOutput bytes.Buffer
+	writeStatus(&statusOutput, command.StatusResult{
+		FlowID: "flow", FlowTitle: "Flow", Artifacts: []command.ArtifactStatusResult{
+			{Path: "out/report.md", State: "current"},
+			{Path: "out/summary.md", State: "missing_evidence"},
+		},
+	})
+	statusText := statusOutput.String()
+	for _, want := range []string{"Artifacts:\n", "- out/report.md: current\n", "- out/summary.md: missing_evidence\n"} {
+		if !strings.Contains(statusText, want) {
+			t.Fatalf("status output = %q, missing %q", statusText, want)
+		}
+	}
+	for _, forbidden := range []string{"sha256:", "Digest:", "Size:"} {
+		if strings.Contains(statusText, forbidden) {
+			t.Fatalf("status output leaks %q: %q", forbidden, statusText)
+		}
+	}
+
+	var promptOutput bytes.Buffer
+	writePrompt(&promptOutput, command.PromptResult{
+		FlowID: "flow", TaskContent: "task", CurrentStepID: "step", CurrentStepTitle: "Step",
+		ArtifactBlockers: []string{"out/report.md: changed; recorded evidence is no longer current; continue in a new attempt"},
+	})
+	promptText := promptOutput.String()
+	if !strings.Contains(promptText, "Artifact blockers:\n- out/report.md: changed; recorded evidence is no longer current; continue in a new attempt\n") {
+		t.Fatalf("prompt output = %q", promptText)
+	}
+	for _, forbidden := range []string{"devflow artifact record", "devflow approve", "devflow done", "sha256:"} {
+		if strings.Contains(promptText, forbidden) {
+			t.Fatalf("prompt output contains %q: %q", forbidden, promptText)
+		}
+	}
+}
+
 func TestRunInit(t *testing.T) {
 	root := t.TempDir()
 	var stdout bytes.Buffer
@@ -182,7 +218,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	stateValue := value["state"].(map[string]any)
 	_, hasTopLevelEntrySequence := value["entry_sequence"]
 	_, hasStateEntrySequence := stateValue["entry_sequence"]
-	if value["schema_version"].(float64) != 3 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != false {
+	if value["schema_version"].(float64) != 4 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != false {
 		t.Fatalf("context = %#v", value)
 	}
 }
@@ -227,7 +263,7 @@ func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
 			attempt, hasAttempt := value["attempt"]
 			_, hasTopLevelEntrySequence := value["entry_sequence"]
 			_, hasStateEntrySequence := state["entry_sequence"]
-			if value["schema_version"].(float64) != 3 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
+			if value["schema_version"].(float64) != 4 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
 				t.Fatalf("context = %#v", value)
 			}
 		})

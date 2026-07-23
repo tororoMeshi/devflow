@@ -11,6 +11,80 @@ import (
 	"github.com/8noki8/devflow/internal/state"
 )
 
+func TestInspectArtifactsUsesOneReadPerPathAndKeepsNullableMatchesDistinct(t *testing.T) {
+	attempt, err := state.NewStepAttempt("step", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt.ArtifactEvidence["a"] = state.ArtifactEvidence{Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Size: 1}
+	attempt.ArtifactEvidence["b"] = state.ArtifactEvidence{Digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Size: 1}
+	st := state.State{Attempts: []state.StepAttempt{attempt}, CurrentAttemptID: attempt.ID}
+	step := flow.Step{ID: "step", Artifacts: []flow.Artifact{
+		{Path: "a", Required: true},
+		{Path: "b", Required: true},
+		{Path: "optional", Required: false},
+	}}
+	reads := map[string]int{}
+	reader := func(_ string, path string) (artifactpkg.FileEvidence, error) {
+		reads[path]++
+		switch path {
+		case "a":
+			return artifactpkg.FileEvidence{Digest: attempt.ArtifactEvidence[path].Digest, Size: 1}, nil
+		default:
+			return artifactpkg.FileEvidence{}, artifactpkg.ErrMissing
+		}
+	}
+
+	got := inspectArtifacts(step, st, t.TempDir(), reader)
+
+	if !reflect.DeepEqual(reads, map[string]int{"a": 1, "b": 1, "optional": 1}) {
+		t.Fatalf("reads = %#v", reads)
+	}
+	if got[0].MatchesEvidence == nil || !*got[0].MatchesEvidence || got[1].MatchesEvidence == nil || *got[1].MatchesEvidence {
+		t.Fatalf("matches = %#v, %#v", got[0].MatchesEvidence, got[1].MatchesEvidence)
+	}
+	if got[0].MatchesEvidence == got[1].MatchesEvidence {
+		t.Fatal("matches pointers are shared")
+	}
+	if got[2].Evidence != nil || got[2].MatchesEvidence != nil || got[2].Problem != "" {
+		t.Fatalf("optional inspection = %#v", got[2])
+	}
+}
+
+func TestInspectRequiredArtifactsSkipsOptionalFiles(t *testing.T) {
+	step := flow.Step{ID: "step", Artifacts: []flow.Artifact{
+		{Path: "required", Required: true},
+		{Path: "optional", Required: false},
+	}}
+	got := InspectRequiredArtifacts(step, state.State{}, t.TempDir())
+	if len(got) != 1 || got[0].Path != "required" {
+		t.Fatalf("inspections = %#v", got)
+	}
+}
+
+func TestDoneGateReusesArtifactInspectionForSameInputPath(t *testing.T) {
+	attempt, err := state.NewStepAttempt("step", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := state.State{Attempts: []state.StepAttempt{attempt}, CurrentAttemptID: attempt.ID}
+	step := flow.Step{
+		ID:        "step",
+		Inputs:    []flow.Artifact{{Path: "shared.md", Required: true}},
+		Artifacts: []flow.Artifact{{Path: "shared.md", Required: true}},
+	}
+	matches := true
+	inspections := []ArtifactInspection{{
+		Path: "shared.md", Required: true, Exists: true,
+		Evidence:        &state.ArtifactEvidence{Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Size: 1},
+		MatchesEvidence: &matches,
+	}}
+	got := checkDoneGateFromInspections(step, st, filepath.Join(t.TempDir(), "missing-root"), inspections)
+	if !got.OK || len(got.MissingInputs) != 0 || len(got.ArtifactProblems) != 0 {
+		t.Fatalf("gate = %#v", got)
+	}
+}
+
 func TestCheckDoneGate(t *testing.T) {
 	tests := []struct {
 		name                 string

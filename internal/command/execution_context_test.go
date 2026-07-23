@@ -65,7 +65,7 @@ func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testin
 	}
 	wantBlockers := []ExecutionContextBlocker{
 		{Type: CompletionBlockerMissingInput, Path: "docs/request.md"},
-		{Type: CompletionBlockerMissingArtifact, Path: "docs/design.md"},
+		{Type: CompletionBlockerMissingArtifactEvidence, Path: "docs/design.md"},
 		{Type: CompletionBlockerMissingCheck, CheckID: "validate"},
 		{Type: CompletionBlockerFailedCheck, CheckID: "review"},
 		{Type: CompletionBlockerMissingApproval, StepID: "design"},
@@ -109,7 +109,7 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 		id: "context-flow"
 		title: "Context Flow"
 		steps: [
-			{id: "design", title: "Design", instruction: "Create the design.", required_checks: ["validate", "review"], approval: {required: true}},
+			{id: "design", title: "Design", instruction: "Create the design.", artifacts: [{path: "docs/design.md"}], required_checks: ["validate", "review"], approval: {required: true}},
 			{id: "review", title: "Review", instruction: "Review the design."},
 		]
 	}`)
@@ -117,6 +117,10 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 	firstApproved, err := state.ApproveStepAttempt(currentState.Attempts[0], "old approval")
 	if err != nil {
 		t.Fatal(err)
+	}
+	firstApproved.ArtifactEvidence["docs/design.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
 	}
 	first, err := state.CloseStepAttempt(firstApproved, state.StepAttemptExitDone, "")
 	if err != nil {
@@ -150,6 +154,12 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 	}
 	if got.ExecutionContext.Step.Approval.Approved {
 		t.Fatal("historical approval leaked into current context")
+	}
+	if artifact := got.ExecutionContext.Step.Artifacts[0]; artifact.Evidence != nil || artifact.MatchesEvidence != nil {
+		t.Fatalf("historical evidence leaked into current context: %#v", artifact)
+	}
+	if got.ExecutionContext.Completion.Blockers[0] != (ExecutionContextBlocker{Type: CompletionBlockerMissingArtifactEvidence, Path: "docs/design.md"}) {
+		t.Fatalf("artifact blocker = %#v", got.ExecutionContext.Completion.Blockers)
 	}
 	if got.ExecutionContext.Completion.Ready {
 		t.Fatal("missing current approval did not block completion")
@@ -185,7 +195,7 @@ func TestCurrentContextJSONAttemptContract(t *testing.T) {
 			if err := json.Unmarshal(data, &value); err != nil {
 				t.Fatal(err)
 			}
-			if value["schema_version"] != float64(3) {
+			if value["schema_version"] != float64(4) {
 				t.Fatalf("schema_version = %#v", value["schema_version"])
 			}
 			attempt, exists := value["attempt"]
@@ -226,6 +236,70 @@ func TestCurrentContextJSONAttemptContract(t *testing.T) {
 				t.Fatal("step.entry_sequence is present")
 			}
 		})
+	}
+}
+
+func TestCurrentContextArtifactEvidenceJSONContract(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
+	st := statusPromptState("status-flow", state.StatusRunning, "current")
+	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "x")
+	st.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
+		Digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881", Size: 1,
+	}
+	saveExecutionState(t, root, st)
+
+	got := CurrentContext(Context{ProjectRoot: root})
+	if got.ExitCode != 0 || got.ExecutionContext == nil || got.ExecutionContext.Step == nil {
+		t.Fatalf("CurrentContext() = %#v", got)
+	}
+	data, err := json.Marshal(got.ExecutionContext.Step.Artifacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values []map[string]any
+	if err := json.Unmarshal(data, &values); err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 2 || len(values[0]) != 5 || len(values[0]["evidence"].(map[string]any)) != 2 || values[0]["matches_evidence"] != true {
+		t.Fatalf("artifact JSON = %#v", values)
+	}
+	wantFields := map[string]bool{"path": true, "required": true, "exists": true, "evidence": true, "matches_evidence": true}
+	for field := range values[0] {
+		if !wantFields[field] {
+			t.Fatalf("unexpected artifact field %q in %#v", field, values[0])
+		}
+	}
+	evidence := values[0]["evidence"].(map[string]any)
+	if len(evidence) != 2 || evidence["digest"] != st.Attempts[0].ArtifactEvidence["docs/required.md"].Digest || evidence["size"] != float64(1) {
+		t.Fatalf("evidence JSON = %#v", evidence)
+	}
+	if values[1]["evidence"] != nil || values[1]["matches_evidence"] != nil {
+		t.Fatalf("optional artifact JSON = %#v", values[1])
+	}
+	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "changed")
+	got = CurrentContext(Context{ProjectRoot: root})
+	changed := got.ExecutionContext.Step.Artifacts[0]
+	if !changed.Exists || changed.MatchesEvidence == nil || *changed.MatchesEvidence {
+		t.Fatalf("mismatch artifact = %#v", changed)
+	}
+	data, err = json.Marshal(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var changedJSON map[string]any
+	if err := json.Unmarshal(data, &changedJSON); err != nil {
+		t.Fatal(err)
+	}
+	if changedJSON["exists"] != true || changedJSON["matches_evidence"] != false {
+		t.Fatalf("changed JSON = %#v", changedJSON)
+	}
+	if err := os.Remove(filepath.Join(root, "docs", "required.md")); err != nil {
+		t.Fatal(err)
+	}
+	missing := CurrentContext(Context{ProjectRoot: root}).ExecutionContext.Step.Artifacts[0]
+	if missing.Exists || missing.MatchesEvidence == nil || *missing.MatchesEvidence {
+		t.Fatalf("missing artifact = %#v", missing)
 	}
 }
 
@@ -340,13 +414,32 @@ func TestExecutionCompletionMapsAllArtifactEvidenceProblemsWithoutChangingSchema
 	}
 	completion := executionCompletion(gate.Result{ArtifactProblems: problems}, "step")
 	want := []ExecutionContextBlocker{
-		{Type: CompletionBlockerMissingArtifact, Path: "out/evidence.md"},
+		{Type: CompletionBlockerMissingArtifactEvidence, Path: "out/evidence.md"},
 		{Type: CompletionBlockerMissingArtifact, Path: "out/file.md"},
-		{Type: CompletionBlockerMissingArtifact, Path: "out/unsafe.md"},
-		{Type: CompletionBlockerMissingArtifact, Path: "out/mismatch.md"},
+		{Type: CompletionBlockerArtifactUnavailable, Path: "out/unsafe.md"},
+		{Type: CompletionBlockerArtifactEvidenceMismatch, Path: "out/mismatch.md"},
 	}
 	if completion.Ready || !reflect.DeepEqual(completion.Blockers, want) {
 		t.Fatalf("completion = %#v", completion)
+	}
+	data, err := json.Marshal(completion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	for _, blocker := range value["blockers"].([]any) {
+		fields := blocker.(map[string]any)
+		if len(fields) != 2 || fields["type"] == nil || fields["path"] == nil {
+			t.Fatalf("blocker fields = %#v", fields)
+		}
+		for _, forbidden := range []string{"digest", "size", "error", "attempt_id"} {
+			if _, exists := fields[forbidden]; exists {
+				t.Fatalf("blocker exposes %q: %#v", forbidden, fields)
+			}
+		}
 	}
 }
 

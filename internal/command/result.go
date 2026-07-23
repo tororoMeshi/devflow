@@ -49,6 +49,7 @@ type StatusResult struct {
 	Approval         *ApprovalResult
 	EntrySequence    uint64
 	Checks           []CheckStatusResult
+	Artifacts        []ArtifactStatusResult `json:"artifacts"`
 }
 
 type SkippedStepResult struct {
@@ -68,6 +69,19 @@ type CheckStatusResult struct {
 	LogPath  string
 }
 
+type ArtifactStatusResult struct {
+	Path  string `json:"path"`
+	State string `json:"state"`
+}
+
+const (
+	ArtifactStatusCurrent         = "current"
+	ArtifactStatusMissingEvidence = "missing_evidence"
+	ArtifactStatusMissingFile     = "missing_file"
+	ArtifactStatusChanged         = "changed"
+	ArtifactStatusUnavailable     = "unavailable"
+)
+
 type PromptResult struct {
 	FlowID                 string
 	TaskContent            string
@@ -79,6 +93,7 @@ type PromptResult struct {
 	RequiredApproval       *RequiredApprovalResult
 	RequiredChecks         []string
 	AfterCompleting        AfterCompletingResult
+	ArtifactBlockers       []string
 }
 
 type ArtifactResult struct {

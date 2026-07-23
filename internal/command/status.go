@@ -1,6 +1,7 @@
 package command
 
 import (
+	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/transition"
 )
@@ -24,6 +25,10 @@ func Status(ctx Context) CommandResult {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
 	}
 
+	artifacts := []ArtifactStatusResult{}
+	if active.State.Status == state.StatusRunning {
+		artifacts = artifactStatusResults(gate.InspectRequiredArtifacts(active.CurrentStep, active.State, ctx.ProjectRoot))
+	}
 	return CommandResult{
 		ExitCode: 0,
 		Status: &StatusResult{
@@ -36,7 +41,36 @@ func Status(ctx Context) CommandResult {
 			Approval:         approvalResult(active),
 			EntrySequence:    active.State.EntrySequence(),
 			Checks:           checkStatusResults(active),
+			Artifacts:        artifacts,
 		},
+	}
+}
+
+func artifactStatusResults(inspections []gate.ArtifactInspection) []ArtifactStatusResult {
+	results := []ArtifactStatusResult{}
+	for _, inspection := range inspections {
+		if !inspection.Required {
+			continue
+		}
+		results = append(results, ArtifactStatusResult{Path: inspection.Path, State: artifactStatusState(inspection.Problem)})
+	}
+	return results
+}
+
+func artifactStatusState(problem gate.ArtifactProblemKind) string {
+	switch problem {
+	case "":
+		return ArtifactStatusCurrent
+	case gate.ArtifactEvidenceMissing:
+		return ArtifactStatusMissingEvidence
+	case gate.ArtifactFileMissing:
+		return ArtifactStatusMissingFile
+	case gate.ArtifactMismatch:
+		return ArtifactStatusChanged
+	case gate.ArtifactUnsafe:
+		return ArtifactStatusUnavailable
+	default:
+		return ArtifactStatusUnavailable
 	}
 }
 
