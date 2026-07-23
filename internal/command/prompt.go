@@ -13,7 +13,7 @@ func Prompt(ctx Context) CommandResult {
 
 	requiredArtifacts, optionalArtifacts := promptArtifacts(active)
 	requiredApproval := promptRequiredApproval(active)
-	inspections := gate.InspectRequiredArtifacts(active.CurrentStep, active.State, ctx.ProjectRoot)
+	gateResult, inspections := gate.InspectDoneGate(active.CurrentStep, active.State, ctx.ProjectRoot)
 
 	return CommandResult{
 		ExitCode: 0,
@@ -27,8 +27,9 @@ func Prompt(ctx Context) CommandResult {
 			OptionalArtifacts:      optionalArtifacts,
 			RequiredApproval:       requiredApproval,
 			RequiredChecks:         append([]string(nil), active.CurrentStep.RequiredChecks...),
-			AfterCompleting:        promptAfterCompleting(active, inspections, requiredApproval),
+			AfterCompleting:        promptAfterCompleting(active, inspections, requiredApproval, gateResult),
 			ArtifactBlockers:       promptArtifactBlockers(inspections),
+			CheckBlockers:          promptCheckBlockers(gateResult),
 		},
 	}
 }
@@ -60,32 +61,47 @@ func promptRequiredApproval(active ActiveFlow) *RequiredApprovalResult {
 	return &RequiredApprovalResult{StepID: active.CurrentStep.ID, AttemptID: attempt.ID}
 }
 
-func promptAfterCompleting(active ActiveFlow, inspections []gate.ArtifactInspection, approval *RequiredApprovalResult) AfterCompletingResult {
+func promptAfterCompleting(active ActiveFlow, inspections []gate.ArtifactInspection, approval *RequiredApprovalResult, gateResult gate.Result) AfterCompletingResult {
 	attempt, _, ok := active.State.CurrentAttempt()
 	commands := []string{}
 	if active.State.Status != state.StatusRunning || !ok {
 		return AfterCompletingResult{Commands: commands}
+	}
+	for _, checkID := range active.CurrentStep.RequiredChecks {
+		if _, recorded := attempt.CheckResults[checkID]; !recorded {
+			commands = append(commands, `devflow check request --step "`+active.CurrentStep.ID+`" --attempt "`+attempt.ID+`" --check "`+checkID+`"`)
+		}
 	}
 	for _, inspection := range inspections {
 		if inspection.Required && inspection.Problem == gate.ArtifactEvidenceMissing {
 			commands = append(commands, `devflow artifact record --step "`+active.CurrentStep.ID+`" --attempt "`+attempt.ID+`" --path "`+inspection.Path+`"`)
 		}
 	}
-	if len(commands) > 0 {
-		return AfterCompletingResult{Commands: commands}
-	}
+	hasArtifactBlocker := false
 	for _, inspection := range inspections {
-		if inspection.Required && inspection.Problem != "" && inspection.Problem != gate.ArtifactEvidenceMissing {
-			return AfterCompletingResult{Commands: commands}
+		if inspection.Required && inspection.Problem != "" {
+			hasArtifactBlocker = true
 		}
 	}
-	if approval != nil && ok && attempt.Approval == nil {
+	if !hasArtifactBlocker && approval != nil && ok && attempt.Approval == nil {
 		commands = append(commands,
 			`devflow approve --step "`+approval.StepID+`" --attempt "`+approval.AttemptID+`" --note "<note>"`,
 		)
 	}
-	commands = append(commands, "devflow done")
+	if gateResult.OK {
+		commands = append(commands, "devflow done")
+	}
 	return AfterCompletingResult{Commands: commands}
+}
+
+func promptCheckBlockers(result gate.Result) []string {
+	blockers := []string{}
+	for _, problem := range result.CheckProblems {
+		if problem.Kind == gate.CheckFailed {
+			blockers = append(blockers, problem.CheckID+": recorded check failed; continue in a new attempt to record a different result")
+		}
+	}
+	return blockers
 }
 
 func promptArtifactBlockers(inspections []gate.ArtifactInspection) []string {

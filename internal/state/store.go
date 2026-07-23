@@ -180,6 +180,10 @@ func (s Store) loadCurrentPointer() (CurrentPointer, error) {
 	return pointer, nil
 }
 
+func (s Store) LoadCurrentPointer() (CurrentPointer, error) {
+	return s.loadCurrentPointer()
+}
+
 func loadState(path string) LoadResult {
 	data, err := os.ReadFile(path)
 	if err != nil {

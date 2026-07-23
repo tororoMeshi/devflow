@@ -35,6 +35,9 @@ const (
 	CodeInvalidGateResult               = "error_invalid_gate_result"
 	CodeMissingRequiredCheck            = "error_missing_required_check"
 	CodeFailedRequiredCheck             = "error_failed_required_check"
+	CodeCheckNotRequired                = "error_check_not_required"
+	CodeInvalidCheckResult              = "error_invalid_check_result"
+	CodeConflictingCheckResult          = "error_conflicting_check_result"
 	CodeSkippedRequiredApproval         = "warning_skipped_required_approval"
 	CodeSkippedRequiredArtifact         = "warning_skipped_required_artifact"
 	CodeSkippedRequiredCheck            = "warning_skipped_required_check"
@@ -55,4 +58,5 @@ type TransitionResult struct {
 	ExitCode                  int
 	Diagnostics               []Diagnostic
 	ApprovedEvidenceSetDigest string
+	StateChanged              bool
 }

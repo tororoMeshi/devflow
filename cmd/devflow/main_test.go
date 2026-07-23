@@ -174,17 +174,22 @@ func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stdout, stderr, exitCode := runCapture(root, []string{"check", "request", "go-test"})
+	st := loadCLIState(t, root)
+	stdout, stderr, exitCode := runCapture(root, []string{"check", "request", "--step", "quality", "--attempt", st.CurrentAttemptID, "--check", "go-test"})
 
 	assertExitCode(t, exitCode, 0, stderr)
 	if stderr != "" {
 		t.Fatalf("stderr = %q, want empty", stderr)
 	}
+	wantJSON := `{"schema_version":2,"flow_run_id":"` + st.FlowRunID + `","step_id":"quality","attempt_id":"` + st.CurrentAttemptID + `","check_id":"go-test"}` + "\n"
+	if stdout != wantJSON {
+		t.Fatalf("stdout=%q want=%q", stdout, wantJSON)
+	}
 	var request map[string]any
 	if err := json.Unmarshal([]byte(stdout), &request); err != nil {
 		t.Fatalf("stdout is not JSON: %q: %v", stdout, err)
 	}
-	if request["check_id"] != "go-test" || request["entry_sequence"].(float64) != 1 {
+	if request["check_id"] != "go-test" || request["attempt_id"] != st.CurrentAttemptID || request["schema_version"] != float64(2) {
 		t.Fatalf("request=%#v", request)
 	}
 	after, err := os.ReadFile(statePath)
@@ -193,6 +198,35 @@ func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatal("check request modified state.json")
+	}
+}
+
+func TestRunCheckRecordWritesExactHumanSuccess(t *testing.T) {
+	root := t.TempDir()
+	flowPath := filepath.Join(root, ".devflow", "flows", "check-flow.cue")
+	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runSuccess(t, root, []string{"start", "check-flow"})
+	st := loadCLIState(t, root)
+	recordPath := filepath.Join(root, "record.json")
+	record := `{"schema_version":2,"flow_run_id":"` + st.FlowRunID + `","step_id":"quality","attempt_id":"` + st.CurrentAttemptID + `","check_id":"go-test","result":{"exit_code":0,"log_path":"check.log"}}`
+	if err := os.WriteFile(recordPath, []byte(record), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, exitCode := runCapture(root, []string{"check", "record", "--file", recordPath})
+	assertExitCode(t, exitCode, 0, stderr)
+	want := "Recorded check: go-test\nRun: " + st.FlowRunID + "\nStep: quality\nAttempt: " + st.CurrentAttemptID + "\nExit code: 0\n"
+	if stdout != want || stderr != "" {
+		t.Fatalf("stdout=%q want=%q stderr=%q", stdout, want, stderr)
+	}
+	stdout, stderr, exitCode = runCapture(root, []string{"check", "record", "--file", recordPath})
+	assertExitCode(t, exitCode, 0, stderr)
+	if stdout != want || stderr != "" {
+		t.Fatalf("idempotent stdout=%q want=%q stderr=%q", stdout, want, stderr)
 	}
 }
 
@@ -285,7 +319,7 @@ func TestRunCheckRequestRejectsLegacyStateWithoutOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stdout, stderr, exitCode := runCapture(root, []string{"check", "request", "go-test"})
+	stdout, stderr, exitCode := runCapture(root, []string{"check", "request", "--step", "quality", "--attempt", "attempt_00000000000000000001", "--check", "go-test"})
 	if exitCode == 0 || stdout != "" || !strings.Contains(stderr, "error_unsupported_state_version") {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
@@ -335,20 +369,20 @@ func TestRunCheckRequestRejectsInvalidArgumentsWithoutChangingState(t *testing.T
 func TestParseCheckRequestArgs(t *testing.T) {
 	for _, tt := range []struct {
 		args []string
-		want string
 		ok   bool
 	}{
-		{[]string{"unit-test"}, "unit-test", true},
-		{[]string{"--", "--custom-check"}, "--custom-check", true},
-		{[]string{"--", "unit-test"}, "unit-test", true},
-		{[]string{"--unknown"}, "", false},
-		{[]string{"-x"}, "", false},
-		{[]string{"--"}, "", false},
-		{[]string{"--", "unit-test", "extra"}, "", false},
+		{[]string{"--step", "quality", "--attempt", "attempt_00000000000000000001", "--check", "unit-test"}, true},
+		{[]string{"--check", "unit-test", "--step", "quality", "--attempt", "attempt_00000000000000000001"}, true},
+		{[]string{"unit-test"}, false},
+		{[]string{"--step=quality", "--attempt", "a", "--check", "c"}, false},
+		{[]string{"--step", "quality", "--step", "other", "--check", "c"}, false},
+		{[]string{"--step", "　", "--attempt", "a", "--check", "c"}, false},
+		{[]string{"--step", " quality", "--attempt", "a", "--check", "c"}, false},
+		{[]string{"--step", "quality ", "--attempt", "a", "--check", "c"}, false},
 	} {
-		got, ok := parseCheckRequestArgs(tt.args)
-		if got != tt.want || ok != tt.ok {
-			t.Fatalf("parseCheckRequestArgs(%q) = (%q, %t), want (%q, %t)", tt.args, got, ok, tt.want, tt.ok)
+		_, _, _, ok := parseCheckRequestArgs(tt.args)
+		if ok != tt.ok {
+			t.Fatalf("parseCheckRequestArgs(%q) ok=%t want=%t", tt.args, ok, tt.ok)
 		}
 	}
 }
@@ -359,6 +393,11 @@ func TestRunCheckRecordRejectsInvalidArgumentsWithoutChangingState(t *testing.T)
 		{"check", "record", "--file"},
 		{"check", "record", "--file", "a.json", "--file", "b.json"},
 		{"check", "record", "--unknown", "value"},
+		{"check", "record", "--file=result.json"},
+		{"check", "record", "--file", "　"},
+		{"check", "record", "--file", " result.json"},
+		{"check", "record", "--file", "result.json "},
+		{"check", "record", "--step", "quality"},
 		{"check", "record", "--file", "result.json", "extra"},
 		{"check", "record", "extra", "--file", "result.json"},
 	} {

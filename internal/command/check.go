@@ -1,58 +1,102 @@
 package command
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
+	"github.com/8noki8/devflow/internal/transition"
 )
 
-const checkSchemaVersion = 1
+const checkSchemaVersion = 2
+
+var (
+	errDuplicateJSONKey = errors.New("duplicate JSON key")
+	errTrailingJSON     = errors.New("trailing JSON")
+)
 
 type CheckRequestResult struct {
 	SchemaVersion int    `json:"schema_version"`
 	FlowRunID     string `json:"flow_run_id"`
-	FlowID        string `json:"flow_id"`
 	StepID        string `json:"step_id"`
-	EntrySequence uint64 `json:"entry_sequence"`
+	AttemptID     string `json:"attempt_id"`
 	CheckID       string `json:"check_id"`
 }
 
 type checkRecordFile struct {
-	SchemaVersion *int    `json:"schema_version"`
-	FlowRunID     string  `json:"flow_run_id"`
-	FlowID        string  `json:"flow_id"`
-	StepID        string  `json:"step_id"`
-	EntrySequence *uint64 `json:"entry_sequence"`
-	CheckID       string  `json:"check_id"`
-	ExitCode      *int    `json:"exit_code"`
-	LogPath       string  `json:"log_path"`
+	SchemaVersion *int               `json:"schema_version"`
+	FlowRunID     *string            `json:"flow_run_id"`
+	StepID        *string            `json:"step_id"`
+	AttemptID     *string            `json:"attempt_id"`
+	CheckID       *string            `json:"check_id"`
+	Result        *checkRecordResult `json:"result"`
 }
 
-func CheckRequest(ctx Context, checkID string) CommandResult {
+type checkRecordResult struct {
+	ExitCode *int               `json:"exit_code"`
+	LogPath  checkRecordLogPath `json:"log_path,omitempty"`
+}
+
+type checkRecordLogPath struct {
+	Value string
+}
+
+func (value *checkRecordLogPath) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("log_path must be a string")
+	}
+	return json.Unmarshal(data, &value.Value)
+}
+
+func CheckRequest(ctx Context, stepID, attemptID, checkID string) CommandResult {
 	active, diagnostics := LoadActiveFlow(ctx)
 	if len(diagnostics) > 0 {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
 	}
+	current := active.State
+	if !state.IsValidStepAttemptID(attemptID) {
+		return commandFailure(transition.CodeInvalidAttemptID)
+	}
+	found := false
+	for _, attempt := range current.Attempts {
+		if attempt.ID == attemptID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return commandFailure(transition.CodeInvalidAttemptID)
+	}
+	attempt, _, ok := current.CurrentAttempt()
+	if !ok || attempt.Status != state.StepAttemptActive {
+		return commandFailure(CodeInvalidState)
+	}
+	if attempt.ID != attemptID {
+		return commandFailure(transition.CodeStaleAttempt)
+	}
+	if attempt.StepID != stepID || current.CurrentStepID != stepID {
+		return commandFailure(transition.CodeStepAttemptMismatch)
+	}
+	if active.CurrentStep.ID != stepID {
+		return commandFailure(CodeInvalidState)
+	}
 	if !requiredCheck(active.CurrentStep.RequiredChecks, checkID) {
 		return commandFailure(CodeCheckNotRequired)
 	}
-
-	current := active.State
-	attempt, _, ok := current.CurrentAttempt()
-	if !ok || attempt.StepID != active.CurrentStep.ID {
-		return commandFailure(CodeInvalidState)
+	if _, recorded := attempt.CheckResults[checkID]; recorded {
+		return commandFailure(CodeCheckResultAlreadyRecorded)
 	}
 
 	return CommandResult{ExitCode: 0, CheckRequest: &CheckRequestResult{
 		SchemaVersion: checkSchemaVersion,
 		FlowRunID:     current.FlowRunID,
-		FlowID:        active.Flow.ID,
-		StepID:        attempt.StepID,
-		EntrySequence: attempt.EntrySequence,
+		StepID:        stepID,
+		AttemptID:     attemptID,
 		CheckID:       checkID,
 	}}
 }
@@ -60,46 +104,74 @@ func CheckRequest(ctx Context, checkID string) CommandResult {
 func CheckRecord(ctx Context, path string) CommandResult {
 	record, err := readCheckRecord(path)
 	if err != nil {
+		if errors.Is(err, errDuplicateJSONKey) {
+			return commandFailure(CodeDuplicateJSONKey)
+		}
+		if errors.Is(err, errTrailingJSON) {
+			return commandFailure(CodeTrailingCheckRecordJSON)
+		}
+		if strings.Contains(err.Error(), "json: unknown field ") {
+			return commandFailure(CodeUnknownCheckRecordField)
+		}
 		return commandFailure(CodeInvalidCheckRecord)
 	}
 	if record.SchemaVersion == nil || *record.SchemaVersion != checkSchemaVersion {
 		return commandFailure(CodeUnsupportedCheckSchema)
 	}
-	if record.EntrySequence == nil || *record.EntrySequence == 0 || record.ExitCode == nil || record.FlowRunID == "" || record.FlowID == "" || record.StepID == "" || record.CheckID == "" {
+	if !validRecordIdentifier(record.FlowRunID, state.IsValidFlowRunID) ||
+		!validRecordIdentifier(record.StepID, flow.IsValidID) ||
+		!validRecordIdentifier(record.AttemptID, state.IsValidStepAttemptID) ||
+		!validRecordIdentifier(record.CheckID, flow.IsValidID) ||
+		record.Result == nil || record.Result.ExitCode == nil ||
+		*record.Result.ExitCode < 0 || invalidLogPath(record.Result.LogPath.Value) {
 		return commandFailure(CodeInvalidCheckRecord)
 	}
-	if !state.IsValidFlowRunID(record.FlowRunID) {
-		return commandFailure(CodeInvalidCheckRecord)
-	}
-	if invalidLogPath(record.LogPath) {
-		return commandFailure(CodeInvalidCheckRecord)
+	checkResult := state.CheckResult{
+		ExitCode: *record.Result.ExitCode,
+		LogPath:  record.Result.LogPath.Value,
 	}
 
-	active, diagnostics := LoadActiveFlow(ctx)
-	if len(diagnostics) > 0 {
-		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
-	}
-	current := active.State
-	attempt, attemptIndex, ok := current.CurrentAttempt()
-	if !ok || attempt.StepID != active.CurrentStep.ID {
+	store := NewStore(ctx)
+	pointer, err := store.LoadCurrentPointer()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return commandFailure(CodeNoActiveFlow)
+		}
 		return commandFailure(CodeInvalidState)
 	}
-	if record.FlowRunID != current.FlowRunID || record.FlowID != active.Flow.ID || record.StepID != attempt.StepID || *record.EntrySequence != attempt.EntrySequence {
-		return commandFailure(CodeCheckContextMismatch)
+	if *record.FlowRunID != pointer.FlowRunID {
+		return commandFailure(CodeCheckRunMismatch)
 	}
-	if !requiredCheck(active.CurrentStep.RequiredChecks, record.CheckID) {
-		return commandFailure(CodeCheckNotRequired)
+	loaded := store.LoadCurrent()
+	if loaded.Status == state.LoadNoState {
+		return commandFailure(CodeNoActiveFlow)
+	}
+	if loaded.Status != state.LoadOK || loaded.State == nil {
+		return commandFailure(CodeInvalidState)
+	}
+	if *record.FlowRunID != loaded.State.FlowRunID {
+		return commandFailure(CodeCheckRunMismatch)
 	}
 
-	next := current.Clone()
-	next.Attempts[attemptIndex].CheckResults[record.CheckID] = state.CheckResult{
-		ExitCode: *record.ExitCode,
-		LogPath:  record.LogPath,
+	applied := transition.ApplyRecordCheckResult(
+		*loaded.State, *record.StepID, *record.AttemptID, *record.CheckID, checkResult,
+	)
+	if applied.ExitCode != 0 {
+		return CommandResult{ExitCode: applied.ExitCode, Diagnostics: applied.Diagnostics}
 	}
-	if err := NewStore(ctx).SaveCurrent(next); err != nil {
-		return commandFailure(CodeStateSaveFailed)
+	if applied.StateChanged {
+		if err := store.SaveCurrent(*applied.State); err != nil {
+			return commandFailure(CodeStateSaveFailed)
+		}
 	}
-	return CommandResult{ExitCode: 0}
+	exitCode := checkResult.ExitCode
+	return CommandResult{ExitCode: 0, Success: &SuccessResult{
+		RecordedCheckRunID:     *record.FlowRunID,
+		RecordedCheckStepID:    *record.StepID,
+		RecordedCheckAttemptID: *record.AttemptID,
+		RecordedCheckID:        *record.CheckID,
+		RecordedCheckExitCode:  &exitCode,
+	}}
 }
 
 func requiredCheck(requiredChecks []string, checkID string) bool {
@@ -111,14 +183,19 @@ func requiredCheck(requiredChecks []string, checkID string) bool {
 	return false
 }
 
+func validRecordIdentifier(value *string, valid func(string) bool) bool {
+	return value != nil && *value != "" && strings.TrimSpace(*value) == *value && valid(*value)
+}
+
 func readCheckRecord(path string) (checkRecordFile, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return checkRecordFile{}, err
 	}
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return checkRecordFile{}, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var record checkRecordFile
 	if err := decoder.Decode(&record); err != nil {
@@ -126,9 +203,67 @@ func readCheckRecord(path string) (checkRecordFile, error) {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return checkRecordFile{}, errors.New("trailing JSON")
+		return checkRecordFile{}, errTrailingJSON
 	}
 	return record, nil
+}
+
+func rejectDuplicateJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := scanJSONValue(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errTrailingJSON
+		}
+		return err
+	}
+	return nil
+}
+
+func scanJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		keys := map[string]struct{}{}
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("invalid JSON object key")
+			}
+			if _, duplicate := keys[key]; duplicate {
+				return errDuplicateJSONKey
+			}
+			keys[key] = struct{}{}
+			if err := scanJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		_, err = decoder.Token()
+		return err
+	case '[':
+		for decoder.More() {
+			if err := scanJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		_, err = decoder.Token()
+		return err
+	default:
+		return errors.New("unexpected JSON delimiter")
+	}
 }
 
 func invalidLogPath(value string) bool {

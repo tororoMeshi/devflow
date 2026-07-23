@@ -24,7 +24,7 @@ const usage = `Usage:
   devflow back [--to <step>] --reason <reason>
   devflow skip --reason <reason>
   devflow finish --reason <reason>
-  devflow check request <check-id>
+  devflow check request --step <step-id> --attempt <attempt-id> --check <check-id>
   devflow check record --file <result.json>
 `
 
@@ -135,14 +135,19 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 		result = command.Finish(ctx, reason)
 	case "check":
 		if len(args) >= 2 && args[1] == "request" {
-			checkID, ok := parseCheckRequestArgs(args[2:])
+			stepID, attemptID, checkID, ok := parseCheckRequestArgs(args[2:])
 			if !ok {
 				writeUsage(stderr)
 				return 1
 			}
-			result = command.CheckRequest(ctx, checkID)
-		} else if len(args) == 4 && args[1] == "record" && args[2] == "--file" {
-			result = command.CheckRecord(ctx, args[3])
+			result = command.CheckRequest(ctx, stepID, attemptID, checkID)
+		} else if len(args) >= 2 && args[1] == "record" {
+			path, ok := parseCheckRecordArgs(args[2:])
+			if !ok {
+				writeUsage(stderr)
+				return 1
+			}
+			result = command.CheckRecord(ctx, path)
 		} else {
 			writeUsage(stderr)
 			return 1
@@ -202,14 +207,47 @@ func parseReasonArgs(args []string) (string, bool) {
 	return args[1], true
 }
 
-func parseCheckRequestArgs(args []string) (string, bool) {
-	if len(args) == 1 && args[0] != "" && !strings.HasPrefix(args[0], "-") {
-		return args[0], true
+func parseCheckRequestArgs(args []string) (string, string, string, bool) {
+	values, ok := parseExactOptions(args, "--step", "--attempt", "--check")
+	if !ok {
+		return "", "", "", false
 	}
-	if len(args) == 2 && args[0] == "--" && args[1] != "" {
-		return args[1], true
+	return values["--step"], values["--attempt"], values["--check"], true
+}
+
+func parseCheckRecordArgs(args []string) (string, bool) {
+	values, ok := parseExactOptions(args, "--file")
+	if !ok {
+		return "", false
 	}
-	return "", false
+	return values["--file"], true
+}
+
+func parseExactOptions(args []string, allowed ...string) (map[string]string, bool) {
+	if len(args) != len(allowed)*2 {
+		return nil, false
+	}
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, option := range allowed {
+		allowedSet[option] = struct{}{}
+	}
+	values := make(map[string]string, len(allowed))
+	for i := 0; i < len(args); i += 2 {
+		option, value := args[i], args[i+1]
+		if _, exists := allowedSet[option]; !exists || strings.Contains(option, "=") {
+			return nil, false
+		}
+		if _, duplicate := values[option]; duplicate || strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value {
+			return nil, false
+		}
+		values[option] = value
+	}
+	for _, option := range allowed {
+		if _, exists := values[option]; !exists {
+			return nil, false
+		}
+	}
+	return values, true
 }
 
 func parseBackArgs(args []string) (string, string, bool) {
@@ -291,6 +329,13 @@ func writeSuccess(stdout io.Writer, success command.SuccessResult) {
 		_, _ = fmt.Fprintf(stdout, "Attempt: %s\n", success.RecordedAttemptID)
 		_, _ = fmt.Fprintf(stdout, "Digest: %s\n", success.RecordedArtifactDigest)
 		_, _ = fmt.Fprintf(stdout, "Size: %d\n", success.RecordedArtifactSize)
+	}
+	if success.RecordedCheckID != "" {
+		_, _ = fmt.Fprintf(stdout, "Recorded check: %s\n", success.RecordedCheckID)
+		_, _ = fmt.Fprintf(stdout, "Run: %s\n", success.RecordedCheckRunID)
+		_, _ = fmt.Fprintf(stdout, "Step: %s\n", success.RecordedCheckStepID)
+		_, _ = fmt.Fprintf(stdout, "Attempt: %s\n", success.RecordedCheckAttemptID)
+		_, _ = fmt.Fprintf(stdout, "Exit code: %d\n", *success.RecordedCheckExitCode)
 	}
 	if success.MovedBackToID != "" {
 		_, _ = fmt.Fprintf(stdout, "Moved back to: %s\n", success.MovedBackToID)
@@ -402,6 +447,9 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	writeStringList(stdout, "Required checks", prompt.RequiredChecks)
 	if len(prompt.ArtifactBlockers) > 0 {
 		writeStringList(stdout, "Artifact blockers", prompt.ArtifactBlockers)
+	}
+	if len(prompt.CheckBlockers) > 0 {
+		writeStringList(stdout, "Check blockers", prompt.CheckBlockers)
 	}
 	writeStringList(stdout, "After completing", prompt.AfterCompleting.Commands)
 }
