@@ -239,6 +239,12 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", instruction: "Design.", inputs: [{path: "docs/request.md"}] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "request.md"), []byte("request"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runSuccess(t, root, []string{"start", "context-flow"})
 	stdout, stderr, exitCode := runCapture(root, []string{"context"})
 	if exitCode != 0 || stderr != "" {
@@ -252,7 +258,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	stateValue := value["state"].(map[string]any)
 	_, hasTopLevelEntrySequence := value["entry_sequence"]
 	_, hasStateEntrySequence := stateValue["entry_sequence"]
-	if value["schema_version"].(float64) != 4 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != false {
+	if value["schema_version"].(float64) != 4 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != true {
 		t.Fatalf("context = %#v", value)
 	}
 }

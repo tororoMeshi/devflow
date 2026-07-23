@@ -410,7 +410,9 @@ func TestExecutionChecksTreatsStaleResultAsPendingAndBlocksCompletion(t *testing
 		t.Fatalf("executionChecks() = %#v", checks)
 	}
 	step := flow.Step{ID: "design", RequiredChecks: []string{"validate"}}
-	completion := executionCompletion(gate.CheckDoneGate(step, current, t.TempDir()), step.ID)
+	completion := executionCompletion(gate.CompletionGateResult{
+		Blockers: []gate.CompletionBlocker{{Kind: gate.CompletionBlockerMissingCheck, CheckID: "validate"}},
+	}, step.ID)
 	wantBlockers := []ExecutionContextBlocker{{Type: CompletionBlockerMissingCheck, CheckID: "validate"}}
 	if completion.Ready || !reflect.DeepEqual(completion.Blockers, wantBlockers) {
 		t.Fatalf("completion = %#v, want blockers %#v", completion, wantBlockers)
@@ -418,13 +420,13 @@ func TestExecutionChecksTreatsStaleResultAsPendingAndBlocksCompletion(t *testing
 }
 
 func TestExecutionCompletionMapsAllArtifactEvidenceProblemsWithoutChangingSchema(t *testing.T) {
-	problems := []gate.ArtifactProblem{
-		{Path: "out/evidence.md", Kind: gate.ArtifactEvidenceMissing},
-		{Path: "out/file.md", Kind: gate.ArtifactFileMissing},
-		{Path: "out/unsafe.md", Kind: gate.ArtifactUnsafe},
-		{Path: "out/mismatch.md", Kind: gate.ArtifactMismatch},
+	problems := []gate.CompletionBlocker{
+		{Path: "out/evidence.md", Kind: gate.CompletionBlockerMissingArtifactEvidence},
+		{Path: "out/file.md", Kind: gate.CompletionBlockerMissingArtifact},
+		{Path: "out/unsafe.md", Kind: gate.CompletionBlockerArtifactUnavailable},
+		{Path: "out/mismatch.md", Kind: gate.CompletionBlockerArtifactEvidenceMismatch},
 	}
-	completion := executionCompletion(gate.Result{ArtifactProblems: problems}, "step")
+	completion := executionCompletion(gate.CompletionGateResult{Blockers: problems}, "step")
 	want := []ExecutionContextBlocker{
 		{Type: CompletionBlockerMissingArtifactEvidence, Path: "out/evidence.md"},
 		{Type: CompletionBlockerMissingArtifact, Path: "out/file.md"},

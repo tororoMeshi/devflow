@@ -451,6 +451,12 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	if len(prompt.CheckBlockers) > 0 {
 		writeStringList(stdout, "Check blockers", prompt.CheckBlockers)
 	}
+	if len(prompt.CompletionBlockers) > 0 {
+		writeStringList(stdout, "Completion blockers", prompt.CompletionBlockers)
+	}
+	if len(prompt.NextEntryBlockers) > 0 {
+		writeStringList(stdout, "Next-step entry blockers", prompt.NextEntryBlockers)
+	}
 	writeStringList(stdout, "After completing", prompt.AfterCompleting.Commands)
 }
 

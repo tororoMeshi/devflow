@@ -18,19 +18,18 @@ func ApplyBack(flow flow.Flow, st state.State, toStepID string, reason string) T
 		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
 	}
 	fromStepID := st.CurrentStepID
-	toIndex := currentIndex - 1
-	if toStepID == "" {
-		if currentIndex == 0 {
-			return failure(errorDiagnostic(CodeNoPreviousStep, st.CurrentStepID))
+	destination, destinationOK := ResolveBackStep(flow, st.CurrentStepID, toStepID)
+	if !destinationOK {
+		code := CodeInvalidBackTarget
+		diagnosticStepID := toStepID
+		if toStepID == "" {
+			code = CodeNoPreviousStep
+			diagnosticStepID = st.CurrentStepID
 		}
-		toStepID = flow.Steps[toIndex].ID
-	} else {
-		_, targetIndex, found := findStep(flow, toStepID)
-		if !found || targetIndex >= currentIndex {
-			return failure(errorDiagnostic(CodeInvalidBackTarget, toStepID))
-		}
-		toIndex = targetIndex
+		return failure(errorDiagnostic(code, diagnosticStepID))
 	}
+	toStepID = destination.ID
+	_, toIndex, _ := findStep(flow, toStepID)
 
 	next := st.Clone()
 	if !closeCurrentAttempt(&next, state.StepAttemptExitBack, reason) {

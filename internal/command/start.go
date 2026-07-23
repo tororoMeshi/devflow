@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/8noki8/devflow/internal/flow"
+	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/task"
 	"github.com/8noki8/devflow/internal/transition"
@@ -66,6 +67,12 @@ func Start(ctx Context, flowID, taskPath string) CommandResult {
 			return commandFailure(CodeTaskInvalidUTF8)
 		}
 		return commandFailure(CodeTaskSnapshotBuildFailed)
+	}
+
+	firstStep := flowSnapshot.Flow.Steps[0]
+	entryResult := gate.InspectEntryGate(ctx.ProjectRoot, firstStep, gate.NewInspectionSet())
+	if !entryResult.Ready {
+		return CommandResult{ExitCode: 1, Diagnostics: entryGateDiagnostics(firstStep.ID, entryResult)}
 	}
 
 	flowRunID, err := newFlowRunID()

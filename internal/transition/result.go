@@ -32,7 +32,6 @@ const (
 	CodeArtifactUnsafe                  = "error_artifact_unsafe"
 	CodeInvalidApprovalNote             = "error_invalid_approval_note"
 	CodeInvalidState                    = "error_invalid_state"
-	CodeInvalidGateResult               = "error_invalid_gate_result"
 	CodeMissingRequiredCheck            = "error_missing_required_check"
 	CodeFailedRequiredCheck             = "error_failed_required_check"
 	CodeCheckNotRequired                = "error_check_not_required"

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 )
 
@@ -15,7 +14,7 @@ func TestAttemptLifecycleAcrossTransitions(t *testing.T) {
 		input := runningState()
 		input.Attempts[0].CheckResults["historic"] = state.CheckResult{ExitCode: 0}
 		before := input.Clone()
-		got := ApplyDone(testFlow(), input, gate.Result{OK: true})
+		got := ApplyDone(testFlow(), input)
 		assertSuccess(t, got)
 		if !reflect.DeepEqual(input, before) {
 			t.Fatal("input mutated")
@@ -31,7 +30,7 @@ func TestAttemptLifecycleAcrossTransitions(t *testing.T) {
 	t.Run("final done closes without active attempt", func(t *testing.T) {
 		input := runningState()
 		setRunningStep(&input, "approval")
-		got := ApplyDone(testFlow(), input, gate.Result{OK: true})
+		got := ApplyDone(testFlow(), input)
 		assertSuccess(t, got)
 		assertTerminalAttempt(t, *got.State, state.StatusCompleted, state.StepAttemptExitDone, "")
 	})
@@ -93,7 +92,7 @@ func TestApprovalLifecycleAcrossTransitions(t *testing.T) {
 
 	t.Run("done preserves old approval and creates unapproved attempt", func(t *testing.T) {
 		fl, st := withRequiredCurrent(t, "first")
-		got := ApplyDone(fl, st, gate.Result{OK: true})
+		got := ApplyDone(fl, st)
 		assertSuccess(t, got)
 		if got.State.Attempts[0].Approval == nil || got.State.Attempts[1].Approval != nil {
 			t.Fatalf("Attempts = %#v", got.State.Attempts)
@@ -156,7 +155,7 @@ func TestArtifactEvidenceLifecycleAcrossTransitions(t *testing.T) {
 	}
 
 	fl, st := withEvidence(t, "first")
-	assertHistoryAndFreshAttempt(t, ApplyDone(fl, st, gate.Result{OK: true}))
+	assertHistoryAndFreshAttempt(t, ApplyDone(fl, st))
 	fl, st = withEvidence(t, "first")
 	assertHistoryAndFreshAttempt(t, ApplySkip(fl, st, "skip"), CodeSkippedRequiredArtifact)
 	fl, st = withEvidence(t, "second")

@@ -95,6 +95,8 @@ type PromptResult struct {
 	AfterCompleting        AfterCompletingResult
 	ArtifactBlockers       []string
 	CheckBlockers          []string
+	CompletionBlockers     []string
+	NextEntryBlockers      []string
 }
 
 type ArtifactResult struct {
