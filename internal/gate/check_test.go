@@ -176,7 +176,7 @@ func TestCheckDoneGate(t *testing.T) {
 				ID:       "human_approval",
 				Approval: &flow.Approval{Required: true},
 			},
-			state:  approvalGateState(t, "human_approval", &state.ApprovalRecord{Note: "ok"}),
+			state:  approvalGateState(t, "human_approval", &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}),
 			wantOK: true,
 		},
 		{
@@ -203,7 +203,7 @@ func TestCheckDoneGate(t *testing.T) {
 				ID:       "human_approval",
 				Approval: &flow.Approval{Required: true},
 			},
-			state:                approvalGateState(t, "other_step", &state.ApprovalRecord{Note: "ok"}),
+			state:                approvalGateState(t, "other_step", &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}),
 			wantMissingApprovals: []string{"human_approval"},
 		},
 		{
@@ -271,7 +271,7 @@ func approvalGateState(t testing.TB, stepID string, approval *state.ApprovalReco
 
 func approvalGateReentryState(t testing.TB) state.State {
 	t.Helper()
-	first := approvalGateState(t, "human_approval", &state.ApprovalRecord{Note: "old"}).Attempts[0]
+	first := approvalGateState(t, "human_approval", &state.ApprovalRecord{Note: "old", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}).Attempts[0]
 	first, _ = state.CloseStepAttempt(first, state.StepAttemptExitBack, "retry")
 	current, _ := state.NewStepAttempt("human_approval", 2)
 	return state.State{Attempts: []state.StepAttempt{first, current}, CurrentAttemptID: current.ID}

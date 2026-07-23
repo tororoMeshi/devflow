@@ -51,7 +51,8 @@ type Diagnostic struct {
 }
 
 type TransitionResult struct {
-	State       *state.State
-	ExitCode    int
-	Diagnostics []Diagnostic
+	State                     *state.State
+	ExitCode                  int
+	Diagnostics               []Diagnostic
+	ApprovedEvidenceSetDigest string
 }

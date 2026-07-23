@@ -9,5 +9,9 @@ func Approve(ctx Context, stepID string, attemptID string, note string) CommandR
 	}
 
 	result := transition.ApplyApprove(active.Flow, active.State, stepID, attemptID, note)
-	return transitionCommandResult(ctx, result, &SuccessResult{ApprovedStepID: stepID, ApprovedAttemptID: attemptID})
+	return transitionCommandResult(ctx, result, &SuccessResult{
+		ApprovedStepID:            stepID,
+		ApprovedAttemptID:         attemptID,
+		ApprovedEvidenceSetDigest: result.ApprovedEvidenceSetDigest,
+	})
 }

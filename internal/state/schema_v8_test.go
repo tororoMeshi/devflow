@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,7 +10,7 @@ import (
 	"github.com/8noki8/devflow/internal/flow"
 )
 
-func TestStateV7JSONContract(t *testing.T) {
+func TestStateV8JSONContract(t *testing.T) {
 	value := testStateWithRequiredCheck(t, "unused")
 	value.Attempts[0].CheckResults["unused"] = CheckResult{ExitCode: 0}
 	if err := validateState(value); err != nil {
@@ -23,8 +24,8 @@ func TestStateV7JSONContract(t *testing.T) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if value.SchemaVersion != 7 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
-		t.Fatalf("v7 fields missing: %s", data)
+	if value.SchemaVersion != 8 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
+		t.Fatalf("v8 fields missing: %s", data)
 	}
 	if _, ok := raw["approvals"]; ok {
 		t.Fatal("top-level approvals must not be present")
@@ -54,7 +55,7 @@ func TestStateV7JSONContract(t *testing.T) {
 	}
 }
 
-func TestValidateStateV7AttemptInvariants(t *testing.T) {
+func TestValidateStateV8AttemptInvariants(t *testing.T) {
 	valid := testState(t, StatusRunning, "first")
 	closed, err := CloseStepAttempt(valid.Attempts[0], StepAttemptExitDone, "")
 	if err != nil {
@@ -135,9 +136,9 @@ func TestValidateStateV7AttemptInvariants(t *testing.T) {
 	}
 }
 
-func TestValidateStateV7ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
+func TestValidateStateV8ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
 	value := testState(t, StatusRunning, "first")
-	value.Attempts[0].Approval = &ApprovalRecord{Note: "ok"}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "ok", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}
 	if err := validateState(value); err == nil {
 		t.Fatal("approval on non-required step accepted")
 	}
@@ -157,7 +158,7 @@ func TestValidateStateV7ApprovalBelongsOnlyToRequiredStep(t *testing.T) {
 	}
 }
 
-func TestStateV7ApprovalJSONShapeAndRoundTrip(t *testing.T) {
+func TestStateV8ApprovalJSONShapeAndRoundTrip(t *testing.T) {
 	value := testState(t, StatusRunning, "first")
 	fl := value.FlowSnapshot.Flow
 	fl.Steps[0].Approval = &flow.Approval{Required: true}
@@ -166,7 +167,7 @@ func TestStateV7ApprovalJSONShapeAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value.Attempts[0].Approval = &ApprovalRecord{Note: " keep whitespace "}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: " keep whitespace ", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}
 	data, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +181,7 @@ func TestStateV7ApprovalJSONShapeAndRoundTrip(t *testing.T) {
 	}
 	attempt := raw["attempts"].([]any)[0].(map[string]any)
 	approval := attempt["approval"].(map[string]any)
-	if len(approval) != 1 || approval["note"] != " keep whitespace " {
+	if len(approval) != 2 || approval["note"] != " keep whitespace " || approval["evidence_set_digest"] != "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f" {
 		t.Fatalf("approval JSON = %#v", approval)
 	}
 	if _, ok := approval["approved"]; ok {
@@ -200,23 +201,208 @@ func TestStateV7ApprovalJSONShapeAndRoundTrip(t *testing.T) {
 
 func TestAttemptLookupDoesNotShareApproval(t *testing.T) {
 	value := testState(t, StatusRunning, "first")
-	value.Attempts[0].Approval = &ApprovalRecord{Note: "original"}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "original", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}
 	current, _, ok := value.CurrentAttempt()
 	if !ok {
 		t.Fatal("current attempt missing")
 	}
 	current.Approval.Note = "changed"
+	current.Approval.EvidenceSetDigest = "sha256:" + strings.Repeat("b", 64)
 	last, ok := value.LastAttempt()
 	if !ok {
 		t.Fatal("last attempt missing")
 	}
 	last.Approval.Note = "changed again"
-	if value.Attempts[0].Approval.Note != "original" {
+	last.Approval.EvidenceSetDigest = "sha256:" + strings.Repeat("c", 64)
+	if value.Attempts[0].Approval.Note != "original" ||
+		value.Attempts[0].Approval.EvidenceSetDigest != emptyEvidenceSetDigest {
 		t.Fatal("lookup shares Approval pointer")
 	}
 }
 
-func TestValidateStateV7ArtifactEvidenceRequirementRules(t *testing.T) {
+func TestValidateStateV8ApprovalEvidenceBinding(t *testing.T) {
+	value := testState(t, StatusRunning, "first")
+	fl := value.FlowSnapshot.Flow
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	fl.Steps[0].Artifacts = []flow.Artifact{{Path: "out/report.md", Required: true}}
+	var err error
+	value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.Attempts[0].ArtifactEvidence["out/report.md"] = ArtifactEvidence{
+		Digest: "sha256:" + strings.Repeat("a", 64),
+		Size:   12,
+	}
+	digest, err := ArtifactEvidenceSetDigest([]string{"out/report.md"}, value.Attempts[0].ArtifactEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "reviewed", EvidenceSetDigest: digest}
+	before := value.Clone()
+	if err := Validate(value); err != nil {
+		t.Fatalf("valid binding rejected: %v", err)
+	}
+	if !reflect.DeepEqual(value, before) {
+		t.Fatal("Validate mutated State")
+	}
+
+	for _, tt := range []struct {
+		name   string
+		mutate func(*State)
+		want   error
+	}{
+		{"path", func(s *State) {
+			evidence := s.Attempts[0].ArtifactEvidence["out/report.md"]
+			delete(s.Attempts[0].ArtifactEvidence, "out/report.md")
+			s.Attempts[0].ArtifactEvidence["out/other.md"] = evidence
+		}, ErrUnknownArtifactEvidence},
+		{"artifact digest", func(s *State) {
+			evidence := s.Attempts[0].ArtifactEvidence["out/report.md"]
+			evidence.Digest = "sha256:" + strings.Repeat("b", 64)
+			s.Attempts[0].ArtifactEvidence["out/report.md"] = evidence
+		}, ErrEvidenceSetDigestMismatch},
+		{"artifact size", func(s *State) {
+			evidence := s.Attempts[0].ArtifactEvidence["out/report.md"]
+			evidence.Size++
+			s.Attempts[0].ArtifactEvidence["out/report.md"] = evidence
+		}, ErrEvidenceSetDigestMismatch},
+		{"approval digest", func(s *State) {
+			s.Attempts[0].Approval.EvidenceSetDigest = "sha256:" + strings.Repeat("b", 64)
+		}, ErrEvidenceSetDigestMismatch},
+		{"missing required evidence", func(s *State) {
+			delete(s.Attempts[0].ArtifactEvidence, "out/report.md")
+		}, ErrMissingRequiredArtifactEvidence},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := value.Clone()
+			tt.mutate(&candidate)
+			if err := Validate(candidate); !errors.Is(err, tt.want) {
+				t.Fatalf("Validate() error = %v, want errors.Is(_, %v)", err, tt.want)
+			}
+		})
+	}
+
+	partial := value.Clone()
+	partial.Attempts[0].Approval = nil
+	delete(partial.Attempts[0].ArtifactEvidence, "out/report.md")
+	if err := Validate(partial); err != nil {
+		t.Fatalf("unapproved partial evidence rejected: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name      string
+		artifacts []flow.Artifact
+		want      error
+	}{
+		{"required artifact added", []flow.Artifact{
+			{Path: "out/report.md", Required: true},
+			{Path: "out/second.md", Required: true},
+		}, ErrMissingRequiredArtifactEvidence},
+		{"required artifact deleted", []flow.Artifact{}, ErrUnknownArtifactEvidence},
+		{"required flag removed", []flow.Artifact{
+			{Path: "out/report.md", Required: false},
+		}, ErrUnknownArtifactEvidence},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := value.Clone()
+			changedFlow := candidate.FlowSnapshot.Flow
+			changedFlow.Steps[0].Artifacts = tt.artifacts
+			candidate.FlowSnapshot, err = flow.BuildSnapshot(changedFlow, candidate.FlowSnapshot.Source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Validate(candidate); !errors.Is(err, tt.want) {
+				t.Fatalf("Validate() error = %v, want errors.Is(_, %v)", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateStateV8ApprovalEmptyEvidenceSet(t *testing.T) {
+	value := testState(t, StatusRunning, "first")
+	fl := value.FlowSnapshot.Flow
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	var err error
+	value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "reviewed", EvidenceSetDigest: emptyEvidenceSetDigest}
+	if err := Validate(value); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateStateV8ApprovalBindingAcrossAttemptLifecycle(t *testing.T) {
+	base := testState(t, StatusRunning, "first")
+	fl := base.FlowSnapshot.Flow
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	var err error
+	base.FlowSnapshot, err = flow.BuildSnapshot(fl, base.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.Attempts[0].Approval = &ApprovalRecord{Note: "reviewed", EvidenceSetDigest: emptyEvidenceSetDigest}
+
+	closed := func(t *testing.T, exit StepAttemptExitReason, reason string) StepAttempt {
+		t.Helper()
+		attempt, err := CloseStepAttempt(base.Attempts[0], exit, reason)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return attempt
+	}
+	done := base.Clone()
+	done.Attempts[0] = closed(t, StepAttemptExitDone, "")
+	done.Status = StatusCompleted
+	done.CurrentAttemptID = ""
+
+	skipped := base.Clone()
+	skipped.Attempts[0] = closed(t, StepAttemptExitSkip, "skip")
+	skipped.Status = StatusCompleted
+	skipped.CurrentAttemptID = ""
+
+	finished := base.Clone()
+	finished.Attempts[0] = closed(t, StepAttemptExitFinish, "finish")
+	finished.Status = StatusFinished
+	finished.CurrentAttemptID = ""
+	finished.Finish = &Finish{Reason: "finish"}
+
+	back := base.Clone()
+	back.Attempts[0] = closed(t, StepAttemptExitBack, "retry")
+	next, err := NewStepAttempt("second", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back.Attempts = append(back.Attempts, next)
+	back.CurrentStepID = "second"
+	back.CurrentAttemptID = next.ID
+
+	for _, tt := range []struct {
+		name  string
+		value State
+	}{
+		{"running active", base},
+		{"closed done completed", done},
+		{"closed skip completed", skipped},
+		{"closed back history", back},
+		{"closed finish terminal", finished},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Validate(tt.value); err != nil {
+				t.Fatalf("valid lifecycle binding rejected: %v", err)
+			}
+			invalid := tt.value.Clone()
+			invalid.Attempts[0].Approval.EvidenceSetDigest = "sha256:" + strings.Repeat("b", 64)
+			if err := Validate(invalid); !errors.Is(err, ErrEvidenceSetDigestMismatch) {
+				t.Fatalf("binding mismatch error = %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateStateV8ArtifactEvidenceRequirementRules(t *testing.T) {
 	required := testState(t, StatusRunning, "first")
 	fl := required.FlowSnapshot.Flow
 	fl.Steps[0].Inputs = []flow.Artifact{{Path: "input/request.md", Required: true}}

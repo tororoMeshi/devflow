@@ -16,6 +16,7 @@ var (
 	ErrNilStepAttemptCheckResults      = errors.New("nil step attempt check results")
 	ErrStepAttemptNotActive            = errors.New("step attempt is not active")
 	ErrInvalidApprovalNote             = errors.New("invalid approval note")
+	ErrInvalidEvidenceSetDigest        = errors.New("invalid evidence set digest")
 	ErrStepAttemptAlreadyApproved      = errors.New("step attempt already approved")
 )
 
@@ -48,7 +49,8 @@ type StepAttempt struct {
 }
 
 type ApprovalRecord struct {
-	Note string `json:"note"`
+	Note              string `json:"note"`
+	EvidenceSetDigest string `json:"evidence_set_digest"`
 }
 
 func IsValidStepAttemptID(value string) bool {
@@ -112,8 +114,13 @@ func ValidateStepAttempt(attempt StepAttempt) error {
 	if err := validateArtifactEvidenceMap(attempt.ArtifactEvidence); err != nil {
 		return err
 	}
-	if attempt.Approval != nil && strings.TrimSpace(attempt.Approval.Note) == "" {
-		return ErrInvalidApprovalNote
+	if attempt.Approval != nil {
+		if strings.TrimSpace(attempt.Approval.Note) == "" {
+			return ErrInvalidApprovalNote
+		}
+		if !isValidEvidenceSetDigest(attempt.Approval.EvidenceSetDigest) {
+			return ErrInvalidEvidenceSetDigest
+		}
 	}
 
 	switch attempt.Status {
@@ -157,7 +164,7 @@ func CloseStepAttempt(attempt StepAttempt, exitReason StepAttemptExitReason, rea
 	return closed, nil
 }
 
-func ApproveStepAttempt(attempt StepAttempt, note string) (StepAttempt, error) {
+func ApproveStepAttempt(attempt StepAttempt, note string, evidenceSetDigest string) (StepAttempt, error) {
 	if err := ValidateStepAttempt(attempt); err != nil {
 		return StepAttempt{}, err
 	}
@@ -170,10 +177,13 @@ func ApproveStepAttempt(attempt StepAttempt, note string) (StepAttempt, error) {
 	if strings.TrimSpace(note) == "" {
 		return StepAttempt{}, ErrInvalidApprovalNote
 	}
+	if !isValidEvidenceSetDigest(evidenceSetDigest) {
+		return StepAttempt{}, ErrInvalidEvidenceSetDigest
+	}
 	approved := attempt
 	approved.ArtifactEvidence = cloneArtifactEvidence(attempt.ArtifactEvidence)
 	approved.CheckResults = cloneStepAttemptCheckResults(attempt.CheckResults)
-	approved.Approval = &ApprovalRecord{Note: note}
+	approved.Approval = &ApprovalRecord{Note: note, EvidenceSetDigest: evidenceSetDigest}
 	if err := ValidateStepAttempt(approved); err != nil {
 		return StepAttempt{}, err
 	}

@@ -110,18 +110,19 @@ type AfterCompletingResult struct {
 }
 
 type SuccessResult struct {
-	StartedFlowID          string
-	CurrentStepID          string
-	CompletedStepID        string
-	NextStepID             string
-	CompletedFlowID        string
-	ApprovedStepID         string
-	ApprovedAttemptID      string
-	MovedBackToID          string
-	SkippedStepID          string
-	FinishedFlowID         string
-	RecordedArtifactPath   string
-	RecordedAttemptID      string
-	RecordedArtifactDigest string
-	RecordedArtifactSize   int64
+	StartedFlowID             string
+	CurrentStepID             string
+	CompletedStepID           string
+	NextStepID                string
+	CompletedFlowID           string
+	ApprovedStepID            string
+	ApprovedAttemptID         string
+	ApprovedEvidenceSetDigest string `json:"approved_evidence_set_digest,omitempty"`
+	MovedBackToID             string
+	SkippedStepID             string
+	FinishedFlowID            string
+	RecordedArtifactPath      string
+	RecordedAttemptID         string
+	RecordedArtifactDigest    string
+	RecordedArtifactSize      int64
 }

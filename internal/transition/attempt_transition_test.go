@@ -83,7 +83,7 @@ func TestApprovalLifecycleAcrossTransitions(t *testing.T) {
 		st := runningState()
 		setRunningStep(&st, stepID)
 		st.FlowSnapshot = testSnapshot(fl)
-		approved, err := state.ApproveStepAttempt(st.Attempts[0], "ok")
+		approved, err := state.ApproveStepAttempt(st.Attempts[0], "ok", "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f")
 		if err != nil {
 			t.Fatal(err)
 		}

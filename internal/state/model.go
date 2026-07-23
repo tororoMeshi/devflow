@@ -7,7 +7,7 @@ import (
 	"github.com/8noki8/devflow/internal/task"
 )
 
-const CurrentSchemaVersion = 7
+const CurrentSchemaVersion = 8
 
 var flowRunIDPattern = regexp.MustCompile(`^run_[0-9a-f]{32}$`)
 

@@ -88,7 +88,15 @@ func TestStatusReturnsActiveFlowState(t *testing.T) {
 	st := statusPromptState("status-flow", state.StatusRunning, "current")
 	st.CompletedSteps = []string{"first"}
 	st.SkippedSteps["skipped"] = state.SkippedStep{Reason: "not needed"}
-	st.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok"}
+	st.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	digest, err := state.ArtifactEvidenceSetDigest([]string{"docs/required.md"}, st.Attempts[0].ArtifactEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: digest}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
@@ -126,13 +134,17 @@ func TestStatusDoesNotExposePastAttemptApproval(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
 	st := statusPromptState("status-flow", state.StatusRunning, "current")
-	approved, err := state.ApproveStepAttempt(st.Attempts[0], "old")
+	st.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	oldDigest, err := state.ArtifactEvidenceSetDigest([]string{"docs/required.md"}, st.Attempts[0].ArtifactEvidence)
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved.ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
-		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Size:   1,
+	approved, err := state.ApproveStepAttempt(st.Attempts[0], "old", oldDigest)
+	if err != nil {
+		t.Fatal(err)
 	}
 	closed, err := state.CloseStepAttempt(approved, state.StepAttemptExitBack, "retry")
 	if err != nil {
@@ -276,7 +288,11 @@ func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
 		"devflow done",
 	})
 
-	approved, err := state.ApproveStepAttempt(st.Attempts[0], "ok")
+	approvalDigest, err := state.ArtifactEvidenceSetDigest([]string{"docs/required.md"}, st.Attempts[0].ArtifactEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := state.ApproveStepAttempt(st.Attempts[0], "ok", approvalDigest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +393,7 @@ func TestStatusTerminalDoesNotExposeHistoricalApproval(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			st.Attempts[0].Approval = &state.ApprovalRecord{Note: "historical"}
+			st.Attempts[0].Approval = &state.ApprovalRecord{Note: "historical", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}
 			if err := saveCommandState(t, root, st); err != nil {
 				t.Fatal(err)
 			}

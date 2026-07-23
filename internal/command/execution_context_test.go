@@ -114,13 +114,17 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 		]
 	}`)
 	currentState := executionTestState(state.StatusRunning)
-	firstApproved, err := state.ApproveStepAttempt(currentState.Attempts[0], "old approval")
+	currentState.Attempts[0].ArtifactEvidence["docs/design.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	firstDigest, err := state.ArtifactEvidenceSetDigest([]string{"docs/design.md"}, currentState.Attempts[0].ArtifactEvidence)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstApproved.ArtifactEvidence["docs/design.md"] = state.ArtifactEvidence{
-		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Size:   1,
+	firstApproved, err := state.ApproveStepAttempt(currentState.Attempts[0], "old approval", firstDigest)
+	if err != nil {
+		t.Fatal(err)
 	}
 	first, err := state.CloseStepAttempt(firstApproved, state.StepAttemptExitDone, "")
 	if err != nil {
@@ -164,7 +168,15 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 	if got.ExecutionContext.Completion.Ready {
 		t.Fatal("missing current approval did not block completion")
 	}
-	currentState.Attempts[2], err = state.ApproveStepAttempt(currentState.Attempts[2], "current approval")
+	currentState.Attempts[2].ArtifactEvidence["docs/design.md"] = state.ArtifactEvidence{
+		Digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Size:   2,
+	}
+	currentDigest, err := state.ArtifactEvidenceSetDigest([]string{"docs/design.md"}, currentState.Attempts[2].ArtifactEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentState.Attempts[2], err = state.ApproveStepAttempt(currentState.Attempts[2], "current approval", currentDigest)
 	if err != nil {
 		t.Fatal(err)
 	}

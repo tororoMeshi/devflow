@@ -221,8 +221,11 @@ func TestApplyApprove(t *testing.T) {
 		assertStateNotMutated(t, before, st)
 		assertSuccess(t, got)
 		approval := got.State.Attempts[0].Approval
-		if approval == nil || approval.Note != " approved " {
+		if approval == nil || approval.Note != " approved " || approval.EvidenceSetDigest != "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f" {
 			t.Fatalf("approval = %#v", approval)
+		}
+		if got.ApprovedEvidenceSetDigest != approval.EvidenceSetDigest {
+			t.Fatalf("transition digest = %q, approval = %#v", got.ApprovedEvidenceSetDigest, approval)
 		}
 	})
 
@@ -274,8 +277,32 @@ func TestApplyApproveRequiresCurrentAttemptArtifactEvidence(t *testing.T) {
 	}
 	got := ApplyApprove(fl, st, "first", st.CurrentAttemptID, "ok")
 	assertSuccess(t, got)
-	if got.State.Attempts[0].Approval == nil || got.State.Attempts[0].ArtifactEvidence["out/report.md"].Size != 1 {
+	wantDigest, err := state.ArtifactEvidenceSetDigest([]string{"out/report.md"}, st.Attempts[0].ArtifactEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State.Attempts[0].Approval == nil ||
+		got.State.Attempts[0].Approval.EvidenceSetDigest != wantDigest ||
+		got.ApprovedEvidenceSetDigest != wantDigest ||
+		got.State.Attempts[0].ArtifactEvidence["out/report.md"].Size != 1 {
 		t.Fatalf("Attempt = %#v", got.State.Attempts[0])
+	}
+}
+
+func TestApplyApproveMissingArtifactEvidenceDiagnosticIsSorted(t *testing.T) {
+	fl := testFlow()
+	fl.Steps[0].Approval = &flow.Approval{Required: true}
+	fl.Steps[0].Artifacts = []flow.Artifact{
+		{Path: "out/z.md", Required: true},
+		{Path: "out/a.md", Required: true},
+	}
+	st := runningState()
+	st.FlowSnapshot = testSnapshot(fl)
+
+	got := ApplyApprove(fl, st, "first", st.CurrentAttemptID, "ok")
+	assertFailure(t, got, CodeMissingArtifactEvidence)
+	if len(got.Diagnostics) != 1 || !reflect.DeepEqual(got.Diagnostics[0].Artifacts, []string{"out/a.md"}) {
+		t.Fatalf("diagnostics = %#v", got.Diagnostics)
 	}
 }
 

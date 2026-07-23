@@ -40,7 +40,15 @@ func TestApplyRecordArtifactEvidence(t *testing.T) {
 	assertFailure(t, ApplyRecordArtifactEvidence(st, "first", st.CurrentAttemptID, "out/report.md", state.ArtifactEvidence{}), CodeInvalidArtifactDigest)
 
 	approved := st.Clone()
-	approved.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok"}
+	approved.Attempts[0].ArtifactEvidence["out/report.md"] = evidence
+	approvedDigest, err := state.ArtifactEvidenceSetDigest(
+		[]string{"out/report.md"},
+		approved.Attempts[0].ArtifactEvidence,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: approvedDigest}
 	assertFailure(t, ApplyRecordArtifactEvidence(approved, "first", approved.CurrentAttemptID, "out/report.md", evidence), CodeArtifactRecordAfterApproval)
 
 	stale := st.Clone()
