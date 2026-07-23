@@ -2,6 +2,7 @@ package transition
 
 import (
 	"errors"
+	"sort"
 
 	"github.com/8noki8/devflow/internal/flow"
 	"github.com/8noki8/devflow/internal/state"
@@ -41,12 +42,20 @@ func ApplyApprove(_ flow.Flow, st state.State, stepID string, attemptID string, 
 	if !hasRequiredApproval(targetStep) {
 		return failure(errorDiagnostic(CodeApprovalNotRequired, stepID))
 	}
-	for _, path := range requiredArtifactPaths(targetStep) {
-		if _, ok := current.ArtifactEvidence[path]; !ok {
-			return failure(Diagnostic{Level: LevelError, Code: CodeMissingArtifactEvidence, StepID: stepID, Artifacts: []string{path}})
+	requiredPaths := requiredArtifactPaths(targetStep)
+	sort.Strings(requiredPaths)
+	evidenceSetDigest, err := state.ArtifactEvidenceSetDigest(requiredPaths, current.ArtifactEvidence)
+	if errors.Is(err, state.ErrMissingRequiredArtifactEvidence) {
+		for _, path := range requiredPaths {
+			if _, ok := current.ArtifactEvidence[path]; !ok {
+				return failure(Diagnostic{Level: LevelError, Code: CodeMissingArtifactEvidence, StepID: stepID, Artifacts: []string{path}})
+			}
 		}
 	}
-	approved, err := state.ApproveStepAttempt(current, note)
+	if err != nil {
+		return failure(errorDiagnostic(CodeInvalidState, stepID))
+	}
+	approved, err := state.ApproveStepAttempt(current, note, evidenceSetDigest)
 	if errors.Is(err, state.ErrStepAttemptAlreadyApproved) {
 		return failure(errorDiagnostic(CodeAttemptAlreadyApproved, stepID))
 	}
@@ -61,5 +70,7 @@ func ApplyApprove(_ flow.Flow, st state.State, stepID string, attemptID string, 
 	if err := state.Validate(next); err != nil {
 		return failure(errorDiagnostic(CodeInvalidState, stepID))
 	}
-	return success(next)
+	result := success(next)
+	result.ApprovedEvidenceSetDigest = evidenceSetDigest
+	return result
 }

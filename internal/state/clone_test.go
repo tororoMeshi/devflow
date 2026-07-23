@@ -12,7 +12,12 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 		SkippedSteps: map[string]SkippedStep{
 			"check_docs": {Reason: "not needed"},
 		},
-		Attempts:         []StepAttempt{{ID: "attempt_00000000000000000001", StepID: "human_approval", EntrySequence: 1, Status: StepAttemptActive, CheckResults: map[string]CheckResult{}, Approval: &ApprovalRecord{Note: "ok"}}},
+		Attempts: []StepAttempt{{
+			ID: "attempt_00000000000000000001", StepID: "human_approval", EntrySequence: 1,
+			Status: StepAttemptActive, CheckResults: map[string]CheckResult{},
+			ArtifactEvidence: map[string]ArtifactEvidence{},
+			Approval:         &ApprovalRecord{Note: "ok", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"},
+		}},
 		CurrentAttemptID: "attempt_00000000000000000001",
 		BackHistory: []BackHistory{
 			{FromStepID: "human_approval", ToStepID: "write_review", Reason: "revise", InvalidatedStepIDs: []string{"write_review", "human_approval"}},
@@ -25,6 +30,8 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	cloned.CompletedSteps[0] = "changed"
 	cloned.SkippedSteps["check_docs"] = SkippedStep{Reason: "changed"}
 	cloned.Attempts[0].Approval.Note = "changed"
+	cloned.Attempts[0].Approval.EvidenceSetDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	cloned.Attempts[0].ArtifactEvidence["out/report.md"] = ArtifactEvidence{Digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Size: 2}
 	cloned.BackHistory[0].FromStepID = "changed"
 	cloned.BackHistory[0].InvalidatedStepIDs[0] = "changed"
 	cloned.BackHistory[0].InvalidatedStepIDs = append(cloned.BackHistory[0].InvalidatedStepIDs, "added")
@@ -41,6 +48,12 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	}
 	if original.Attempts[0].Approval.Note != "ok" {
 		t.Fatalf("Approval pointer is shared")
+	}
+	if original.Attempts[0].Approval.EvidenceSetDigest != emptyEvidenceSetDigest {
+		t.Fatal("Approval digest is shared")
+	}
+	if len(original.Attempts[0].ArtifactEvidence) != 0 {
+		t.Fatal("ArtifactEvidence map is shared")
 	}
 	if original.BackHistory[0].FromStepID != "human_approval" {
 		t.Fatalf("BackHistory record was shared")

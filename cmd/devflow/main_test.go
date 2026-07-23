@@ -586,6 +586,10 @@ func TestParseApproveArgsAcceptsOnlyCanonicalSyntax(t *testing.T) {
 		{"--attempt", valid[3], "--step", "step", "--note", "note"},
 		{"--step", "step", "--step", "step", "--note", "note"},
 		{"--step", "step", "--attempt", valid[3], "--unknown", "note"},
+		{"--step", "step", "--attempt", valid[3], "--note", "note", "--evidence-set-digest", "sha256:" + strings.Repeat("a", 64)},
+		{"--step", "step", "--attempt", valid[3], "--note", "note", "--artifact", "out/report.md"},
+		{"--step", "step", "--attempt", valid[3], "--note", "note", "--path", "out/report.md"},
+		{"--step", "step", "--attempt", valid[3], "--note", "note", "--evidence", "value"},
 		{"--step=step", "--attempt", valid[3], "--note", "note"},
 		{"--step", "step", "--attempt=" + valid[3], "--note", "note"},
 		{"--step", "step", "--attempt", valid[3], "--note=note"},
@@ -724,8 +728,12 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		stdout, stderr, exitCode := runCapture(root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"})
 
 		assertExitCode(t, exitCode, 0, stderr)
-		assertContains(t, stdout, "Approved step: human_approval")
-		assertContains(t, stdout, "Approved attempt: "+st.CurrentAttemptID)
+		want := "Approved step: human_approval\n" +
+			"Approved attempt: " + st.CurrentAttemptID + "\n" +
+			"Evidence set: sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f\n"
+		if stdout != want {
+			t.Fatalf("stdout = %q, want %q", stdout, want)
+		}
 	})
 
 	t.Run("back", func(t *testing.T) {

@@ -283,6 +283,9 @@ func writeSuccess(stdout io.Writer, success command.SuccessResult) {
 	if success.ApprovedAttemptID != "" {
 		_, _ = fmt.Fprintf(stdout, "Approved attempt: %s\n", success.ApprovedAttemptID)
 	}
+	if success.ApprovedEvidenceSetDigest != "" {
+		_, _ = fmt.Fprintf(stdout, "Evidence set: %s\n", success.ApprovedEvidenceSetDigest)
+	}
 	if success.RecordedArtifactPath != "" {
 		_, _ = fmt.Fprintf(stdout, "Recorded artifact: %s\n", success.RecordedArtifactPath)
 		_, _ = fmt.Fprintf(stdout, "Attempt: %s\n", success.RecordedAttemptID)

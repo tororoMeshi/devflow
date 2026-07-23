@@ -80,7 +80,15 @@ func TestRecordArtifactRejectsContractErrorsBeforeFilesystemAndDoesNotSave(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok"}
+	approved.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	digest, err := state.ArtifactEvidenceSetDigest([]string{"docs/required.md"}, approved.Attempts[0].ArtifactEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: digest}
 	if err := NewStore(Context{ProjectRoot: root}).SaveCurrent(approved); err != nil {
 		t.Fatal(err)
 	}

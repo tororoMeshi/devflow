@@ -489,7 +489,7 @@ func TestStoreRoundTripsAttemptApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value.Attempts[0].Approval = &ApprovalRecord{Note: "stored"}
+	value.Attempts[0].Approval = &ApprovalRecord{Note: "stored", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}
 	if err := store.CreateRun(value); err != nil {
 		t.Fatal(err)
 	}
@@ -505,6 +505,123 @@ func TestStoreRoundTripsAttemptApproval(t *testing.T) {
 	if again.Status != LoadOK || again.State.Attempts[0].Approval.Note != "saved" {
 		t.Fatalf("LoadCurrent after Save = %#v", again)
 	}
+}
+
+func TestStoreLoadStrictApprovalEvidenceSetDigestV8(t *testing.T) {
+	validState := func(t *testing.T) State {
+		t.Helper()
+		value := testState(t, StatusRunning, "first")
+		fl := value.FlowSnapshot.Flow
+		fl.Steps[0].Approval = &flow.Approval{Required: true}
+		var err error
+		value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value.Attempts[0].Approval = &ApprovalRecord{
+			Note:              "reviewed",
+			EvidenceSetDigest: emptyEvidenceSetDigest,
+		}
+		return value
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"schema v7", func(raw map[string]any) { raw["schema_version"] = float64(7) }},
+		{"missing digest", func(raw map[string]any) {
+			delete(raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any), "evidence_set_digest")
+		}},
+		{"null digest", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = nil
+		}},
+		{"number digest", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = float64(1)
+		}},
+		{"bool digest", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = true
+		}},
+		{"object digest", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = map[string]any{}
+		}},
+		{"array digest", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = []any{}
+		}},
+		{"approval null", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"] = nil
+		}},
+		{"empty digest", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = ""
+		}},
+		{"wrong prefix", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "sha512:" + strings.Repeat("a", 64)
+		}},
+		{"uppercase", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "sha256:" + strings.Repeat("A", 64)
+		}},
+		{"short", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "sha256:" + strings.Repeat("a", 63)
+		}},
+		{"long", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "sha256:" + strings.Repeat("a", 65)
+		}},
+		{"non-hex", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "sha256:" + strings.Repeat("g", 64)
+		}},
+		{"leading whitespace", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = " " + emptyEvidenceSetDigest
+		}},
+		{"trailing whitespace", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = emptyEvidenceSetDigest + " "
+		}},
+		{"unicode whitespace", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "\u3000" + emptyEvidenceSetDigest
+		}},
+		{"canonical mismatch", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["evidence_set_digest"] = "sha256:" + strings.Repeat("a", 64)
+		}},
+		{"legacy approved", func(raw map[string]any) {
+			raw["attempts"].([]any)[0].(map[string]any)["approval"].(map[string]any)["approved"] = true
+		}},
+		{"top-level approvals", func(raw map[string]any) {
+			raw["approvals"] = map[string]any{"first": map[string]any{"note": "old"}}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := testStore(t)
+			value := validState(t)
+			data, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(raw)
+			path, _ := store.RunStatePath(value.FlowRunID)
+			writeJSON(t, path, raw)
+			writePointer(t, store, value.FlowRunID)
+			got := store.LoadCurrent()
+			if got.Status != LoadInvalid || got.Err == nil {
+				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
+	}
+
+	t.Run("valid approval", func(t *testing.T) {
+		store := testStore(t)
+		value := validState(t)
+		if err := store.CreateRun(value); err != nil {
+			t.Fatal(err)
+		}
+		got := store.LoadCurrent()
+		if got.Status != LoadOK || got.State.Attempts[0].Approval.EvidenceSetDigest != emptyEvidenceSetDigest {
+			t.Fatalf("LoadCurrent = %#v", got)
+		}
+	})
 }
 
 func testState(t testing.TB, status Status, currentStepID string) State {

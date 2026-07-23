@@ -259,8 +259,11 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 				return fmt.Errorf("artifact_evidence must not be null in attempt %d", index)
 			}
 			approvalJSON, ok := attempt["approval"]
-			if !ok || string(approvalJSON) == "null" {
+			if !ok {
 				continue
+			}
+			if string(approvalJSON) == "null" {
+				return fmt.Errorf("approval must be omitted rather than null in attempt %d", index)
 			}
 			var approval map[string]json.RawMessage
 			if err := json.Unmarshal(approvalJSON, &approval); err != nil {
@@ -268,6 +271,20 @@ func validateStateFile(raw map[string]json.RawMessage, state State) error {
 			}
 			if _, ok := approval["approved"]; ok {
 				return fmt.Errorf("unsupported field \"approved\" in attempt %d approval", index)
+			}
+			digestJSON, ok := approval["evidence_set_digest"]
+			if !ok {
+				return fmt.Errorf("missing required field \"evidence_set_digest\" in attempt %d approval", index)
+			}
+			if string(digestJSON) == "null" {
+				return fmt.Errorf("evidence_set_digest must not be null in attempt %d approval", index)
+			}
+			var digest string
+			if err := json.Unmarshal(digestJSON, &digest); err != nil {
+				return fmt.Errorf("evidence_set_digest must be a string in attempt %d approval: %w", index, err)
+			}
+			if !isValidEvidenceSetDigest(digest) {
+				return fmt.Errorf("invalid attempt %d approval evidence_set_digest: %w", index, ErrInvalidEvidenceSetDigest)
 			}
 		}
 	}
@@ -329,9 +346,11 @@ func validateState(state State) error {
 		}
 		step, _ := flowStep(state.FlowSnapshot.Flow, attempt.StepID)
 		requiredArtifacts := map[string]struct{}{}
+		requiredArtifactPaths := []string{}
 		for _, artifact := range step.Artifacts {
 			if artifact.Required {
 				requiredArtifacts[artifact.Path] = struct{}{}
+				requiredArtifactPaths = append(requiredArtifactPaths, artifact.Path)
 			}
 		}
 		evidencePaths := make([]string, 0, len(attempt.ArtifactEvidence))
@@ -341,7 +360,7 @@ func validateState(state State) error {
 		sort.Strings(evidencePaths)
 		for _, path := range evidencePaths {
 			if _, ok := requiredArtifacts[path]; !ok {
-				return fmt.Errorf("attempt artifact evidence %q is not required by step %q", path, attempt.StepID)
+				return fmt.Errorf("%w: attempt artifact evidence %q is not required by step %q", ErrUnknownArtifactEvidence, path, attempt.StepID)
 			}
 		}
 		if attempt.Status == StepAttemptClosed && attempt.ExitReason == StepAttemptExitDone {
@@ -356,6 +375,15 @@ func validateState(state State) error {
 		}
 		if attempt.Approval != nil && (step.Approval == nil || !step.Approval.Required) {
 			return fmt.Errorf("attempt step %q does not require approval", attempt.StepID)
+		}
+		if attempt.Approval != nil {
+			digest, err := ArtifactEvidenceSetDigest(requiredArtifactPaths, attempt.ArtifactEvidence)
+			if err != nil {
+				return fmt.Errorf("attempt %d approval artifact evidence set: %w", i, err)
+			}
+			if digest != attempt.Approval.EvidenceSetDigest {
+				return fmt.Errorf("attempt %d approval: %w", i, ErrEvidenceSetDigestMismatch)
+			}
 		}
 		for checkID, result := range attempt.CheckResults {
 			if !containsString(step.RequiredChecks, checkID) {

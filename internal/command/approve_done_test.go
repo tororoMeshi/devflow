@@ -20,12 +20,17 @@ func TestApproveRecordsCurrentStepApproval(t *testing.T) {
 	got := Approve(Context{ProjectRoot: root}, "approval", st.CurrentAttemptID, "approved")
 
 	assertCommandSuccess(t, got)
-	if got.Success == nil || got.Success.ApprovedStepID != "approval" || got.Success.ApprovedAttemptID != st.CurrentAttemptID {
+	if got.Success == nil ||
+		got.Success.ApprovedStepID != "approval" ||
+		got.Success.ApprovedAttemptID != st.CurrentAttemptID ||
+		got.Success.ApprovedEvidenceSetDigest != "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f" {
 		t.Fatalf("Success = %#v", got.Success)
 	}
 	loaded := loadCommandState(t, root)
 	approval := loaded.Attempts[0].Approval
-	if approval == nil || approval.Note != "approved" {
+	if approval == nil ||
+		approval.Note != "approved" ||
+		approval.EvidenceSetDigest != got.Success.ApprovedEvidenceSetDigest {
 		t.Fatalf("approval = %#v", approval)
 	}
 }
@@ -203,7 +208,7 @@ func TestDoneUsesGateApprovalCheckBeforeApplyingDone(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
 	st := approveDoneState("approval")
-	st.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok"}
+	st.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}

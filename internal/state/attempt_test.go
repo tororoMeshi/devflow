@@ -97,12 +97,15 @@ func TestApproveStepAttempt(t *testing.T) {
 	original := mustNewStepAttempt(t)
 	original.CheckResults["check"] = CheckResult{ExitCode: 0}
 	before := withAttempt(original, func(*StepAttempt) {})
-	approved, err := ApproveStepAttempt(original, " approved ")
+	approved, err := ApproveStepAttempt(original, " approved ", "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if approved.Approval == nil || approved.Approval.Note != " approved " {
 		t.Fatalf("Approval = %#v", approved.Approval)
+	}
+	if approved.Approval.EvidenceSetDigest != emptyEvidenceSetDigest {
+		t.Fatalf("EvidenceSetDigest = %q", approved.Approval.EvidenceSetDigest)
 	}
 	if !reflect.DeepEqual(original, before) || original.Approval != nil {
 		t.Fatal("input attempt changed")
@@ -111,17 +114,29 @@ func TestApproveStepAttempt(t *testing.T) {
 	if original.CheckResults["check"].ExitCode != 0 {
 		t.Fatal("CheckResults map is shared")
 	}
+	approved.ArtifactEvidence["out/report.md"] = ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
+	if len(original.ArtifactEvidence) != 0 {
+		t.Fatal("ArtifactEvidence map is shared")
+	}
 
 	for _, note := range []string{"", " \t\n", "\u3000\u2003"} {
-		if _, err := ApproveStepAttempt(original, note); !errors.Is(err, ErrInvalidApprovalNote) {
+		if _, err := ApproveStepAttempt(original, note, "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"); !errors.Is(err, ErrInvalidApprovalNote) {
 			t.Fatalf("note %q: %v", note, err)
 		}
 	}
+	for _, digest := range []string{"", " " + emptyEvidenceSetDigest, "sha256:" + strings.Repeat("A", 64)} {
+		if _, err := ApproveStepAttempt(original, "ok", digest); !errors.Is(err, ErrInvalidEvidenceSetDigest) {
+			t.Fatalf("digest %q: %v", digest, err)
+		}
+	}
 	closed := mustCloseStepAttempt(t, original, StepAttemptExitDone, "")
-	if _, err := ApproveStepAttempt(closed, "ok"); !errors.Is(err, ErrStepAttemptNotActive) {
+	if _, err := ApproveStepAttempt(closed, "ok", "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"); !errors.Is(err, ErrStepAttemptNotActive) {
 		t.Fatalf("closed: %v", err)
 	}
-	if _, err := ApproveStepAttempt(approved, "replacement"); !errors.Is(err, ErrStepAttemptAlreadyApproved) {
+	if _, err := ApproveStepAttempt(approved, "replacement", "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"); !errors.Is(err, ErrStepAttemptAlreadyApproved) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	if approved.Approval.Note != " approved " {
@@ -136,8 +151,12 @@ func TestApproveStepAttempt(t *testing.T) {
 		t.Fatal("close lost approval")
 	}
 	closedApproved.Approval.Note = "changed"
+	closedApproved.Approval.EvidenceSetDigest = "sha256:" + strings.Repeat("b", 64)
 	if approved.Approval.Note != " approved " {
 		t.Fatal("CloseStepAttempt shares Approval pointer")
+	}
+	if approved.Approval.EvidenceSetDigest != emptyEvidenceSetDigest {
+		t.Fatal("CloseStepAttempt shares Approval digest")
 	}
 }
 
@@ -191,6 +210,12 @@ func TestValidateStepAttempt(t *testing.T) {
 		{"nil check results", withAttempt(validActive, func(a *StepAttempt) { a.CheckResults = nil }), ErrNilStepAttemptCheckResults},
 		{"nil artifact evidence", withAttempt(validActive, func(a *StepAttempt) { a.ArtifactEvidence = nil }), ErrNilArtifactEvidence},
 		{"blank approval note", withAttempt(validActive, func(a *StepAttempt) { a.Approval = &ApprovalRecord{Note: " \t"} }), ErrInvalidApprovalNote},
+		{"missing approval digest", withAttempt(validActive, func(a *StepAttempt) {
+			a.Approval = &ApprovalRecord{Note: "ok"}
+		}), ErrInvalidEvidenceSetDigest},
+		{"invalid approval digest", withAttempt(validActive, func(a *StepAttempt) {
+			a.Approval = &ApprovalRecord{Note: "ok", EvidenceSetDigest: "SHA256:bad"}
+		}), ErrInvalidEvidenceSetDigest},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateStepAttempt(tt.attempt)
@@ -302,7 +327,7 @@ func TestStepAttemptJSON(t *testing.T) {
 	active := mustNewStepAttempt(t)
 	active.StepID = "implement"
 	closed := mustCloseStepAttempt(t, active, StepAttemptExitSkip, "not applicable")
-	approved, err := ApproveStepAttempt(active, "ok")
+	approved, err := ApproveStepAttempt(active, "ok", "sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +339,7 @@ func TestStepAttemptJSON(t *testing.T) {
 	}{
 		{"active", active, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","artifact_evidence":{},"check_results":{}}`},
 		{"closed skip", closed, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"closed","exit_reason":"skip","reason":"not applicable","artifact_evidence":{},"check_results":{}}`},
-		{"approved", approved, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","artifact_evidence":{},"check_results":{},"approval":{"note":"ok"}}`},
+		{"approved", approved, `{"id":"attempt_00000000000000000001","step_id":"implement","entry_sequence":1,"status":"active","artifact_evidence":{},"check_results":{},"approval":{"note":"ok","evidence_set_digest":"sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f"}}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := json.Marshal(tt.attempt)
