@@ -27,7 +27,11 @@ func Status(ctx Context) CommandResult {
 
 	artifacts := []ArtifactStatusResult{}
 	if active.State.Status == state.StatusRunning {
-		artifacts = artifactStatusResults(gate.InspectRequiredArtifacts(active.CurrentStep, active.State, ctx.ProjectRoot))
+		attempt, _, ok := active.State.CurrentAttempt()
+		if !ok {
+			return commandFailure(CodeInvalidState)
+		}
+		artifacts = artifactStatusResults(gate.InspectArtifacts(ctx.ProjectRoot, active.CurrentStep, attempt, gate.NewInspectionSet()))
 	}
 	return CommandResult{
 		ExitCode: 0,
@@ -57,17 +61,17 @@ func artifactStatusResults(inspections []gate.ArtifactInspection) []ArtifactStat
 	return results
 }
 
-func artifactStatusState(problem gate.ArtifactProblemKind) string {
+func artifactStatusState(problem gate.CompletionBlockerKind) string {
 	switch problem {
 	case "":
 		return ArtifactStatusCurrent
-	case gate.ArtifactEvidenceMissing:
+	case gate.CompletionBlockerMissingArtifactEvidence:
 		return ArtifactStatusMissingEvidence
-	case gate.ArtifactFileMissing:
+	case gate.CompletionBlockerMissingArtifact:
 		return ArtifactStatusMissingFile
-	case gate.ArtifactMismatch:
+	case gate.CompletionBlockerArtifactEvidenceMismatch:
 		return ArtifactStatusChanged
-	case gate.ArtifactUnsafe:
+	case gate.CompletionBlockerArtifactUnavailable:
 		return ArtifactStatusUnavailable
 	default:
 		return ArtifactStatusUnavailable

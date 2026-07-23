@@ -57,6 +57,29 @@ func findStep(fl flow.Flow, stepID string) (flow.Step, int, bool) {
 	return flow.Step{}, -1, false
 }
 
+func ResolveNextStep(fl flow.Flow, currentStepID string) (flow.Step, bool, bool) {
+	_, index, found := findStep(fl, currentStepID)
+	if !found {
+		return flow.Step{}, false, false
+	}
+	if index+1 >= len(fl.Steps) {
+		return flow.Step{}, false, true
+	}
+	return fl.Steps[index+1], true, true
+}
+
+func ResolveBackStep(fl flow.Flow, currentStepID, toStepID string) (flow.Step, bool) {
+	_, currentIndex, found := findStep(fl, currentStepID)
+	if !found || currentIndex == 0 && toStepID == "" {
+		return flow.Step{}, false
+	}
+	if toStepID == "" {
+		return fl.Steps[currentIndex-1], true
+	}
+	step, targetIndex, found := findStep(fl, toStepID)
+	return step, found && targetIndex < currentIndex
+}
+
 func hasRequiredApproval(step flow.Step) bool {
 	return step.Approval != nil && step.Approval.Required
 }

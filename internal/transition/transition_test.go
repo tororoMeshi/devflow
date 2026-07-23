@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/task"
 )
@@ -109,7 +108,7 @@ func TestApplyDone(t *testing.T) {
 		st := runningState()
 		before := st.Clone()
 
-		got := ApplyDone(testFlow(), st, gate.Result{OK: true})
+		got := ApplyDone(testFlow(), st)
 
 		assertStateNotMutated(t, before, st)
 		assertSuccess(t, got)
@@ -125,7 +124,7 @@ func TestApplyDone(t *testing.T) {
 		st.SchemaVersion = state.CurrentSchemaVersion
 		before := st.Clone()
 
-		got := ApplyDone(testFlow(), st, gate.Result{OK: true})
+		got := ApplyDone(testFlow(), st)
 
 		assertStateNotMutated(t, before, st)
 		assertSuccess(t, got)
@@ -145,7 +144,7 @@ func TestApplyDone(t *testing.T) {
 		st.SkippedSteps["first"] = state.SkippedStep{Reason: "retry as done"}
 		before := st.Clone()
 
-		got := ApplyDone(testFlow(), st, gate.Result{OK: true})
+		got := ApplyDone(testFlow(), st)
 
 		assertStateNotMutated(t, before, st)
 		assertSuccess(t, got)
@@ -154,56 +153,12 @@ func TestApplyDone(t *testing.T) {
 		}
 	})
 
-	t.Run("returns diagnostics when gate is missing artifact and approval", func(t *testing.T) {
-		st := runningState()
-		before := st.Clone()
-
-		got := ApplyDone(testFlow(), st, gate.Result{
-			OK: false,
-			ArtifactProblems: []gate.ArtifactProblem{
-				{Path: "docs/code-review.md", Kind: gate.ArtifactFileMissing},
-			},
-			MissingApprovals: []string{"first"},
-		})
-
-		assertStateNotMutated(t, before, st)
-		assertFailure(t, got, CodeMissingRequiredArtifact, CodeMissingRequiredApproval)
-	})
-
-	t.Run("preserves Flow artifact problem order across kinds", func(t *testing.T) {
-		st := runningState()
-		got := ApplyDone(testFlow(), st, gate.Result{
-			ArtifactProblems: []gate.ArtifactProblem{
-				{Path: "out/evidence.md", Kind: gate.ArtifactEvidenceMissing},
-				{Path: "out/file.md", Kind: gate.ArtifactFileMissing},
-				{Path: "out/unsafe.md", Kind: gate.ArtifactUnsafe},
-				{Path: "out/mismatch.md", Kind: gate.ArtifactMismatch},
-			},
-		})
-		assertFailure(t, got,
-			CodeMissingArtifactEvidence,
-			CodeMissingRequiredArtifact,
-			CodeArtifactUnsafe,
-			CodeArtifactEvidenceMismatch,
-		)
-	})
-
-	t.Run("returns diagnostic when gate result is inconsistent", func(t *testing.T) {
-		st := runningState()
-		before := st.Clone()
-
-		got := ApplyDone(testFlow(), st, gate.Result{OK: false})
-
-		assertStateNotMutated(t, before, st)
-		assertFailure(t, got, CodeInvalidGateResult)
-	})
-
 	t.Run("fails when current step is invalid", func(t *testing.T) {
 		st := runningState()
 		st.CurrentStepID = "missing"
 		before := st.Clone()
 
-		got := ApplyDone(testFlow(), st, gate.Result{OK: true})
+		got := ApplyDone(testFlow(), st)
 
 		assertStateNotMutated(t, before, st)
 		assertFailure(t, got, CodeInvalidCurrentStep)
@@ -339,6 +294,9 @@ func TestApplyBack(t *testing.T) {
 
 		assertStateNotMutated(t, before, st)
 		assertFailure(t, got, CodeNoPreviousStep)
+		if got.Diagnostics[0].StepID != st.CurrentStepID {
+			t.Fatalf("StepID = %q, want %q", got.Diagnostics[0].StepID, st.CurrentStepID)
+		}
 	})
 
 	t.Run("fails when reason is empty", func(t *testing.T) {
@@ -424,13 +382,7 @@ func TestEntrySequenceChangesOnlyOnSuccessfulMoves(t *testing.T) {
 	st.FlowRunID = "run_test"
 	st.Attempts[0].CheckResults["old"] = state.CheckResult{ExitCode: 0}
 
-	failed := ApplyDone(testFlow(), st, gate.Result{OK: false})
-	assertFailure(t, failed, CodeInvalidGateResult)
-	if st.EntrySequence() != 1 || len(st.Attempts[0].CheckResults) != 1 {
-		t.Fatalf("failed transition mutated state: %#v", st)
-	}
-
-	done := ApplyDone(testFlow(), st, gate.Result{OK: true})
+	done := ApplyDone(testFlow(), st)
 	assertSuccess(t, done)
 	if done.State.EntrySequence() != 2 || len(done.State.Attempts[1].CheckResults) != 0 || len(done.State.Attempts[0].CheckResults) != 1 {
 		t.Fatalf("done state=%#v", done.State)

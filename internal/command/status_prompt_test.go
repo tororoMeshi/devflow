@@ -15,10 +15,10 @@ import (
 func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {
 	inspections := []gate.ArtifactInspection{
 		{Path: "current", Required: true},
-		{Path: "missing-evidence", Required: true, Problem: gate.ArtifactEvidenceMissing},
-		{Path: "missing-file", Required: true, Problem: gate.ArtifactFileMissing},
-		{Path: "changed", Required: true, Problem: gate.ArtifactMismatch},
-		{Path: "unavailable", Required: true, Problem: gate.ArtifactUnsafe},
+		{Path: "missing-evidence", Required: true, Problem: gate.CompletionBlockerMissingArtifactEvidence},
+		{Path: "missing-file", Required: true, Problem: gate.CompletionBlockerMissingArtifact},
+		{Path: "changed", Required: true, Problem: gate.CompletionBlockerArtifactEvidenceMismatch},
+		{Path: "unavailable", Required: true, Problem: gate.CompletionBlockerArtifactUnavailable},
 		{Path: "optional", Required: false},
 	}
 	want := []ArtifactStatusResult{
@@ -31,7 +31,7 @@ func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {
 	if got := artifactStatusResults(inspections); !reflect.DeepEqual(got, want) {
 		t.Fatalf("artifactStatusResults() = %#v, want %#v", got, want)
 	}
-	if got := artifactStatusState(gate.ArtifactProblemKind("unknown")); got != "unavailable" {
+	if got := artifactStatusState(gate.CompletionBlockerKind("unknown")); got != "unavailable" {
 		t.Fatalf("unknown artifact state = %q", got)
 	}
 	data, err := json.Marshal(StatusResult{Artifacts: []ArtifactStatusResult{}})
@@ -61,15 +61,15 @@ func TestPromptCompoundArtifactStateOnlySuggestsRecordableEvidence(t *testing.T)
 		CurrentStep: flow.Step{ID: "step"},
 	}
 	inspections := []gate.ArtifactInspection{
-		{Path: "missing.md", Required: true, Problem: gate.ArtifactEvidenceMissing},
+		{Path: "missing.md", Required: true, Problem: gate.CompletionBlockerMissingArtifactEvidence},
 		{Path: "current.md", Required: true},
-		{Path: "changed.md", Required: true, Problem: gate.ArtifactMismatch},
-		{Path: "gone.md", Required: true, Problem: gate.ArtifactFileMissing},
-		{Path: "unsafe.md", Required: true, Problem: gate.ArtifactUnsafe},
+		{Path: "changed.md", Required: true, Problem: gate.CompletionBlockerArtifactEvidenceMismatch},
+		{Path: "gone.md", Required: true, Problem: gate.CompletionBlockerMissingArtifact},
+		{Path: "unsafe.md", Required: true, Problem: gate.CompletionBlockerArtifactUnavailable},
 		{Path: "optional.md", Required: false},
 	}
 	approval := &RequiredApprovalResult{StepID: "step", AttemptID: attempt.ID}
-	assertCommands(t, promptAfterCompleting(active, inspections, approval, gate.Result{}).Commands, []string{
+	assertCommands(t, promptAfterCompleting(active, inspections, approval, gate.CompletionGateResult{}, gate.EntryGateResult{Ready: true}).Commands, []string{
 		`devflow artifact record --step "step" --attempt "` + attempt.ID + `" --path "missing.md"`,
 	})
 	wantBlockers := []string{

@@ -2,56 +2,19 @@ package transition
 
 import (
 	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 )
 
-func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) TransitionResult {
+// ApplyDone assumes command-layer Completion and destination Entry Gates have
+// succeeded. Filesystem preconditions are intentionally kept out of transition.
+func ApplyDone(flow flow.Flow, st state.State) TransitionResult {
 	if result, ok := requireRunning(st); !ok {
 		return result
 	}
 
-	currentStep, currentIndex, ok := findStep(flow, st.CurrentStepID)
+	currentStep, _, ok := findStep(flow, st.CurrentStepID)
 	if !ok {
 		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
-	}
-
-	if !gateResult.OK {
-		diagnostics := []Diagnostic{}
-		for _, input := range gateResult.MissingInputs {
-			diagnostics = append(diagnostics, Diagnostic{
-				Level:     LevelError,
-				Code:      CodeMissingRequiredInput,
-				StepID:    currentStep.ID,
-				Artifacts: []string{input},
-			})
-		}
-		for _, problem := range gateResult.ArtifactProblems {
-			code := CodeMissingRequiredArtifact
-			switch problem.Kind {
-			case gate.ArtifactEvidenceMissing:
-				code = CodeMissingArtifactEvidence
-			case gate.ArtifactUnsafe:
-				code = CodeArtifactUnsafe
-			case gate.ArtifactMismatch:
-				code = CodeArtifactEvidenceMismatch
-			}
-			diagnostics = append(diagnostics, Diagnostic{Level: LevelError, Code: code, StepID: currentStep.ID, Artifacts: []string{problem.Path}})
-		}
-		for _, stepID := range gateResult.MissingApprovals {
-			diagnostics = append(diagnostics, errorDiagnostic(CodeMissingRequiredApproval, stepID))
-		}
-		for _, problem := range gateResult.CheckProblems {
-			code := CodeMissingRequiredCheck
-			if problem.Kind == gate.CheckFailed {
-				code = CodeFailedRequiredCheck
-			}
-			diagnostics = append(diagnostics, errorDiagnostic(code, problem.CheckID))
-		}
-		if len(diagnostics) == 0 {
-			diagnostics = append(diagnostics, errorDiagnostic(CodeInvalidGateResult, currentStep.ID))
-		}
-		return failure(diagnostics...)
 	}
 
 	next := st.Clone()
@@ -61,9 +24,13 @@ func ApplyDone(flow flow.Flow, st state.State, gateResult gate.Result) Transitio
 	next.CompletedSteps = append(next.CompletedSteps, currentStep.ID)
 	delete(next.SkippedSteps, currentStep.ID)
 
-	if currentIndex+1 < len(flow.Steps) {
+	nextStep, hasNext, valid := ResolveNextStep(flow, currentStep.ID)
+	if !valid {
+		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+	}
+	if hasNext {
 		next.Status = state.StatusRunning
-		if !enterStep(&next, flow.Steps[currentIndex+1].ID) {
+		if !enterStep(&next, nextStep.ID) {
 			return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
 		}
 	} else {

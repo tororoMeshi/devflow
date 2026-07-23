@@ -25,9 +25,13 @@ func ApplySkip(flow flow.Flow, st state.State, reason string) TransitionResult {
 		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
 	}
 	next.SkippedSteps[currentStep.ID] = state.SkippedStep{Reason: reason}
-	if currentIndex+1 < len(flow.Steps) {
+	nextStep, hasNext, valid := ResolveNextStep(flow, currentStep.ID)
+	if !valid {
+		return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
+	}
+	if hasNext {
 		next.Status = state.StatusRunning
-		if !enterStep(&next, flow.Steps[currentIndex+1].ID) {
+		if !enterStep(&next, nextStep.ID) {
 			return failure(errorDiagnostic(CodeInvalidCurrentStep, st.CurrentStepID))
 		}
 	} else {

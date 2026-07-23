@@ -22,6 +22,7 @@ type CompletionBlockerType string
 
 const (
 	CompletionBlockerMissingInput             CompletionBlockerType = "missing_input"
+	CompletionBlockerInputUnavailable         CompletionBlockerType = "input_unavailable"
 	CompletionBlockerMissingArtifact          CompletionBlockerType = "missing_artifact"
 	CompletionBlockerMissingArtifactEvidence  CompletionBlockerType = "missing_artifact_evidence"
 	CompletionBlockerArtifactEvidenceMismatch CompletionBlockerType = "artifact_evidence_mismatch"
@@ -134,8 +135,10 @@ func CurrentContext(ctx Context) CommandResult {
 			ID:            attempt.ID,
 			EntrySequence: attempt.EntrySequence,
 		}
-		gateResult, inspections := gate.InspectDoneGate(*loaded.Step, loaded.State, ctx.ProjectRoot)
-		result.Step = executionStep(*loaded.Step, loaded.State, ctx.ProjectRoot, inspections)
+		inspectionSet := gate.NewInspectionSet()
+		gateResult := gate.InspectCompletionGate(ctx.ProjectRoot, loaded.State, *loaded.Step, attempt, inspectionSet)
+		inspections := gate.InspectArtifacts(ctx.ProjectRoot, *loaded.Step, attempt, inspectionSet)
+		result.Step = executionStep(*loaded.Step, loaded.State, ctx.ProjectRoot, inspections, inspectionSet)
 		result.Completion = executionCompletion(gateResult, loaded.Step.ID)
 	}
 
@@ -171,12 +174,12 @@ func LoadExecutionContext(ctx Context) (LoadedExecutionContext, []transition.Dia
 	}
 }
 
-func executionStep(step flow.Step, current state.State, projectRoot string, inspections []gate.ArtifactInspection) *ExecutionStepResult {
+func executionStep(step flow.Step, current state.State, projectRoot string, inspections []gate.ArtifactInspection, inspectionSet *gate.InspectionSet) *ExecutionStepResult {
 	return &ExecutionStepResult{
 		ID:          step.ID,
 		Title:       step.Title,
 		Instruction: step.Instruction,
-		Inputs:      executionInputArtifacts(step.Inputs, projectRoot, inspections),
+		Inputs:      executionInputArtifacts(step.Inputs, projectRoot, inspectionSet),
 		Artifacts:   executionArtifacts(inspections),
 		Checks:      executionChecks(step.RequiredChecks, current),
 		Approval:    executionApproval(step, current),
@@ -195,17 +198,10 @@ func executionArtifacts(inspections []gate.ArtifactInspection) []ExecutionArtifa
 	return result
 }
 
-func executionInputArtifacts(artifacts []flow.Artifact, projectRoot string, inspections []gate.ArtifactInspection) []ExecutionArtifactResult {
-	known := make(map[string]bool, len(inspections))
-	for _, inspection := range inspections {
-		known[inspection.Path] = inspection.Exists
-	}
+func executionInputArtifacts(artifacts []flow.Artifact, projectRoot string, inspectionSet *gate.InspectionSet) []ExecutionArtifactResult {
 	result := make([]ExecutionArtifactResult, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		exists, ok := known[artifact.Path]
-		if !ok {
-			exists = gate.FileExists(projectRoot, artifact.Path)
-		}
+		exists := gate.FileAvailable(projectRoot, artifact.Path, inspectionSet)
 		result = append(result, ExecutionArtifactResult{Path: artifact.Path, Required: artifact.Required, Exists: exists})
 	}
 	return result
@@ -241,32 +237,14 @@ func executionApproval(step flow.Step, current state.State) ExecutionApprovalRes
 	}
 }
 
-func executionCompletion(gateResult gate.Result, stepID string) *ExecutionCompletionResult {
-	blockers := make([]ExecutionContextBlocker, 0, len(gateResult.MissingInputs)+len(gateResult.ArtifactProblems)+len(gateResult.CheckProblems)+len(gateResult.MissingApprovals))
-	for _, path := range gateResult.MissingInputs {
-		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingInput, Path: path})
-	}
-	for _, problem := range gateResult.ArtifactProblems {
-		blockerType := CompletionBlockerMissingArtifact
-		switch problem.Kind {
-		case gate.ArtifactEvidenceMissing:
-			blockerType = CompletionBlockerMissingArtifactEvidence
-		case gate.ArtifactMismatch:
-			blockerType = CompletionBlockerArtifactEvidenceMismatch
-		case gate.ArtifactUnsafe:
-			blockerType = CompletionBlockerArtifactUnavailable
+func executionCompletion(gateResult gate.CompletionGateResult, stepID string) *ExecutionCompletionResult {
+	blockers := make([]ExecutionContextBlocker, 0, len(gateResult.Blockers))
+	for _, blocker := range gateResult.Blockers {
+		projected := ExecutionContextBlocker{Type: CompletionBlockerType(blocker.Kind), Path: blocker.Path, CheckID: blocker.CheckID}
+		if blocker.Kind == gate.CompletionBlockerMissingApproval {
+			projected.StepID = stepID
 		}
-		blockers = append(blockers, ExecutionContextBlocker{Type: blockerType, Path: problem.Path})
+		blockers = append(blockers, projected)
 	}
-	for _, problem := range gateResult.CheckProblems {
-		blockerType := CompletionBlockerMissingCheck
-		if problem.Kind == gate.CheckFailed {
-			blockerType = CompletionBlockerFailedCheck
-		}
-		blockers = append(blockers, ExecutionContextBlocker{Type: blockerType, CheckID: problem.CheckID})
-	}
-	for range gateResult.MissingApprovals {
-		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingApproval, StepID: stepID})
-	}
-	return &ExecutionCompletionResult{Ready: gateResult.OK, Blockers: blockers}
+	return &ExecutionCompletionResult{Ready: gateResult.Ready, Blockers: blockers}
 }

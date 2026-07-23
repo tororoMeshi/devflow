@@ -40,6 +40,9 @@ const (
 	CodeArtifactInsideDevflow      = "error_artifact_inside_devflow"
 	CodeArtifactUnreadable         = "error_artifact_unreadable"
 	CodeArtifactChanged            = "error_artifact_changed_while_hashing"
+	CodeEntryMissingRequiredInput  = "error_entry_missing_required_input"
+	CodeEntryInputUnavailable      = "error_entry_input_unavailable"
+	CodeCompletionInputUnavailable = "error_input_unavailable"
 )
 
 func WriteDiagnostics(ctx Context, diagnostics []transition.Diagnostic) {
