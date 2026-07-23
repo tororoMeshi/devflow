@@ -1,5 +1,7 @@
 package gate
 
+import "github.com/8noki8/devflow/internal/state"
+
 type GateResult struct {
 	MissingInputs       []string
 	OK                  bool
@@ -24,6 +26,18 @@ const (
 type ArtifactProblem struct {
 	Path string
 	Kind ArtifactProblemKind
+}
+
+// ArtifactInspection is the current filesystem state of a flow artifact.
+// It is intentionally transient: it is derived from the active attempt and
+// never written back to State.
+type ArtifactInspection struct {
+	Path            string
+	Required        bool
+	Exists          bool
+	Evidence        *state.ArtifactEvidence
+	MatchesEvidence *bool
+	Problem         ArtifactProblemKind
 }
 
 type CheckProblemKind string

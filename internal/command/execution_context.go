@@ -8,7 +8,7 @@ import (
 	"github.com/8noki8/devflow/internal/transition"
 )
 
-const executionContextSchemaVersion = 3
+const executionContextSchemaVersion = 4
 
 type CheckStatus string
 
@@ -21,11 +21,14 @@ const (
 type CompletionBlockerType string
 
 const (
-	CompletionBlockerMissingInput    CompletionBlockerType = "missing_input"
-	CompletionBlockerMissingArtifact CompletionBlockerType = "missing_artifact"
-	CompletionBlockerMissingCheck    CompletionBlockerType = "missing_check"
-	CompletionBlockerFailedCheck     CompletionBlockerType = "failed_check"
-	CompletionBlockerMissingApproval CompletionBlockerType = "missing_approval"
+	CompletionBlockerMissingInput             CompletionBlockerType = "missing_input"
+	CompletionBlockerMissingArtifact          CompletionBlockerType = "missing_artifact"
+	CompletionBlockerMissingArtifactEvidence  CompletionBlockerType = "missing_artifact_evidence"
+	CompletionBlockerArtifactEvidenceMismatch CompletionBlockerType = "artifact_evidence_mismatch"
+	CompletionBlockerArtifactUnavailable      CompletionBlockerType = "artifact_unavailable"
+	CompletionBlockerMissingCheck             CompletionBlockerType = "missing_check"
+	CompletionBlockerFailedCheck              CompletionBlockerType = "failed_check"
+	CompletionBlockerMissingApproval          CompletionBlockerType = "missing_approval"
 )
 
 type ExecutionContextResult struct {
@@ -64,9 +67,16 @@ type ExecutionStepResult struct {
 }
 
 type ExecutionArtifactResult struct {
-	Path     string `json:"path"`
-	Required bool   `json:"required"`
-	Exists   bool   `json:"exists"`
+	Path            string                           `json:"path"`
+	Required        bool                             `json:"required"`
+	Exists          bool                             `json:"exists"`
+	Evidence        *ExecutionArtifactEvidenceResult `json:"evidence"`
+	MatchesEvidence *bool                            `json:"matches_evidence"`
+}
+
+type ExecutionArtifactEvidenceResult struct {
+	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
 }
 
 type ExecutionCheckResult struct {
@@ -124,8 +134,8 @@ func CurrentContext(ctx Context) CommandResult {
 			ID:            attempt.ID,
 			EntrySequence: attempt.EntrySequence,
 		}
-		result.Step = executionStep(*loaded.Step, loaded.State, ctx.ProjectRoot)
-		gateResult := gate.CheckDoneGate(*loaded.Step, loaded.State, ctx.ProjectRoot)
+		gateResult, inspections := gate.InspectDoneGate(*loaded.Step, loaded.State, ctx.ProjectRoot)
+		result.Step = executionStep(*loaded.Step, loaded.State, ctx.ProjectRoot, inspections)
 		result.Completion = executionCompletion(gateResult, loaded.Step.ID)
 	}
 
@@ -161,26 +171,42 @@ func LoadExecutionContext(ctx Context) (LoadedExecutionContext, []transition.Dia
 	}
 }
 
-func executionStep(step flow.Step, current state.State, projectRoot string) *ExecutionStepResult {
+func executionStep(step flow.Step, current state.State, projectRoot string, inspections []gate.ArtifactInspection) *ExecutionStepResult {
 	return &ExecutionStepResult{
 		ID:          step.ID,
 		Title:       step.Title,
 		Instruction: step.Instruction,
-		Inputs:      executionArtifacts(step.Inputs, projectRoot),
-		Artifacts:   executionArtifacts(step.Artifacts, projectRoot),
+		Inputs:      executionInputArtifacts(step.Inputs, projectRoot, inspections),
+		Artifacts:   executionArtifacts(inspections),
 		Checks:      executionChecks(step.RequiredChecks, current),
 		Approval:    executionApproval(step, current),
 	}
 }
 
-func executionArtifacts(artifacts []flow.Artifact, projectRoot string) []ExecutionArtifactResult {
+func executionArtifacts(inspections []gate.ArtifactInspection) []ExecutionArtifactResult {
+	result := make([]ExecutionArtifactResult, 0, len(inspections))
+	for _, inspection := range inspections {
+		artifact := ExecutionArtifactResult{Path: inspection.Path, Required: inspection.Required, Exists: inspection.Exists, MatchesEvidence: inspection.MatchesEvidence}
+		if inspection.Evidence != nil {
+			artifact.Evidence = &ExecutionArtifactEvidenceResult{Digest: inspection.Evidence.Digest, Size: inspection.Evidence.Size}
+		}
+		result = append(result, artifact)
+	}
+	return result
+}
+
+func executionInputArtifacts(artifacts []flow.Artifact, projectRoot string, inspections []gate.ArtifactInspection) []ExecutionArtifactResult {
+	known := make(map[string]bool, len(inspections))
+	for _, inspection := range inspections {
+		known[inspection.Path] = inspection.Exists
+	}
 	result := make([]ExecutionArtifactResult, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		result = append(result, ExecutionArtifactResult{
-			Path:     artifact.Path,
-			Required: artifact.Required,
-			Exists:   gate.FileExists(projectRoot, artifact.Path),
-		})
+		exists, ok := known[artifact.Path]
+		if !ok {
+			exists = gate.FileExists(projectRoot, artifact.Path)
+		}
+		result = append(result, ExecutionArtifactResult{Path: artifact.Path, Required: artifact.Required, Exists: exists})
 	}
 	return result
 }
@@ -221,7 +247,16 @@ func executionCompletion(gateResult gate.Result, stepID string) *ExecutionComple
 		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingInput, Path: path})
 	}
 	for _, problem := range gateResult.ArtifactProblems {
-		blockers = append(blockers, ExecutionContextBlocker{Type: CompletionBlockerMissingArtifact, Path: problem.Path})
+		blockerType := CompletionBlockerMissingArtifact
+		switch problem.Kind {
+		case gate.ArtifactEvidenceMissing:
+			blockerType = CompletionBlockerMissingArtifactEvidence
+		case gate.ArtifactMismatch:
+			blockerType = CompletionBlockerArtifactEvidenceMismatch
+		case gate.ArtifactUnsafe:
+			blockerType = CompletionBlockerArtifactUnavailable
+		}
+		blockers = append(blockers, ExecutionContextBlocker{Type: blockerType, Path: problem.Path})
 	}
 	for _, problem := range gateResult.CheckProblems {
 		blockerType := CompletionBlockerMissingCheck

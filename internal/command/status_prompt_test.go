@@ -1,13 +1,86 @@
 package command
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/8noki8/devflow/internal/flow"
+	"github.com/8noki8/devflow/internal/gate"
 	"github.com/8noki8/devflow/internal/state"
 )
+
+func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {
+	inspections := []gate.ArtifactInspection{
+		{Path: "current", Required: true},
+		{Path: "missing-evidence", Required: true, Problem: gate.ArtifactEvidenceMissing},
+		{Path: "missing-file", Required: true, Problem: gate.ArtifactFileMissing},
+		{Path: "changed", Required: true, Problem: gate.ArtifactMismatch},
+		{Path: "unavailable", Required: true, Problem: gate.ArtifactUnsafe},
+		{Path: "optional", Required: false},
+	}
+	want := []ArtifactStatusResult{
+		{Path: "current", State: "current"},
+		{Path: "missing-evidence", State: "missing_evidence"},
+		{Path: "missing-file", State: "missing_file"},
+		{Path: "changed", State: "changed"},
+		{Path: "unavailable", State: "unavailable"},
+	}
+	if got := artifactStatusResults(inspections); !reflect.DeepEqual(got, want) {
+		t.Fatalf("artifactStatusResults() = %#v, want %#v", got, want)
+	}
+	if got := artifactStatusState(gate.ArtifactProblemKind("unknown")); got != "unavailable" {
+		t.Fatalf("unknown artifact state = %q", got)
+	}
+	data, err := json.Marshal(StatusResult{Artifacts: []ArtifactStatusResult{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	artifacts, exists := value["artifacts"]
+	if !exists || artifacts == nil || len(artifacts.([]any)) != 0 {
+		t.Fatalf("status JSON = %s", data)
+	}
+	if _, exists := value["Artifacts"]; exists {
+		t.Fatalf("legacy field name present: %s", data)
+	}
+}
+
+func TestPromptCompoundArtifactStateOnlySuggestsRecordableEvidence(t *testing.T) {
+	attempt, err := state.NewStepAttempt("step", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := ActiveFlow{
+		State:       state.State{Status: state.StatusRunning, Attempts: []state.StepAttempt{attempt}, CurrentAttemptID: attempt.ID},
+		CurrentStep: flow.Step{ID: "step"},
+	}
+	inspections := []gate.ArtifactInspection{
+		{Path: "missing.md", Required: true, Problem: gate.ArtifactEvidenceMissing},
+		{Path: "current.md", Required: true},
+		{Path: "changed.md", Required: true, Problem: gate.ArtifactMismatch},
+		{Path: "gone.md", Required: true, Problem: gate.ArtifactFileMissing},
+		{Path: "unsafe.md", Required: true, Problem: gate.ArtifactUnsafe},
+		{Path: "optional.md", Required: false},
+	}
+	approval := &RequiredApprovalResult{StepID: "step", AttemptID: attempt.ID}
+	assertCommands(t, promptAfterCompleting(active, inspections, approval).Commands, []string{
+		`devflow artifact record --step "step" --attempt "` + attempt.ID + `" --path "missing.md"`,
+	})
+	wantBlockers := []string{
+		"changed.md: changed; recorded evidence is no longer current; continue in a new attempt",
+		"gone.md: missing_file; recorded evidence is no longer current; continue in a new attempt",
+		"unsafe.md: unavailable; recorded evidence is no longer current; continue in a new attempt",
+	}
+	if got := promptArtifactBlockers(inspections); !reflect.DeepEqual(got, wantBlockers) {
+		t.Fatalf("blockers = %#v, want %#v", got, wantBlockers)
+	}
+}
 
 func TestStatusReturnsActiveFlowState(t *testing.T) {
 	root := t.TempDir()
@@ -57,6 +130,10 @@ func TestStatusDoesNotExposePastAttemptApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	approved.ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
+		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:   1,
+	}
 	closed, err := state.CloseStepAttempt(approved, state.StepAttemptExitBack, "retry")
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +151,56 @@ func TestStatusDoesNotExposePastAttemptApproval(t *testing.T) {
 	assertCommandSuccess(t, got)
 	if got.Status == nil || got.Status.Approval != nil {
 		t.Fatalf("Status = %#v", got.Status)
+	}
+	if !reflect.DeepEqual(got.Status.Artifacts, []ArtifactStatusResult{{Path: "docs/required.md", State: "missing_evidence"}}) {
+		t.Fatalf("historical evidence leaked into status: %#v", got.Status.Artifacts)
+	}
+	prompt := Prompt(Context{ProjectRoot: root})
+	assertCommandSuccess(t, prompt)
+	assertCommands(t, prompt.Prompt.AfterCompleting.Commands, []string{
+		`devflow artifact record --step "current" --attempt "` + current.ID + `" --path "docs/required.md"`,
+	})
+}
+
+func TestStatusReportsCurrentArtifactState(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "status-flow", statusPromptTestFlow())
+	st := statusPromptState("status-flow", state.StatusRunning, "current")
+	if err := saveCommandState(t, root, st); err != nil {
+		t.Fatal(err)
+	}
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "missing_evidence"}}) {
+		t.Fatalf("missing evidence artifacts = %#v", got)
+	}
+	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "x")
+	st.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{Digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881", Size: 1}
+	if err := saveCommandState(t, root, st); err != nil {
+		t.Fatal(err)
+	}
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "current"}}) {
+		t.Fatalf("current artifacts = %#v", got)
+	}
+	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "changed")
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "changed"}}) {
+		t.Fatalf("changed artifacts = %#v", got)
+	}
+	blockedPrompt := Prompt(Context{ProjectRoot: root})
+	assertCommandSuccess(t, blockedPrompt)
+	assertCommands(t, blockedPrompt.Prompt.AfterCompleting.Commands, nil)
+	if len(blockedPrompt.Prompt.ArtifactBlockers) != 1 {
+		t.Fatalf("changed prompt = %#v", blockedPrompt.Prompt)
+	}
+	if err := os.Remove(filepath.Join(root, "docs", "required.md")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "missing_file"}}) {
+		t.Fatalf("missing file artifacts = %#v", got)
+	}
+	if err := os.Symlink("../target", filepath.Join(root, "docs", "required.md")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "unavailable"}}) {
+		t.Fatalf("unavailable artifacts = %#v", got)
 	}
 }
 
@@ -117,16 +244,12 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.RequiredApproval.AttemptID != st.CurrentAttemptID {
 		t.Fatalf("AttemptID = %q", got.Prompt.RequiredApproval.AttemptID)
 	}
-	if len(got.Prompt.AfterCompleting.Commands) != 3 {
+	if len(got.Prompt.AfterCompleting.Commands) != 1 {
 		t.Fatalf("AfterCompleting.Commands = %#v", got.Prompt.AfterCompleting.Commands)
 	}
 	wantRecord := `devflow artifact record --step "current" --attempt "` + st.CurrentAttemptID + `" --path "docs/required.md"`
 	if got.Prompt.AfterCompleting.Commands[0] != wantRecord {
 		t.Fatalf("record command = %q, want %q", got.Prompt.AfterCompleting.Commands[0], wantRecord)
-	}
-	wantApprove := `devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`
-	if got.Prompt.AfterCompleting.Commands[1] != wantApprove {
-		t.Fatalf("approve command = %q, want %q", got.Prompt.AfterCompleting.Commands[1], wantApprove)
 	}
 }
 
@@ -138,8 +261,9 @@ func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	st = loadCommandState(t, root)
+	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "x")
 	st.Attempts[0].ArtifactEvidence["docs/required.md"] = state.ArtifactEvidence{
-		Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Digest: "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
 		Size:   1,
 	}
 	if err := NewStore(Context{ProjectRoot: root}).SaveCurrent(st); err != nil {
@@ -148,7 +272,6 @@ func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
 	got := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, got)
 	assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{
-		`devflow artifact record --step "current" --attempt "` + st.CurrentAttemptID + `" --path "docs/required.md"`,
 		`devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`,
 		"devflow done",
 	})
@@ -262,6 +385,9 @@ func TestStatusTerminalDoesNotExposeHistoricalApproval(t *testing.T) {
 			assertCommandSuccess(t, got)
 			if got.Status == nil || got.Status.Approval != nil {
 				t.Fatalf("Status = %#v", got.Status)
+			}
+			if got.Status.Artifacts == nil || len(got.Status.Artifacts) != 0 {
+				t.Fatalf("terminal artifacts = %#v, want nonnil empty", got.Status.Artifacts)
 			}
 			assertCommandFailure(t, Prompt(Context{ProjectRoot: root}), CodeNoActiveFlow)
 		})

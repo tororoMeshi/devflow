@@ -368,6 +368,12 @@ func writeStatus(stdout io.Writer, status command.StatusResult) {
 		}
 		_, _ = fmt.Fprintln(stdout)
 	}
+	if len(status.Artifacts) > 0 {
+		_, _ = fmt.Fprintln(stdout, "Artifacts:")
+		for _, artifact := range status.Artifacts {
+			_, _ = fmt.Fprintf(stdout, "- %s: %s\n", artifact.Path, artifact.State)
+		}
+	}
 }
 
 func writePrompt(stdout io.Writer, prompt command.PromptResult) {
@@ -391,6 +397,9 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 		_, _ = fmt.Fprintf(stdout, "- %s\n", prompt.RequiredApproval.StepID)
 	}
 	writeStringList(stdout, "Required checks", prompt.RequiredChecks)
+	if len(prompt.ArtifactBlockers) > 0 {
+		writeStringList(stdout, "Artifact blockers", prompt.ArtifactBlockers)
+	}
 	writeStringList(stdout, "After completing", prompt.AfterCompleting.Commands)
 }
 
