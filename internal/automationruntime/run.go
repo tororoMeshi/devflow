@@ -8,7 +8,35 @@ import (
 )
 
 func Run(ctx context.Context, cfg Config) RunResult {
-	return runWithFileOps(ctx, cfg, os.CreateTemp, os.Remove)
+	return finishV2(runWithFileOps(ctx, cfg, os.CreateTemp, os.Remove), cfg, nil)
+}
+
+func finishV2(run RunResult, cfg Config, artifacts []ArtifactResult) RunResult {
+	if !cfg.RecordArtifacts {
+		return run
+	}
+	if run.ResultV2 != nil {
+		return run
+	}
+	status := run.Result.Status
+	if run.ExitCode == 0 {
+		status = "stopped"
+	} else if status != "timed_out" && status != "cancelled" {
+		status = "failed"
+	}
+	if artifacts == nil {
+		artifacts = []ArtifactResult{}
+	}
+	run.ResultV2 = &ResultV2{
+		SchemaVersion: 2, Status: status, FlowRunID: run.Result.FlowRunID,
+		StepID: run.Result.StepID, AttemptID: run.Result.AttemptID,
+		WorkPackageDigest:     run.Result.WorkPackageDigest,
+		ExecutionReportDigest: run.Result.ExecutionReportDigest,
+		ReportOutcome:         run.Result.ReportOutcome, ReportIdempotent: run.Result.ReportIdempotent,
+		ExecutorExitCode: run.Result.ExecutorExitCode, StderrTruncated: run.Result.StderrTruncated,
+		Artifacts: artifacts, Error: run.Result.Error,
+	}
+	return run
 }
 
 func runWithFileOps(
@@ -50,7 +78,7 @@ func runWithFileOps(
 		}
 		return fail(result, "devflow_contract", code, 3)
 	}
-	pkg, err := parseWorkPackage(wp.stdout, cfg.StepID, cfg.AttemptID)
+	pkg, err := parseWorkPackageForMode(wp.stdout, cfg.StepID, cfg.AttemptID, cfg.RecordArtifacts)
 	if err != nil {
 		return fail(result, "devflow_process", "invalid_output", 3)
 	}
@@ -89,7 +117,7 @@ func runWithFileOps(
 	if len(executor.stdout) == 0 {
 		return fail(result, "executor_protocol", "empty_stdout", 5)
 	}
-	report, err := parseReportHeader(executor.stdout, pkg)
+	report, err := parseReportHeaderForMode(executor.stdout, pkg, cfg.RecordArtifacts)
 	if err != nil {
 		if errors.Is(err, errReportIdentityMismatch) {
 			return fail(result, "executor_protocol", "report_identity_mismatch", 5)
@@ -147,6 +175,62 @@ func runWithFileOps(
 	result.ReportIdempotent = parsed.Idempotent
 	result.Error = nil
 	runResult := RunResult{Result: result, ExitCode: 0}
+	if cfg.RecordArtifacts {
+		targets, resolveErr := ResolveArtifactTargets(report.Outcome, pkg.Artifacts, report.ArtifactRefs)
+		if resolveErr != nil {
+			failed := finishV2(fail(result, "artifact_contract", "invalid_artifact_targets", 3), cfg, nil)
+			if err := cleanup(); err != nil {
+				failed.CleanupCode = "temporary_report_cleanup_failed"
+			}
+			return failed
+		}
+		artifactResults := make([]ArtifactResult, 0, len(targets))
+		for _, target := range targets {
+			recorded := runCaptured(ctx, root, cfg.Devflow, []string{
+				"artifact", "record", "--step", cfg.StepID, "--attempt", cfg.AttemptID, "--path", target.Path,
+			}, MaxExecutorStdoutBytes)
+			item := ArtifactResult{Path: target.Path, Required: target.Required}
+			if ctx.Err() != nil {
+				item.Status = "failed"
+				item.Error = &ErrorInfo{Category: "devflow_process", Code: "cancelled"}
+				artifactResults = append(artifactResults, item)
+				result.Status = "cancelled"
+				failed := finishV2(fail(result, "devflow_process", "cancelled", 130), cfg, artifactResults)
+				if err := cleanup(); err != nil {
+					failed.CleanupCode = "temporary_report_cleanup_failed"
+				}
+				return failed
+			}
+			if recorded.startErr != nil {
+				item.Status = "failed"
+				item.Error = &ErrorInfo{Category: "devflow_process", Code: "start_failed"}
+			} else if recorded.overflow {
+				item.Status = "unknown"
+				item.Error = &ErrorInfo{Category: "artifact_contract", Code: "artifact_output_oversized"}
+			} else if recorded.waitErr != nil {
+				code := stableDiagnosticCode(recorded.stderr)
+				if code == "" {
+					code = "artifact_record_failed"
+				}
+				item.Status = "failed"
+				item.Error = &ErrorInfo{Category: "artifact_contract", Code: code}
+			} else if err := parseArtifactRecordOutput(recorded.stdout, target, cfg.AttemptID); err != nil {
+				item.Status = "unknown"
+				item.Error = &ErrorInfo{Category: "artifact_contract", Code: "invalid_artifact_record_output"}
+			} else {
+				item.Status = "recorded"
+			}
+			artifactResults = append(artifactResults, item)
+			if item.Error != nil {
+				failed := finishV2(fail(result, item.Error.Category, item.Error.Code, 3), cfg, artifactResults)
+				if err := cleanup(); err != nil {
+					failed.CleanupCode = "temporary_report_cleanup_failed"
+				}
+				return failed
+			}
+		}
+		runResult = finishV2(runResult, cfg, artifactResults)
+	}
 	if err := cleanup(); err != nil {
 		runResult.CleanupCode = "temporary_report_cleanup_failed"
 	}

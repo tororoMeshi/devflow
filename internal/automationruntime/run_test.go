@@ -1,6 +1,7 @@
 package automationruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,7 +58,11 @@ func runHelper() int {
 		if os.Getenv("HELPER_WP") == "step-mismatch" {
 			step = "other"
 		}
-		fmt.Printf(`{"schema_version":1,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q}`+"\n", testDigest, step, attempt)
+		if artifacts := os.Getenv("HELPER_ARTIFACTS"); artifacts != "" {
+			fmt.Printf(`{"schema_version":1,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"step":{"artifacts":%s}}`+"\n", testDigest, step, attempt, artifacts)
+		} else {
+			fmt.Printf(`{"schema_version":1,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q}`+"\n", testDigest, step, attempt)
+		}
 		return 0
 	}
 	if len(args) > 2 && args[0] == "execution-report" {
@@ -101,10 +106,46 @@ func runHelper() int {
 			report.FlowRunID, report.StepID, attempt, report.WorkPackageDigest, reportDigest, report.Outcome, envDefault("HELPER_IDEMPOTENT", "false"))
 		return 0
 	}
+	if len(args) > 1 && args[0] == "artifact" && args[1] == "record" {
+		if len(args) != 8 || args[2] != "--step" || args[4] != "--attempt" || args[6] != "--path" {
+			return 95
+		}
+		if mark := os.Getenv("HELPER_ARTIFACT_MARK"); mark != "" {
+			f, _ := os.OpenFile(mark, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if f != nil {
+				_, _ = fmt.Fprintln(f, args[7])
+				_ = f.Close()
+			}
+		}
+		if failPath := os.Getenv("HELPER_ARTIFACT_FAIL"); failPath == args[7] {
+			fmt.Fprintln(os.Stderr, "error: error_artifact_missing")
+			return 1
+		}
+		if unknownPath := os.Getenv("HELPER_ARTIFACT_MALFORMED"); unknownPath == args[7] {
+			fmt.Println("bad")
+			return 0
+		}
+		fmt.Printf("Recorded artifact: %s\nAttempt: %s\nDigest: %s\nSize: 12\n", args[7], args[5], reportDigest)
+		return 0
+	}
 	if os.Getenv("HELPER_EXEC") == "early-close" {
 		return 0
 	}
 	input, _ := io.ReadAll(os.Stdin)
+	if encoded := os.Getenv("HELPER_FILES"); encoded != "" {
+		var files map[string]string
+		if json.Unmarshal([]byte(encoded), &files) != nil {
+			return 96
+		}
+		for path, content := range files {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return 97
+			}
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				return 98
+			}
+		}
+	}
 	if encoded := os.Getenv("HELPER_EXEC_ARGS"); encoded != "" {
 		var want []string
 		if json.Unmarshal([]byte(encoded), &want) != nil || !reflect.DeepEqual(args, want) {
@@ -164,10 +205,42 @@ func runHelper() int {
 		reportSuffix := `"}`
 		fmt.Print(reportPrefix + strings.Repeat("x", MaxExecutorStdoutBytes-len(reportPrefix)-len(reportSuffix)) + reportSuffix)
 	} else {
-		fmt.Printf(`{"schema_version":1,"flow_run_id":%q,"step_id":%q,"attempt_id":%q,"work_package_digest":%q,"outcome":%q,"summary":"ok","decisions":[],"artifact_refs":[],"unresolved_issues":[],"next_action":""}`,
-			pkg.FlowRunID, pkg.StepID, pkg.AttemptID, pkg.WorkPackageDigest, outcome)
+		fmt.Printf(`{"schema_version":1,"flow_run_id":%q,"step_id":%q,"attempt_id":%q,"work_package_digest":%q,"outcome":%q,"summary":"ok","decisions":[],"artifact_refs":%s,"unresolved_issues":[],"next_action":""}`,
+			pkg.FlowRunID, pkg.StepID, pkg.AttemptID, pkg.WorkPackageDigest, outcome, envDefault("HELPER_REFS", "[]"))
 	}
 	return 0
+}
+
+func TestRunArtifactModeOrderAndPartialFailure(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts = true
+	t.Setenv("HELPER_ARTIFACTS", `[{"path":"required.txt","required":true},{"path":"optional.txt","required":false},{"path":"last.txt","required":true}]`)
+	t.Setenv("HELPER_REFS", `["optional.txt"]`)
+	mark := filepath.Join(cfg.ProjectRoot, "artifact-called")
+	t.Setenv("HELPER_ARTIFACT_MARK", mark)
+	t.Setenv("HELPER_ARTIFACT_FAIL", "optional.txt")
+	got := Run(context.Background(), cfg)
+	if got.ExitCode != 3 || got.ResultV2 == nil || got.ResultV2.Status != "failed" ||
+		len(got.ResultV2.Artifacts) != 2 || got.ResultV2.Artifacts[0].Status != "recorded" ||
+		got.ResultV2.Artifacts[1].Status != "failed" {
+		t.Fatalf("Run = %#v", got)
+	}
+	data, _ := os.ReadFile(mark)
+	if string(data) != "required.txt\noptional.txt\n" {
+		t.Fatalf("artifact calls = %q", data)
+	}
+}
+
+func TestRunArtifactModeStoppedEmptyForFailedOutcome(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts = true
+	t.Setenv("HELPER_ARTIFACTS", `[]`)
+	t.Setenv("HELPER_OUTCOME", "failed")
+	got := Run(context.Background(), cfg)
+	if got.ExitCode != 0 || got.ResultV2 == nil || got.ResultV2.Status != "stopped" ||
+		got.ResultV2.Artifacts == nil || len(got.ResultV2.Artifacts) != 0 {
+		t.Fatalf("Run = %#v", got)
+	}
 }
 
 func envDefault(key, fallback string) string {
@@ -256,7 +329,7 @@ func TestRunTimeoutCancellationAndStderr(t *testing.T) {
 		t.Setenv("HELPER_EXEC", "sleep")
 		got := Run(context.Background(), cfg)
 		if got.ExitCode != 124 || got.Result.Status != "timed_out" {
-			t.Fatalf("Run = %#v", got)
+			t.Fatalf("Run = %#v v2=%+v error=%+v artifacts=%+v", got, got.ResultV2, got.ResultV2.Error, got.ResultV2.Artifacts)
 		}
 		if got.Result.ExecutorExitCode != nil {
 			t.Fatalf("executor exit code = %v, want nil", *got.Result.ExecutorExitCode)
@@ -520,4 +593,265 @@ func TestIntegrationRealDevflow(t *testing.T) {
 			t.Fatalf("record disappeared after invalid success output: %v", err)
 		}
 	}
+}
+
+const integrationArtifactFlow = `flow: {
+	id: "artifact-runtime-review"
+	title: "Artifact runtime review"
+	description: "Artifact runtime integration fixture."
+	steps: [{
+		id: "build"
+		title: "Build"
+		instruction: "Build artifacts."
+		artifacts: [
+			{path: "out/a.txt", required: true},
+			{path: "out/b.txt", required: false},
+			{path: "out/c.txt", required: false},
+		]
+	}]
+}
+`
+
+type artifactIntegration struct {
+	root, bin, runID, stepID, attemptID, statePath, currentPath, reportPath string
+	cfg                                                                     Config
+}
+
+func setupArtifactIntegration(t *testing.T, bin string) artifactIntegration {
+	t.Helper()
+	root := t.TempDir()
+	runCLI := func(args ...string) []byte {
+		t.Helper()
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = root
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("devflow %v: %v: %s", args, err, output)
+		}
+		return output
+	}
+	runCLI("init")
+	flowPath := filepath.Join(root, ".devflow", "flows", "artifact-runtime-review.cue")
+	if err := os.WriteFile(flowPath, []byte(integrationArtifactFlow), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "task.md"), []byte("Build artifacts.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runCLI("start", "artifact-runtime-review", "--task-file", "task.md")
+	currentPath := filepath.Join(root, ".devflow", "current.json")
+	current := readJSONMap(t, currentPath)
+	runID := current["flow_run_id"].(string)
+	statePath := filepath.Join(root, ".devflow", "runs", runID, "state.json")
+	state := readJSONMap(t, statePath)
+	stepID := state["current_step_id"].(string)
+	attemptID := state["current_attempt_id"].(string)
+	return artifactIntegration{
+		root: root, bin: bin, runID: runID, stepID: stepID, attemptID: attemptID,
+		statePath: statePath, currentPath: currentPath,
+		reportPath: filepath.Join(root, ".devflow", "runs", runID, "execution-reports", attemptID+".json"),
+		cfg: Config{
+			ProjectRoot: root, Devflow: bin, StepID: stepID, AttemptID: attemptID,
+			Executor: os.Args[0], TerminateGrace: 20 * time.Millisecond, RecordArtifacts: true,
+		},
+	}
+}
+
+func readJSONMap(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
+func artifactEvidence(t *testing.T, statePath, attemptID string) map[string]any {
+	t.Helper()
+	state := readJSONMap(t, statePath)
+	for _, raw := range state["attempts"].([]any) {
+		attempt := raw.(map[string]any)
+		if attempt["id"] == attemptID {
+			return attempt["artifact_evidence"].(map[string]any)
+		}
+	}
+	t.Fatalf("Attempt %s absent", attemptID)
+	return nil
+}
+
+func stateWithoutArtifactEvidence(t *testing.T, path string) []byte {
+	t.Helper()
+	state := readJSONMap(t, path)
+	for _, raw := range state["attempts"].([]any) {
+		raw.(map[string]any)["artifact_evidence"] = map[string]any{}
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestIntegrationRealDevflowArtifactMode(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "devflow")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/devflow")
+	build.Dir = repositoryRoot
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build devflow: %v: %s", err, output)
+	}
+
+	t.Run("completed records required and referenced optional in Flow order", func(t *testing.T) {
+		fixture := setupArtifactIntegration(t, bin)
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "completed")
+		t.Setenv("HELPER_REFS", `["out/b.txt"]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A",%q:"B",%q:"C"}`,
+			filepath.Join(fixture.root, "out", "a.txt"), filepath.Join(fixture.root, "out", "b.txt"), filepath.Join(fixture.root, "out", "c.txt")))
+		currentBefore, _ := os.ReadFile(fixture.currentPath)
+		stateBefore := stateWithoutArtifactEvidence(t, fixture.statePath)
+		got := Run(context.Background(), fixture.cfg)
+		if got.ExitCode != 0 || got.ResultV2 == nil || got.ResultV2.Status != "stopped" ||
+			len(got.ResultV2.Artifacts) != 2 || got.ResultV2.Artifacts[0].Path != "out/a.txt" ||
+			got.ResultV2.Artifacts[1].Path != "out/b.txt" {
+			t.Fatalf("Run = %#v", got)
+		}
+		evidence := artifactEvidence(t, fixture.statePath, fixture.attemptID)
+		if evidence["out/a.txt"] == nil || evidence["out/b.txt"] == nil || evidence["out/c.txt"] != nil {
+			t.Fatalf("evidence = %#v", evidence)
+		}
+		reportBefore, err := os.ReadFile(fixture.reportPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		currentAfter, _ := os.ReadFile(fixture.currentPath)
+		reportAfter, _ := os.ReadFile(fixture.reportPath)
+		if !bytes.Equal(currentBefore, currentAfter) || !bytes.Equal(reportBefore, reportAfter) ||
+			!bytes.Equal(stateBefore, stateWithoutArtifactEvidence(t, fixture.statePath)) {
+			t.Fatal("pointer, Report, or non-Artifact State changed")
+		}
+	})
+
+	t.Run("blocked records referenced optional only", func(t *testing.T) {
+		fixture := setupArtifactIntegration(t, bin)
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "blocked")
+		t.Setenv("HELPER_REFS", `["out/b.txt"]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A",%q:"B"}`,
+			filepath.Join(fixture.root, "out", "a.txt"), filepath.Join(fixture.root, "out", "b.txt")))
+		got := Run(context.Background(), fixture.cfg)
+		evidence := artifactEvidence(t, fixture.statePath, fixture.attemptID)
+		if got.ExitCode != 0 || got.ResultV2.Status != "stopped" || len(got.ResultV2.Artifacts) != 1 ||
+			got.ResultV2.Artifacts[0].Path != "out/b.txt" || evidence["out/a.txt"] != nil || evidence["out/b.txt"] == nil {
+			t.Fatalf("Run=%#v v2=%+v error=%+v artifacts=%+v evidence=%#v", got, got.ResultV2, got.ResultV2.Error, got.ResultV2.Artifacts, evidence)
+		}
+	})
+
+	t.Run("failed records Report only", func(t *testing.T) {
+		fixture := setupArtifactIntegration(t, bin)
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "failed")
+		t.Setenv("HELPER_REFS", `[]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A"}`, filepath.Join(fixture.root, "out", "a.txt")))
+		got := Run(context.Background(), fixture.cfg)
+		if got.ExitCode != 0 || got.ResultV2.Status != "stopped" || len(got.ResultV2.Artifacts) != 0 ||
+			len(artifactEvidence(t, fixture.statePath, fixture.attemptID)) != 0 {
+			t.Fatalf("Run = %#v", got)
+		}
+		if _, err := os.Stat(fixture.reportPath); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("same Report and files are idempotent", func(t *testing.T) {
+		fixture := setupArtifactIntegration(t, bin)
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "completed")
+		t.Setenv("HELPER_REFS", `[]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A"}`, filepath.Join(fixture.root, "out", "a.txt")))
+		first := Run(context.Background(), fixture.cfg)
+		stateAfterFirst, _ := os.ReadFile(fixture.statePath)
+		second := Run(context.Background(), fixture.cfg)
+		stateAfterSecond, _ := os.ReadFile(fixture.statePath)
+		if first.ExitCode != 0 || second.ExitCode != 0 || !second.ResultV2.ReportIdempotent ||
+			len(second.ResultV2.Artifacts) != 1 || second.ResultV2.Artifacts[0].Status != "recorded" ||
+			!bytes.Equal(stateAfterFirst, stateAfterSecond) {
+			t.Fatalf("first=%#v second=%#v", first, second)
+		}
+	})
+
+	t.Run("changed file conflicts without rollback", func(t *testing.T) {
+		fixture := setupArtifactIntegration(t, bin)
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "completed")
+		t.Setenv("HELPER_REFS", `["out/b.txt"]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A1",%q:"B1"}`,
+			filepath.Join(fixture.root, "out", "a.txt"), filepath.Join(fixture.root, "out", "b.txt")))
+		if first := Run(context.Background(), fixture.cfg); first.ExitCode != 0 {
+			t.Fatalf("first=%#v v2=%+v error=%+v artifacts=%+v", first, first.ResultV2, first.ResultV2.Error, first.ResultV2.Artifacts)
+		}
+		evidenceBefore := artifactEvidence(t, fixture.statePath, fixture.attemptID)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A2",%q:"B2"}`,
+			filepath.Join(fixture.root, "out", "a.txt"), filepath.Join(fixture.root, "out", "b.txt")))
+		second := Run(context.Background(), fixture.cfg)
+		evidenceAfter := artifactEvidence(t, fixture.statePath, fixture.attemptID)
+		if second.ExitCode != 3 || second.ResultV2.Status != "failed" || !second.ResultV2.ReportIdempotent ||
+			len(second.ResultV2.Artifacts) != 1 || second.ResultV2.Artifacts[0].Path != "out/a.txt" ||
+			second.ResultV2.Artifacts[0].Status != "failed" || !reflect.DeepEqual(evidenceBefore, evidenceAfter) {
+			t.Fatalf("second=%#v before=%#v after=%#v", second, evidenceBefore, evidenceAfter)
+		}
+	})
+
+	t.Run("missing required leaves Report and skips following target", func(t *testing.T) {
+		fixture := setupArtifactIntegration(t, bin)
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "completed")
+		t.Setenv("HELPER_REFS", `["out/b.txt"]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"B"}`, filepath.Join(fixture.root, "out", "b.txt")))
+		currentBefore, _ := os.ReadFile(fixture.currentPath)
+		got := Run(context.Background(), fixture.cfg)
+		currentAfter, _ := os.ReadFile(fixture.currentPath)
+		if got.ExitCode != 3 || got.ResultV2.Status != "failed" || len(got.ResultV2.Artifacts) != 1 ||
+			got.ResultV2.Artifacts[0].Path != "out/a.txt" ||
+			len(artifactEvidence(t, fixture.statePath, fixture.attemptID)) != 0 ||
+			!bytes.Equal(currentBefore, currentAfter) {
+			t.Fatalf("Run = %#v", got)
+		}
+		if _, err := os.Stat(fixture.reportPath); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("stale Attempt is rejected after Report record", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("shell wrapper fixture is Unix-specific")
+		}
+		fixture := setupArtifactIntegration(t, bin)
+		wrapper := filepath.Join(t.TempDir(), "devflow-stale-wrapper")
+		script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = artifact ]; then\n  %q finish --reason stale >/dev/null || exit $?\nfi\nexec %q \"$@\"\n", bin, bin)
+		if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		fixture.cfg.Devflow = wrapper
+		t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+		t.Setenv("HELPER_OUTCOME", "completed")
+		t.Setenv("HELPER_REFS", `[]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A"}`, filepath.Join(fixture.root, "out", "a.txt")))
+		got := Run(context.Background(), fixture.cfg)
+		if got.ExitCode != 3 || got.ResultV2.Status != "failed" || len(got.ResultV2.Artifacts) != 1 ||
+			got.ResultV2.Artifacts[0].Status != "failed" ||
+			len(artifactEvidence(t, fixture.statePath, fixture.attemptID)) != 0 {
+			t.Fatalf("Run = %#v", got)
+		}
+		if _, err := os.Stat(fixture.reportPath); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

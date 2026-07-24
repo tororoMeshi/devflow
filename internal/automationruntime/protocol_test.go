@@ -1,7 +1,9 @@
 package automationruntime
 
 import (
+	"bytes"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -113,6 +115,33 @@ func TestReportHeaderValidation(t *testing.T) {
 	for i, input := range identityMismatch {
 		if _, err := parseReportHeader([]byte(input), pkg); !errors.Is(err, errReportIdentityMismatch) {
 			t.Errorf("identity mismatch %d error=%v", i, err)
+		}
+	}
+}
+
+func TestArtifactProjections(t *testing.T) {
+	wp := []byte(`{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
+		testDigest + `","extra":true,"step":{"artifacts":[{"path":"b","required":false},{"path":"a","required":true}]}}`)
+	pkg, err := parseWorkPackageForMode(wp, "build", "attempt_1", true)
+	if err != nil || len(pkg.Artifacts) != 2 || pkg.Artifacts[0].Path != "b" || pkg.Artifacts[1].Path != "a" {
+		t.Fatalf("WorkPackage projection = %#v, %v", pkg, err)
+	}
+	report := []byte(`{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
+		testDigest + `","outcome":"completed","artifact_refs":["b"],"extra":true}`)
+	got, err := parseReportHeaderForMode(report, pkg, true)
+	if err != nil || !reflect.DeepEqual(got.ArtifactRefs, []string{"b"}) {
+		t.Fatalf("Report projection = %#v, %v", got, err)
+	}
+	for _, replacement := range []string{`null`, `"bad"`, `[1]`, `["b","b"]`, `[""]`} {
+		input := bytes.Replace(report, []byte(`["b"]`), []byte(replacement), 1)
+		if _, err := parseReportHeaderForMode(input, pkg, true); err == nil {
+			t.Errorf("accepted artifact_refs=%s", replacement)
+		}
+	}
+	for _, artifacts := range []string{`null`, `"bad"`, `[{}]`, `[{"path":"","required":true}]`, `[{"path":"a","required":true},{"path":"a","required":false}]`} {
+		input := bytes.Replace(wp, []byte(`[{"path":"b","required":false},{"path":"a","required":true}]`), []byte(artifacts), 1)
+		if _, err := parseWorkPackageForMode(input, "build", "attempt_1", true); err == nil {
+			t.Errorf("accepted artifacts=%s", artifacts)
 		}
 	}
 }
