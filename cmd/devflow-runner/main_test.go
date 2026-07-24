@@ -10,10 +10,10 @@ import (
 )
 
 func TestParseArgs(t *testing.T) {
-	args := []string{"execute", "--attempt", "a", "--step", "s", "--timeout", "0", "--project-root", ".", "--devflow", "df", "--terminate-grace", "1s", "--", "exec", "", " x ", "--flag=value"}
+	args := []string{"execute", "--attempt", "a", "--record-artifacts", "--step", "s", "--timeout", "0", "--project-root", ".", "--devflow", "df", "--terminate-grace", "1s", "--", "exec", "", " x ", "--flag=value"}
 	got, ok := parseArgs(args)
 	if !ok || got.StepID != "s" || got.AttemptID != "a" || got.Timeout != 0 ||
-		got.TerminateGrace != time.Second || !reflect.DeepEqual(got.ExecutorArgs, []string{"", " x ", "--flag=value"}) {
+		got.TerminateGrace != time.Second || !got.RecordArtifacts || !reflect.DeepEqual(got.ExecutorArgs, []string{"", " x ", "--flag=value"}) {
 		t.Fatalf("parseArgs = %#v, %t", got, ok)
 	}
 	defaults, ok := parseArgs([]string{"execute", "--step", "s", "--attempt", "a", "--", "exec"})
@@ -44,6 +44,8 @@ func TestParseArgsRejectsInvalid(t *testing.T) {
 		{"execute", "--step", "s ", "--attempt", "a", "--", "e"},
 		{"execute", "--step", "s", "--attempt", "a", "--timeout", "-1s", "--", "e"},
 		{"execute", "--step", "s", "--attempt", "a", "--timeout", "bad", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts", "--record-artifacts", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts=true", "--", "e"},
 	}
 	for i, args := range tests {
 		if _, ok := parseArgs(args); ok {

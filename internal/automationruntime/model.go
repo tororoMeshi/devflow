@@ -13,14 +13,15 @@ const (
 )
 
 type Config struct {
-	ProjectRoot    string
-	Devflow        string
-	StepID         string
-	AttemptID      string
-	Executor       string
-	ExecutorArgs   []string
-	Timeout        time.Duration
-	TerminateGrace time.Duration
+	ProjectRoot     string
+	Devflow         string
+	StepID          string
+	AttemptID       string
+	Executor        string
+	ExecutorArgs    []string
+	Timeout         time.Duration
+	TerminateGrace  time.Duration
+	RecordArtifacts bool
 }
 
 type ErrorInfo struct {
@@ -45,8 +46,32 @@ type Result struct {
 
 type RunResult struct {
 	Result      Result
+	ResultV2    *ResultV2
 	ExitCode    int
 	CleanupCode string
+}
+
+type ArtifactResult struct {
+	Path     string     `json:"path"`
+	Required bool       `json:"required"`
+	Status   string     `json:"status"`
+	Error    *ErrorInfo `json:"error"`
+}
+
+type ResultV2 struct {
+	SchemaVersion         int              `json:"schema_version"`
+	Status                string           `json:"status"`
+	FlowRunID             string           `json:"flow_run_id"`
+	StepID                string           `json:"step_id"`
+	AttemptID             string           `json:"attempt_id"`
+	WorkPackageDigest     string           `json:"work_package_digest"`
+	ExecutionReportDigest string           `json:"execution_report_digest"`
+	ReportOutcome         string           `json:"report_outcome"`
+	ReportIdempotent      bool             `json:"report_idempotent"`
+	ExecutorExitCode      *int             `json:"executor_exit_code"`
+	StderrTruncated       bool             `json:"stderr_truncated"`
+	Artifacts             []ArtifactResult `json:"artifacts"`
+	Error                 *ErrorInfo       `json:"error"`
 }
 
 func baseResult(cfg Config) Result {
@@ -59,6 +84,12 @@ func fail(result Result, category, code string, exit int) RunResult {
 }
 
 func WriteResult(w io.Writer, result Result) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(result)
+}
+
+func WriteResultV2(w io.Writer, result ResultV2) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(result)

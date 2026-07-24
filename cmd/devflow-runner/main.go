@@ -14,7 +14,7 @@ import (
 )
 
 const usage = `Usage:
-  devflow-runner execute [--project-root <path>] [--devflow <executable>] --step <step-id> --attempt <attempt-id> [--timeout <duration>] [--terminate-grace <duration>] -- <executor> [executor-args...]
+  devflow-runner execute [--project-root <path>] [--devflow <executable>] --step <step-id> --attempt <attempt-id> [--timeout <duration>] [--terminate-grace <duration>] [--record-artifacts] -- <executor> [executor-args...]
 `
 
 func main() {
@@ -30,7 +30,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	outcome := automationruntime.Run(ctx, cfg)
-	if err := automationruntime.WriteResult(stdout, outcome.Result); err != nil {
+	var writeErr error
+	if cfg.RecordArtifacts {
+		writeErr = automationruntime.WriteResultV2(stdout, *outcome.ResultV2)
+	} else {
+		writeErr = automationruntime.WriteResult(stdout, outcome.Result)
+	}
+	if writeErr != nil {
 		_, _ = fmt.Fprintln(stderr, "runtime_io:result_write_failed")
 		return 6
 	}
@@ -57,7 +63,16 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 			break
 		}
 		option := args[i]
-		if !strings.HasPrefix(option, "--") || strings.Contains(option, "=") || values[option] || i+1 >= len(args) {
+		if !strings.HasPrefix(option, "--") || strings.Contains(option, "=") || values[option] {
+			return cfg, false
+		}
+		if option == "--record-artifacts" {
+			values[option] = true
+			cfg.RecordArtifacts = true
+			i++
+			continue
+		}
+		if i+1 >= len(args) {
 			return cfg, false
 		}
 		switch option {
