@@ -43,6 +43,8 @@ const (
 	CodeEntryMissingRequiredInput  = "error_entry_missing_required_input"
 	CodeEntryInputUnavailable      = "error_entry_input_unavailable"
 	CodeCompletionInputUnavailable = "error_input_unavailable"
+	CodeInvalidWorkPackage         = "error_invalid_work_package"
+	CodeWorkPackageDigestFailed    = "error_work_package_digest_generation_failed"
 )
 
 func WriteDiagnostics(ctx Context, diagnostics []transition.Diagnostic) {

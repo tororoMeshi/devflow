@@ -18,6 +18,7 @@ const usage = `Usage:
   devflow status
   devflow prompt
   devflow context
+  devflow work-package --step <step-id> --attempt <attempt-id>
   devflow approve --step <step-id> --attempt <attempt-id> --note <note>
   devflow artifact record --step <step-id> --attempt <attempt-id> --path <project-relative-path>
   devflow done
@@ -88,6 +89,13 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 			return 1
 		}
 		result = command.CurrentContext(ctx)
+	case "work-package":
+		stepID, attemptID, ok := parseWorkPackageArgs(args[1:])
+		if !ok {
+			writeUsage(stderr)
+			return 1
+		}
+		result = command.WorkPackage(ctx, stepID, attemptID)
 	case "approve":
 		stepID, attemptID, note, ok := parseApproveArgs(args[1:])
 		if !ok {
@@ -157,7 +165,9 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 		return 1
 	}
 
-	writeResult(ctx, result)
+	if err := writeResult(ctx, result); err != nil {
+		return 1
+	}
 	return result.ExitCode
 }
 
@@ -213,6 +223,14 @@ func parseCheckRequestArgs(args []string) (string, string, string, bool) {
 		return "", "", "", false
 	}
 	return values["--step"], values["--attempt"], values["--check"], true
+}
+
+func parseWorkPackageArgs(args []string) (string, string, bool) {
+	values, ok := parseExactOptions(args, "--step", "--attempt")
+	if !ok {
+		return "", "", false
+	}
+	return values["--step"], values["--attempt"], true
 }
 
 func parseCheckRecordArgs(args []string) (string, bool) {
@@ -284,7 +302,7 @@ func writeUsage(stderr io.Writer) {
 	_, _ = io.WriteString(stderr, usage)
 }
 
-func writeResult(ctx command.Context, result command.CommandResult) {
+func writeResult(ctx command.Context, result command.CommandResult) error {
 	writeActions(ctx.Stdout, result.Actions)
 	writeFlows(ctx.Stdout, result.Flows)
 	if result.Success != nil {
@@ -302,7 +320,13 @@ func writeResult(ctx command.Context, result command.CommandResult) {
 	if result.CheckRequest != nil {
 		_ = json.NewEncoder(ctx.Stdout).Encode(result.CheckRequest)
 	}
+	if result.WorkPackage != nil {
+		if err := json.NewEncoder(ctx.Stdout).Encode(result.WorkPackage); err != nil {
+			return err
+		}
+	}
 	command.WriteDiagnostics(ctx, result.Diagnostics)
+	return nil
 }
 
 func writeSuccess(stdout io.Writer, success command.SuccessResult) {
