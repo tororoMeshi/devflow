@@ -22,7 +22,7 @@ const (
 	CodeStaleAttempt                    = "error_stale_attempt"
 	CodeStepAttemptMismatch             = "error_step_attempt_mismatch"
 	CodeAttemptAlreadyApproved          = "error_attempt_already_approved"
-	CodeArtifactNotRequired             = "error_artifact_not_required"
+	CodeArtifactNotDeclared             = "error_artifact_not_declared"
 	CodeInvalidArtifactPath             = "error_invalid_artifact_path"
 	CodeArtifactEvidenceAlreadyRecorded = "error_artifact_evidence_already_recorded"
 	CodeArtifactRecordAfterApproval     = "error_artifact_record_after_approval"

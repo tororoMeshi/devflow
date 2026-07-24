@@ -32,7 +32,15 @@ func TestApplyRecordArtifactEvidence(t *testing.T) {
 	different := evidence
 	different.Size++
 	assertFailure(t, ApplyRecordArtifactEvidence(*got.State, "first", st.CurrentAttemptID, "out/report.md", different), CodeArtifactEvidenceAlreadyRecorded)
-	assertFailure(t, ApplyRecordArtifactEvidence(st, "first", st.CurrentAttemptID, "out/optional.md", evidence), CodeArtifactNotRequired)
+	optional := ApplyRecordArtifactEvidence(st, "first", st.CurrentAttemptID, "out/optional.md", evidence)
+	assertSuccess(t, optional)
+	if optional.State.Attempts[0].ArtifactEvidence["out/optional.md"] != evidence {
+		t.Fatalf("optional evidence = %#v", optional.State.Attempts[0].ArtifactEvidence)
+	}
+	optionalAgain := ApplyRecordArtifactEvidence(*optional.State, "first", st.CurrentAttemptID, "out/optional.md", evidence)
+	assertSuccess(t, optionalAgain)
+	assertFailure(t, ApplyRecordArtifactEvidence(*optional.State, "first", st.CurrentAttemptID, "out/optional.md", different), CodeArtifactEvidenceAlreadyRecorded)
+	assertFailure(t, ApplyRecordArtifactEvidence(st, "first", st.CurrentAttemptID, "out/unknown.md", evidence), CodeArtifactNotDeclared)
 	assertFailure(t, ApplyRecordArtifactEvidence(st, "first", "bad", "out/report.md", evidence), CodeInvalidAttemptID)
 	assertFailure(t, ApplyRecordArtifactEvidence(st, "first", "attempt_00000000000000000099", "out/report.md", evidence), CodeInvalidAttemptID)
 	assertFailure(t, ApplyRecordArtifactEvidence(st, "second", st.CurrentAttemptID, "out/report.md", evidence), CodeStepAttemptMismatch)
@@ -41,15 +49,16 @@ func TestApplyRecordArtifactEvidence(t *testing.T) {
 
 	approved := st.Clone()
 	approved.Attempts[0].ArtifactEvidence["out/report.md"] = evidence
+	approved.Attempts[0].ArtifactEvidence["out/optional.md"] = evidence
 	approvedDigest, err := state.ArtifactEvidenceSetDigest(
-		[]string{"out/report.md"},
+		[]string{"out/optional.md", "out/report.md"},
 		approved.Attempts[0].ArtifactEvidence,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	approved.Attempts[0].Approval = &state.ApprovalRecord{Note: "ok", EvidenceSetDigest: approvedDigest}
-	assertFailure(t, ApplyRecordArtifactEvidence(approved, "first", approved.CurrentAttemptID, "out/report.md", evidence), CodeArtifactRecordAfterApproval)
+	assertFailure(t, ApplyRecordArtifactEvidence(approved, "first", approved.CurrentAttemptID, "out/optional.md", evidence), CodeArtifactRecordAfterApproval)
 
 	stale := st.Clone()
 	first, err := state.CloseStepAttempt(stale.Attempts[0], state.StepAttemptExitBack, "retry")
@@ -62,7 +71,24 @@ func TestApplyRecordArtifactEvidence(t *testing.T) {
 	}
 	stale.Attempts = []state.StepAttempt{first, second}
 	stale.CurrentAttemptID = second.ID
-	assertFailure(t, ApplyRecordArtifactEvidence(stale, "first", first.ID, "out/report.md", evidence), CodeStaleAttempt)
+	assertFailure(t, ApplyRecordArtifactEvidence(stale, "first", first.ID, "out/optional.md", evidence), CodeStaleAttempt)
+
+	middleActive, err := state.NewStepAttempt("second", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	middle, err := state.CloseStepAttempt(middleActive, state.StepAttemptExitDone, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := state.NewStepAttempt("first", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.Attempts = []state.StepAttempt{first, middle, third}
+	stale.CurrentAttemptID = third.ID
+	stale.CurrentStepID = "first"
+	assertFailure(t, ApplyRecordArtifactEvidence(stale, "first", first.ID, "out/optional.md", evidence), CodeStaleAttempt)
 
 	terminal := st.Clone()
 	terminal.Status = state.StatusCompleted

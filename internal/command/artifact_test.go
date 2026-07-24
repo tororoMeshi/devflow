@@ -45,6 +45,53 @@ func TestRecordArtifactSuccessIdempotencyAndImmutability(t *testing.T) {
 	assertCommandFileUnchanged(t, currentStatePath(t, root), after)
 }
 
+func TestRecordOptionalArtifactSuccessIdempotencyConflictAndSafety(t *testing.T) {
+	root := t.TempDir()
+	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
+	st := approveDoneState("artifact")
+	if err := saveCommandState(t, root, st); err != nil {
+		t.Fatal(err)
+	}
+	optionalPath := filepath.Join(root, "docs", "optional.md")
+	writeCommandTestFile(t, optionalPath, "optional")
+
+	first := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/optional.md")
+	assertCommandSuccess(t, first)
+	if first.Success.RecordedArtifactPath != "docs/optional.md" ||
+		first.Success.RecordedArtifactDigest == "" || first.Success.RecordedArtifactSize != 8 {
+		t.Fatalf("Success = %#v", first.Success)
+	}
+	recorded := loadCommandState(t, root)
+	evidence := recorded.Attempts[0].ArtifactEvidence["docs/optional.md"]
+	before := readCommandFile(t, currentStatePath(t, root))
+	second := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/optional.md")
+	assertCommandSuccess(t, second)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
+	if loadCommandState(t, root).Attempts[0].ArtifactEvidence["docs/optional.md"] != evidence {
+		t.Fatal("idempotent optional Evidence changed")
+	}
+
+	if err := os.WriteFile(optionalPath, []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	conflict := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/optional.md")
+	assertCommandFailure(t, conflict, transition.CodeArtifactEvidenceAlreadyRecorded)
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
+
+	missing := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/optional-directory")
+	assertCommandFailure(t, missing, CodeArtifactFileMissing)
+	if err := os.Mkdir(filepath.Join(root, "docs", "optional-directory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	directory := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/optional-directory")
+	assertCommandFailure(t, directory, CodeArtifactNotRegular)
+	if err := os.Symlink("optional.md", filepath.Join(root, "docs", "optional-link")); err == nil {
+		link := RecordArtifact(Context{ProjectRoot: root}, "artifact", st.CurrentAttemptID, "docs/optional-link")
+		assertCommandFailure(t, link, CodeArtifactSymlink)
+	}
+	assertCommandFileUnchanged(t, currentStatePath(t, root), before)
+}
+
 func TestRecordArtifactRejectsContractErrorsBeforeFilesystemAndDoesNotSave(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approve-done-flow", approveDoneTestFlow())
@@ -59,7 +106,7 @@ func TestRecordArtifactRejectsContractErrorsBeforeFilesystemAndDoesNotSave(t *te
 		{"malformed", "artifact", "bad", "docs/required.md", transition.CodeInvalidAttemptID},
 		{"nonexistent", "artifact", "attempt_00000000000000000099", "docs/required.md", transition.CodeInvalidAttemptID},
 		{"mismatch", "other", st.CurrentAttemptID, "docs/required.md", transition.CodeStepAttemptMismatch},
-		{"unknown", "artifact", st.CurrentAttemptID, "docs/unknown.md", transition.CodeArtifactNotRequired},
+		{"unknown", "artifact", st.CurrentAttemptID, "docs/unknown.md", transition.CodeArtifactNotDeclared},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := RecordArtifact(Context{ProjectRoot: root}, tt.step, tt.attempt, tt.path)

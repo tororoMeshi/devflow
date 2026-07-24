@@ -44,14 +44,17 @@ func ApplyApprove(_ flow.Flow, st state.State, stepID string, attemptID string, 
 	}
 	requiredPaths := requiredArtifactPaths(targetStep)
 	sort.Strings(requiredPaths)
-	evidenceSetDigest, err := state.ArtifactEvidenceSetDigest(requiredPaths, current.ArtifactEvidence)
-	if errors.Is(err, state.ErrMissingRequiredArtifactEvidence) {
-		for _, path := range requiredPaths {
-			if _, ok := current.ArtifactEvidence[path]; !ok {
-				return failure(Diagnostic{Level: LevelError, Code: CodeMissingArtifactEvidence, StepID: stepID, Artifacts: []string{path}})
-			}
+	for _, path := range requiredPaths {
+		if _, ok := current.ArtifactEvidence[path]; !ok {
+			return failure(Diagnostic{Level: LevelError, Code: CodeMissingArtifactEvidence, StepID: stepID, Artifacts: []string{path}})
 		}
 	}
+	evidencePaths := make([]string, 0, len(current.ArtifactEvidence))
+	for path := range current.ArtifactEvidence {
+		evidencePaths = append(evidencePaths, path)
+	}
+	sort.Strings(evidencePaths)
+	evidenceSetDigest, err := state.ArtifactEvidenceSetDigest(evidencePaths, current.ArtifactEvidence)
 	if err != nil {
 		return failure(errorDiagnostic(CodeInvalidState, stepID))
 	}

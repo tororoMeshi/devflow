@@ -176,21 +176,6 @@ func TestStoreRejectsMissingNullEvidenceAndSchemaV6(t *testing.T) {
 				"out/unknown.md": map[string]any{"digest": "sha256:" + strings.Repeat("a", 64), "size": float64(1)},
 			}
 		}},
-		{"optional evidence path", func(t *testing.T) State {
-			value := testState(t, StatusRunning, "first")
-			fl := value.FlowSnapshot.Flow
-			fl.Steps[0].Artifacts = []flow.Artifact{{Path: "out/optional.md", Required: false}}
-			var err error
-			value.FlowSnapshot, err = flow.BuildSnapshot(fl, value.FlowSnapshot.Source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return value
-		}, func(raw map[string]any) {
-			raw["attempts"].([]any)[0].(map[string]any)["artifact_evidence"] = map[string]any{
-				"out/optional.md": map[string]any{"digest": "sha256:" + strings.Repeat("a", 64), "size": float64(1)},
-			}
-		}},
 		{"schema v6", nil, func(raw map[string]any) { raw["schema_version"] = float64(6) }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
