@@ -129,6 +129,34 @@ func TestInspectCompletionGateReadyAndSharedInspection(t *testing.T) {
 	}
 }
 
+func TestInspectCompletionGateOptionalEvidenceDoesNotChangeRequiredPolicy(t *testing.T) {
+	root := t.TempDir()
+	writeGateFile(t, root, "optional.txt", "optional")
+	actual, err := artifact.ReadFile(root, "optional.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, _ := state.NewStepAttempt("build", 1)
+	step := flow.Step{ID: "build", Artifacts: []flow.Artifact{
+		{Path: "required.txt", Required: true},
+		{Path: "optional.txt", Required: false},
+	}}
+	missingRequired := []CompletionBlocker{{Kind: CompletionBlockerMissingArtifactEvidence, Path: "required.txt"}}
+	before := InspectCompletionGate(root, state.State{}, step, attempt, NewInspectionSet())
+	if before.Ready || !reflect.DeepEqual(before.Blockers, missingRequired) {
+		t.Fatalf("without optional Evidence = %#v", before)
+	}
+	attempt.ArtifactEvidence["optional.txt"] = state.ArtifactEvidence{Digest: actual.Digest, Size: actual.Size}
+	after := InspectCompletionGate(root, state.State{}, step, attempt, NewInspectionSet())
+	if after.Ready || !reflect.DeepEqual(after.Blockers, missingRequired) {
+		t.Fatalf("with optional Evidence = %#v", after)
+	}
+	optionalOnly := flow.Step{ID: "build", Artifacts: []flow.Artifact{{Path: "optional.txt", Required: false}}}
+	if got := InspectCompletionGate(root, state.State{}, optionalOnly, attempt, NewInspectionSet()); !got.Ready || len(got.Blockers) != 0 {
+		t.Fatalf("optional-only Gate = %#v", got)
+	}
+}
+
 func TestInspectCompletionGateUsesOnlyCurrentAttempt(t *testing.T) {
 	root := t.TempDir()
 	current, _ := state.NewStepAttempt("build", 2)

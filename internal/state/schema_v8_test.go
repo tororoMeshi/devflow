@@ -234,7 +234,17 @@ func TestValidateStateV8ApprovalEvidenceBinding(t *testing.T) {
 		Digest: "sha256:" + strings.Repeat("a", 64),
 		Size:   12,
 	}
-	digest, err := ArtifactEvidenceSetDigest([]string{"out/report.md"}, value.Attempts[0].ArtifactEvidence)
+	value.FlowSnapshot.Flow.Steps[0].Artifacts = append(value.FlowSnapshot.Flow.Steps[0].Artifacts,
+		flow.Artifact{Path: "out/optional.md", Required: false})
+	value.FlowSnapshot, err = flow.BuildSnapshot(value.FlowSnapshot.Flow, value.FlowSnapshot.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.Attempts[0].ArtifactEvidence["out/optional.md"] = ArtifactEvidence{
+		Digest: "sha256:" + strings.Repeat("b", 64),
+		Size:   4,
+	}
+	digest, err := ArtifactEvidenceSetDigest([]string{"out/optional.md", "out/report.md"}, value.Attempts[0].ArtifactEvidence)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,11 +308,15 @@ func TestValidateStateV8ApprovalEvidenceBinding(t *testing.T) {
 		{"required artifact added", []flow.Artifact{
 			{Path: "out/report.md", Required: true},
 			{Path: "out/second.md", Required: true},
+			{Path: "out/optional.md", Required: false},
 		}, ErrMissingRequiredArtifactEvidence},
-		{"required artifact deleted", []flow.Artifact{}, ErrUnknownArtifactEvidence},
-		{"required flag removed", []flow.Artifact{
-			{Path: "out/report.md", Required: false},
+		{"required artifact deleted", []flow.Artifact{
+			{Path: "out/optional.md", Required: false},
 		}, ErrUnknownArtifactEvidence},
+		{"required flag removed but declarations retained", []flow.Artifact{
+			{Path: "out/report.md", Required: false},
+			{Path: "out/optional.md", Required: false},
+		}, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			candidate := value.Clone()
@@ -419,12 +433,16 @@ func TestValidateStateV8ArtifactEvidenceRequirementRules(t *testing.T) {
 	if err := validateState(required); err != nil {
 		t.Fatalf("active partial evidence rejected: %v", err)
 	}
+	optional := required.Clone()
+	optional.Attempts[0].ArtifactEvidence["out/optional.md"] = evidence
+	if err := validateState(optional); err != nil {
+		t.Fatalf("declared optional Evidence rejected: %v", err)
+	}
 	for _, tt := range []struct {
 		name string
 		path string
 	}{
 		{"unknown", "out/unknown.md"},
-		{"optional", "out/optional.md"},
 		{"input only", "input/request.md"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -41,15 +41,15 @@ func ApplyRecordArtifactEvidence(st state.State, stepID, attemptID, path string,
 	if !ok {
 		return failure(errorDiagnostic(CodeInvalidState, stepID))
 	}
-	required := false
+	declared := false
 	for _, artifact := range step.Artifacts {
-		if artifact.Path == path && artifact.Required {
-			required = true
+		if artifact.Path == path {
+			declared = true
 			break
 		}
 	}
-	if !required {
-		return failure(errorDiagnostic(CodeArtifactNotRequired, stepID))
+	if !declared {
+		return failure(errorDiagnostic(CodeArtifactNotDeclared, stepID))
 	}
 	if current.Approval != nil {
 		return failure(errorDiagnostic(CodeArtifactRecordAfterApproval, stepID))

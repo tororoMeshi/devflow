@@ -261,6 +261,15 @@ func approveDoneTestFlow() string {
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
+			}, {
+				path: "docs/optional.md"
+				required: false
+			}, {
+				path: "docs/optional-directory"
+				required: false
+			}, {
+				path: "docs/optional-link"
+				required: false
 			}]
 		}, {
 			id: "approval"

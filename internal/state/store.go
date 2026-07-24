@@ -349,11 +349,11 @@ func validateState(state State) error {
 			return fmt.Errorf("attempt step_id %q is not in flow_snapshot", attempt.StepID)
 		}
 		step, _ := flowStep(state.FlowSnapshot.Flow, attempt.StepID)
-		requiredArtifacts := map[string]struct{}{}
+		declaredArtifacts := map[string]struct{}{}
 		requiredArtifactPaths := []string{}
 		for _, artifact := range step.Artifacts {
+			declaredArtifacts[artifact.Path] = struct{}{}
 			if artifact.Required {
-				requiredArtifacts[artifact.Path] = struct{}{}
 				requiredArtifactPaths = append(requiredArtifactPaths, artifact.Path)
 			}
 		}
@@ -363,8 +363,8 @@ func validateState(state State) error {
 		}
 		sort.Strings(evidencePaths)
 		for _, path := range evidencePaths {
-			if _, ok := requiredArtifacts[path]; !ok {
-				return fmt.Errorf("%w: attempt artifact evidence %q is not required by step %q", ErrUnknownArtifactEvidence, path, attempt.StepID)
+			if _, ok := declaredArtifacts[path]; !ok {
+				return fmt.Errorf("%w: attempt artifact evidence %q is not declared by step %q", ErrUnknownArtifactEvidence, path, attempt.StepID)
 			}
 		}
 		if attempt.Status == StepAttemptClosed && attempt.ExitReason == StepAttemptExitDone {
@@ -381,7 +381,12 @@ func validateState(state State) error {
 			return fmt.Errorf("attempt step %q does not require approval", attempt.StepID)
 		}
 		if attempt.Approval != nil {
-			digest, err := ArtifactEvidenceSetDigest(requiredArtifactPaths, attempt.ArtifactEvidence)
+			for _, path := range requiredArtifactPaths {
+				if _, ok := attempt.ArtifactEvidence[path]; !ok {
+					return fmt.Errorf("attempt %d approval artifact evidence set: %w: %q", i, ErrMissingRequiredArtifactEvidence, path)
+				}
+			}
+			digest, err := ArtifactEvidenceSetDigest(evidencePaths, attempt.ArtifactEvidence)
 			if err != nil {
 				return fmt.Errorf("attempt %d approval artifact evidence set: %w", i, err)
 			}
