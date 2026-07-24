@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +14,191 @@ import (
 	"github.com/8noki8/devflow/internal/command"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/transition"
+	"github.com/8noki8/devflow/internal/workpackage"
 )
+
+func TestParseWorkPackageArgs(t *testing.T) {
+	validAttempt := "attempt_00000000000000000001"
+	tests := []struct {
+		name string
+		args []string
+		ok   bool
+	}{
+		{"formal", []string{"--step", "build", "--attempt", validAttempt}, true},
+		{"reverse order", []string{"--attempt", validAttempt, "--step", "build"}, true},
+		{"duplicate step", []string{"--step", "build", "--step", "other"}, false},
+		{"duplicate attempt", []string{"--attempt", validAttempt, "--attempt", validAttempt}, false},
+		{"unknown", []string{"--unknown", "x", "--attempt", validAttempt}, false},
+		{"missing value", []string{"--step", "build", "--attempt"}, false},
+		{"empty", []string{"--step", "", "--attempt", validAttempt}, false},
+		{"ASCII whitespace", []string{"--step", " \t", "--attempt", validAttempt}, false},
+		{"Unicode whitespace", []string{"--step", "\u3000", "--attempt", validAttempt}, false},
+		{"leading whitespace", []string{"--step", " build", "--attempt", validAttempt}, false},
+		{"trailing whitespace", []string{"--step", "build ", "--attempt", validAttempt}, false},
+		{"positional", []string{"build", "--attempt", validAttempt, "--step"}, false},
+		{"equals", []string{"--step=build", "--attempt", validAttempt}, false},
+		{"Run option", []string{"--run", "run_x", "--attempt", validAttempt}, false},
+		{"output option", []string{"--output", "pkg.json", "--attempt", validAttempt}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			step, attempt, ok := parseWorkPackageArgs(tt.args)
+			if ok != tt.ok {
+				t.Fatalf("parseWorkPackageArgs(%q) = %q, %q, %t", tt.args, step, attempt, ok)
+			}
+			if ok && (step != "build" || attempt != validAttempt) {
+				t.Fatalf("values = %q, %q", step, attempt)
+			}
+		})
+	}
+}
+
+func TestRunWorkPackageExactJSONAndFilesystemImmutability(t *testing.T) {
+	root := t.TempDir()
+	runSuccess(t, root, []string{"init"})
+	runSuccess(t, root, []string{"start", "post-task-review"})
+	st := loadCLIState(t, root)
+	store := command.NewStore(command.Context{ProjectRoot: root})
+	statePath, err := store.RunStatePath(st.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointerPath := command.CurrentPath(root)
+	beforeState, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforePointer, err := os.ReadFile(pointerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Dir(statePath)
+	beforeEntries, err := os.ReadDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantPackage, err := workpackage.Generate(st, st.CurrentStepID, st.CurrentAttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON, err := json.Marshal(wantPackage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, exitCode := runCapture(root, []string{"work-package", "--attempt", st.CurrentAttemptID, "--step", st.CurrentStepID})
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if stdout != string(wantJSON)+"\n" {
+		t.Fatalf("stdout = %q, want %q", stdout, string(wantJSON)+"\n")
+	}
+	var decoded workpackage.WorkPackage
+	if err := json.Unmarshal([]byte(stdout), &decoded); err != nil || workpackage.Validate(decoded) != nil {
+		t.Fatalf("invalid stdout package: %v, %#v", err, decoded)
+	}
+	afterState, _ := os.ReadFile(statePath)
+	afterPointer, _ := os.ReadFile(pointerPath)
+	afterEntries, _ := os.ReadDir(runDir)
+	if !bytes.Equal(beforeState, afterState) || !bytes.Equal(beforePointer, afterPointer) ||
+		!reflect.DeepEqual(entryNames(beforeEntries), entryNames(afterEntries)) {
+		t.Fatal("work-package changed State, pointer, or Run directory")
+	}
+}
+
+func TestRunWorkPackageSnapshotSourceFilesAreNotRead(t *testing.T) {
+	root := t.TempDir()
+	runSuccess(t, root, []string{"init"})
+	runSuccess(t, root, []string{"start", "post-task-review"})
+	st := loadCLIState(t, root)
+	args := []string{"work-package", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID}
+	first, stderr, exitCode := runCapture(root, args)
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("first run exit=%d stderr=%q", exitCode, stderr)
+	}
+	flowPath := filepath.Join(root, ".devflow", "flows", "post-task-review.cue")
+	taskPath := filepath.Join(root, "tasks", "task.md")
+	if err := os.Remove(flowPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(taskPath); err != nil {
+		t.Fatal(err)
+	}
+	second, stderr, exitCode := runCapture(root, args)
+	if exitCode != 0 || stderr != "" || second != first {
+		t.Fatalf("source changes affected package: exit=%d stderr=%q\nfirst=%q\nsecond=%q", exitCode, stderr, first, second)
+	}
+}
+
+func TestRunWorkPackageFailureWritesNoJSON(t *testing.T) {
+	root := t.TempDir()
+	stdout, stderr, exitCode := runCapture(root, []string{"work-package", "--step", "build", "--attempt", "attempt_00000000000000000001"})
+	if exitCode != 1 || stdout != "" || stderr != "error: "+command.CodeNoActiveFlow+"\n" {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func TestRunWorkPackageFailureLeavesCurrentRunUnchanged(t *testing.T) {
+	root := t.TempDir()
+	runSuccess(t, root, []string{"init"})
+	runSuccess(t, root, []string{"start", "post-task-review"})
+	st := loadCLIState(t, root)
+	store := command.NewStore(command.Context{ProjectRoot: root})
+	statePath, err := store.RunStatePath(st.FlowRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointerPath := command.CurrentPath(root)
+	runDir := filepath.Dir(statePath)
+	beforeState, _ := os.ReadFile(statePath)
+	beforePointer, _ := os.ReadFile(pointerPath)
+	beforeEntries, _ := os.ReadDir(runDir)
+
+	stdout, stderr, exitCode := runCapture(root, []string{
+		"work-package", "--step", st.CurrentStepID, "--attempt", "attempt_00000000000000000002",
+	})
+	if exitCode != 1 || stdout != "" || stderr != "error: "+transition.CodeInvalidAttemptID+"\n" {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	afterState, _ := os.ReadFile(statePath)
+	afterPointer, _ := os.ReadFile(pointerPath)
+	afterEntries, _ := os.ReadDir(runDir)
+	if !bytes.Equal(beforeState, afterState) || !bytes.Equal(beforePointer, afterPointer) ||
+		!reflect.DeepEqual(entryNames(beforeEntries), entryNames(afterEntries)) {
+		t.Fatal("failed work-package changed State, pointer, or Run directory")
+	}
+}
+
+func TestRunWorkPackageOutputFailureIsNotSuccess(t *testing.T) {
+	root := t.TempDir()
+	runSuccess(t, root, []string{"init"})
+	runSuccess(t, root, []string{"start", "post-task-review"})
+	st := loadCLIState(t, root)
+	var stderr bytes.Buffer
+	exitCode := run(
+		[]string{"work-package", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID},
+		root,
+		failingWriter{},
+		&stderr,
+	)
+	if exitCode == 0 {
+		t.Fatal("WorkPackage output failure was reported as success")
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func entryNames(entries []os.DirEntry) []string {
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name()
+	}
+	return names
+}
 
 func recordCLIArtifact(t *testing.T, root, path string) {
 	t.Helper()

@@ -1,6 +1,9 @@
 package command
 
-import "github.com/8noki8/devflow/internal/transition"
+import (
+	"github.com/8noki8/devflow/internal/transition"
+	"github.com/8noki8/devflow/internal/workpackage"
+)
 
 type CommandResult struct {
 	ExitCode         int
@@ -11,6 +14,7 @@ type CommandResult struct {
 	ExecutionContext *ExecutionContextResult
 	Success          *SuccessResult
 	CheckRequest     *CheckRequestResult
+	WorkPackage      *workpackage.WorkPackage
 	Diagnostics      []transition.Diagnostic
 }
 
