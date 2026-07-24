@@ -27,6 +27,7 @@ const usage = `Usage:
   devflow finish --reason <reason>
   devflow check request --step <step-id> --attempt <attempt-id> --check <check-id>
   devflow check record --file <result.json>
+  devflow execution-report record --file <report.json>
 `
 
 func main() {
@@ -160,6 +161,17 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 			writeUsage(stderr)
 			return 1
 		}
+	case "execution-report":
+		if len(args) < 2 || args[1] != "record" {
+			writeUsage(stderr)
+			return 1
+		}
+		path, ok := parseExecutionReportRecordArgs(args[2:])
+		if !ok {
+			writeUsage(stderr)
+			return 1
+		}
+		result = command.ExecutionReportRecord(ctx, path)
 	default:
 		writeUsage(stderr)
 		return 1
@@ -234,6 +246,14 @@ func parseWorkPackageArgs(args []string) (string, string, bool) {
 }
 
 func parseCheckRecordArgs(args []string) (string, bool) {
+	values, ok := parseExactOptions(args, "--file")
+	if !ok {
+		return "", false
+	}
+	return values["--file"], true
+}
+
+func parseExecutionReportRecordArgs(args []string) (string, bool) {
 	values, ok := parseExactOptions(args, "--file")
 	if !ok {
 		return "", false
@@ -325,8 +345,22 @@ func writeResult(ctx command.Context, result command.CommandResult) error {
 			return err
 		}
 	}
+	if result.ExecutionReport != nil {
+		writeExecutionReport(ctx.Stdout, *result.ExecutionReport)
+	}
 	command.WriteDiagnostics(ctx, result.Diagnostics)
 	return nil
+}
+
+func writeExecutionReport(stdout io.Writer, result command.ExecutionReportRecordResult) {
+	_, _ = fmt.Fprintln(stdout, "Recorded execution report")
+	_, _ = fmt.Fprintf(stdout, "Run: %s\n", result.FlowRunID)
+	_, _ = fmt.Fprintf(stdout, "Step: %s\n", result.StepID)
+	_, _ = fmt.Fprintf(stdout, "Attempt: %s\n", result.AttemptID)
+	_, _ = fmt.Fprintf(stdout, "Work package: %s\n", result.WorkPackageDigest)
+	_, _ = fmt.Fprintf(stdout, "Execution report: %s\n", result.ExecutionReportDigest)
+	_, _ = fmt.Fprintf(stdout, "Outcome: %s\n", result.Outcome)
+	_, _ = fmt.Fprintf(stdout, "Idempotent: %t\n", result.Idempotent)
 }
 
 func writeSuccess(stdout io.Writer, success command.SuccessResult) {

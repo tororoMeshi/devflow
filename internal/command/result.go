@@ -15,6 +15,7 @@ type CommandResult struct {
 	Success          *SuccessResult
 	CheckRequest     *CheckRequestResult
 	WorkPackage      *workpackage.WorkPackage
+	ExecutionReport  *ExecutionReportRecordResult
 	Diagnostics      []transition.Diagnostic
 }
 
