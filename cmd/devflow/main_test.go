@@ -12,10 +12,69 @@ import (
 	"testing"
 
 	"github.com/8noki8/devflow/internal/command"
+	"github.com/8noki8/devflow/internal/executionreport"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/transition"
 	"github.com/8noki8/devflow/internal/workpackage"
 )
+
+func TestParseExecutionReportRecordArgs(t *testing.T) {
+	tests := []struct {
+		args []string
+		ok   bool
+	}{
+		{[]string{"--file", "report.json"}, true},
+		{[]string{"--file", ""}, false},
+		{[]string{"--file", "\u3000"}, false},
+		{[]string{"--file", " report.json"}, false},
+		{[]string{"--file", "report.json "}, false},
+		{[]string{"--file", "a", "--file", "b"}, false},
+		{[]string{"--run", "x"}, false},
+		{[]string{"--file=report.json"}, false},
+		{[]string{"report.json"}, false},
+	}
+	for _, tt := range tests {
+		_, ok := parseExecutionReportRecordArgs(tt.args)
+		if ok != tt.ok {
+			t.Fatalf("args=%q ok=%t", tt.args, ok)
+		}
+	}
+}
+
+func TestRunExecutionReportExactHumanOutput(t *testing.T) {
+	root := t.TempDir()
+	runSuccess(t, root, []string{"init"})
+	runSuccess(t, root, []string{"start", "post-task-review"})
+	st := loadCLIState(t, root)
+	pkg, err := workpackage.Generate(st, st.CurrentStepID, st.CurrentAttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := executionreport.Report{
+		SchemaVersion: executionreport.SchemaVersion, FlowRunID: pkg.FlowRunID,
+		StepID: pkg.StepID, AttemptID: pkg.AttemptID, WorkPackageDigest: pkg.WorkPackageDigest,
+		Outcome: executionreport.OutcomeBlocked, Summary: "Blocked externally.",
+		Decisions: []executionreport.DecisionRecord{}, ArtifactRefs: []string{},
+		UnresolvedIssues: []string{"Waiting for access."}, NextAction: "Retry later.",
+	}
+	data, _ := json.Marshal(report)
+	path := filepath.Join(root, "report.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := executionreport.Digest(report)
+	want := fmt.Sprintf("Recorded execution report\nRun: %s\nStep: %s\nAttempt: %s\nWork package: %s\nExecution report: %s\nOutcome: blocked\nIdempotent: false\n",
+		pkg.FlowRunID, pkg.StepID, pkg.AttemptID, pkg.WorkPackageDigest, digest)
+	stdout, stderr, code := runCapture(root, []string{"execution-report", "record", "--file", path})
+	if code != 0 || stderr != "" || stdout != want {
+		t.Fatalf("code=%d stdout=%q stderr=%q want=%q", code, stdout, stderr, want)
+	}
+	want = strings.Replace(want, "Idempotent: false", "Idempotent: true", 1)
+	stdout, stderr, code = runCapture(root, []string{"execution-report", "record", "--file", path})
+	if code != 0 || stderr != "" || stdout != want {
+		t.Fatalf("retry code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
 
 func TestParseWorkPackageArgs(t *testing.T) {
 	validAttempt := "attempt_00000000000000000001"

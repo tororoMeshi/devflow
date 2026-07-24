@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/8noki8/devflow/internal/flow"
+	"github.com/8noki8/devflow/internal/jsonprotocol"
 	"github.com/8noki8/devflow/internal/state"
 	"github.com/8noki8/devflow/internal/transition"
 )
@@ -16,8 +17,8 @@ import (
 const checkSchemaVersion = 2
 
 var (
-	errDuplicateJSONKey = errors.New("duplicate JSON key")
-	errTrailingJSON     = errors.New("trailing JSON")
+	errDuplicateJSONKey = jsonprotocol.ErrDuplicateKey
+	errTrailingJSON     = jsonprotocol.ErrTrailingJSON
 )
 
 type CheckRequestResult struct {
@@ -209,61 +210,7 @@ func readCheckRecord(path string) (checkRecordFile, error) {
 }
 
 func rejectDuplicateJSONKeys(data []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	if err := scanJSONValue(decoder); err != nil {
-		return err
-	}
-	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errTrailingJSON
-		}
-		return err
-	}
-	return nil
-}
-
-func scanJSONValue(decoder *json.Decoder) error {
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delim, ok := token.(json.Delim)
-	if !ok {
-		return nil
-	}
-	switch delim {
-	case '{':
-		keys := map[string]struct{}{}
-		for decoder.More() {
-			keyToken, err := decoder.Token()
-			if err != nil {
-				return err
-			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return errors.New("invalid JSON object key")
-			}
-			if _, duplicate := keys[key]; duplicate {
-				return errDuplicateJSONKey
-			}
-			keys[key] = struct{}{}
-			if err := scanJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-		_, err = decoder.Token()
-		return err
-	case '[':
-		for decoder.More() {
-			if err := scanJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-		_, err = decoder.Token()
-		return err
-	default:
-		return errors.New("unexpected JSON delimiter")
-	}
+	return jsonprotocol.ValidateKeysAndTrailing(data)
 }
 
 func invalidLogPath(value string) bool {
