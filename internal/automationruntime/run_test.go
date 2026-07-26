@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -26,6 +28,24 @@ func TestMain(m *testing.M) {
 
 func runHelper() int {
 	args := os.Args[1:]
+	if len(args) == 1 && args[0] == "bounded" {
+		if path := os.Getenv("HELPER_BOUNDED_CHILD_PID"); path != "" {
+			child := exec.Command("sleep", "5")
+			if err := child.Start(); err != nil {
+				return 106
+			}
+			if err := os.WriteFile(path, []byte(strconv.Itoa(child.Process.Pid)), 0o600); err != nil {
+				return 107
+			}
+		}
+		if n, _ := strconv.Atoi(os.Getenv("HELPER_BOUNDED_STDOUT")); n > 0 {
+			_, _ = os.Stdout.Write([]byte(strings.Repeat("o", n)))
+		}
+		if n, _ := strconv.Atoi(os.Getenv("HELPER_BOUNDED_STDERR")); n > 0 {
+			_, _ = os.Stderr.Write([]byte(strings.Repeat("e", n)))
+		}
+		return 0
+	}
 	if want := os.Getenv("HELPER_CWD"); want != "" {
 		got, _ := os.Getwd()
 		if got != want {
@@ -59,7 +79,8 @@ func runHelper() int {
 			step = "other"
 		}
 		if artifacts := os.Getenv("HELPER_ARTIFACTS"); artifacts != "" {
-			fmt.Printf(`{"schema_version":1,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"step":{"artifacts":%s}}`+"\n", testDigest, step, attempt, artifacts)
+			checks := envDefault("HELPER_CHECKS", "[]")
+			fmt.Printf(`{"schema_version":1,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"step":{"artifacts":%s,"required_checks":%s}}`+"\n", testDigest, step, attempt, artifacts, checks)
 		} else {
 			fmt.Printf(`{"schema_version":1,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q}`+"\n", testDigest, step, attempt)
 		}
@@ -126,6 +147,109 @@ func runHelper() int {
 			return 0
 		}
 		fmt.Printf("Recorded artifact: %s\nAttempt: %s\nDigest: %s\nSize: 12\n", args[7], args[5], reportDigest)
+		return 0
+	}
+	if len(args) > 1 && args[0] == "check" && args[1] == "request" {
+		if len(args) != 8 || args[2] != "--step" || args[4] != "--attempt" || args[6] != "--check" {
+			return 99
+		}
+		if os.Getenv("HELPER_ALREADY") == args[7] {
+			fmt.Fprintln(os.Stderr, "error: error_check_result_already_recorded")
+			return 1
+		}
+		if n, _ := strconv.Atoi(os.Getenv("HELPER_CHECK_REQUEST_STDOUT")); n > 0 {
+			_, _ = os.Stdout.Write([]byte(strings.Repeat("r", n)))
+			time.Sleep(time.Second)
+			return 0
+		}
+		fmt.Printf(`{"schema_version":2,"flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"check_id":%q}`+"\n",
+			args[3], args[5], args[7])
+		return 0
+	}
+	if len(args) > 1 && args[0] == "check" && args[1] == "record" {
+		if len(args) != 4 || args[2] != "--file" {
+			return 100
+		}
+		data, err := os.ReadFile(args[3])
+		info, statErr := os.Stat(args[3])
+		if err != nil || statErr != nil || info.Mode().Perm() != 0o600 {
+			return 101
+		}
+		var record struct {
+			FlowRunID string `json:"flow_run_id"`
+			StepID    string `json:"step_id"`
+			AttemptID string `json:"attempt_id"`
+			CheckID   string `json:"check_id"`
+			Result    struct {
+				ExitCode int `json:"exit_code"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(data, &record) != nil {
+			return 102
+		}
+		if mark := os.Getenv("HELPER_CHECK_RECORD_MARK"); mark != "" {
+			f, _ := os.OpenFile(mark, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if f != nil {
+				_, _ = fmt.Fprintln(f, record.CheckID)
+				_ = f.Close()
+			}
+		}
+		fmt.Printf("Recorded check: %s\nRun: %s\nStep: %s\nAttempt: %s\nExit code: %d\n",
+			record.CheckID, record.FlowRunID, record.StepID, record.AttemptID, record.Result.ExitCode)
+		return 0
+	}
+	if len(args) > 0 && args[0] == "adapter" {
+		input, _ := io.ReadAll(os.Stdin)
+		var request checkIdentity
+		if json.Unmarshal(input, &request) != nil {
+			return 103
+		}
+		if mark := os.Getenv("HELPER_ADAPTER_MARK"); mark != "" {
+			f, _ := os.OpenFile(mark, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if f != nil {
+				_, _ = fmt.Fprintln(f, request.CheckID)
+				_ = f.Close()
+			}
+		}
+		if os.Getenv("HELPER_ADAPTER_NONZERO") == request.CheckID {
+			return 7
+		}
+		if os.Getenv("HELPER_ADAPTER_MALFORMED") == request.CheckID {
+			fmt.Print("{")
+			return 0
+		}
+		if os.Getenv("HELPER_CLOSE_ATTEMPT") == request.CheckID {
+			cmd := exec.Command(os.Getenv("HELPER_REAL_DEVFLOW"), "skip", "--reason", "fixture-stale-attempt")
+			cmd.Dir = os.Getenv("HELPER_PROJECT_ROOT")
+			if output, err := cmd.CombinedOutput(); err != nil {
+				fmt.Fprintln(os.Stderr, string(output))
+				return 104
+			}
+		}
+		if os.Getenv("HELPER_ADAPTER_CHILD") == request.CheckID {
+			child := exec.Command("sleep", "5")
+			if err := child.Start(); err != nil {
+				return 105
+			}
+			if path := os.Getenv("HELPER_ADAPTER_CHILD_PID"); path != "" {
+				_ = os.WriteFile(path, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+			}
+		}
+		if os.Getenv("HELPER_ADAPTER_SLEEP") == request.CheckID {
+			if n, _ := strconv.Atoi(os.Getenv("HELPER_ADAPTER_STDOUT")); n > 0 {
+				_, _ = os.Stdout.Write([]byte(strings.Repeat("a", n)))
+				time.Sleep(time.Second)
+				return 0
+			}
+			time.Sleep(5 * time.Second)
+			return 0
+		}
+		exitCode := 0
+		if os.Getenv("HELPER_CHECK_FAILED") == request.CheckID {
+			exitCode = 1
+		}
+		fmt.Printf(`{"schema_version":2,"flow_run_id":%q,"step_id":%q,"attempt_id":%q,"check_id":%q,"result":{"exit_code":%d,"log_path":"logs/%s.log"}}`,
+			request.FlowRunID, request.StepID, request.AttemptID, request.CheckID, exitCode, request.CheckID)
 		return 0
 	}
 	if os.Getenv("HELPER_EXEC") == "early-close" {
@@ -209,6 +333,99 @@ func runHelper() int {
 			pkg.FlowRunID, pkg.StepID, pkg.AttemptID, pkg.WorkPackageDigest, outcome, envDefault("HELPER_REFS", "[]"))
 	}
 	return 0
+}
+
+func TestRunCheckModeFlowOrderAndFailedDomainContinues(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts = true
+	cfg.CheckAdapter = os.Args[0]
+	cfg.CheckAdapterArgs = []string{"adapter"}
+	cfg.CheckTerminateGrace = 20 * time.Millisecond
+	t.Setenv("HELPER_ARTIFACTS", `[]`)
+	t.Setenv("HELPER_CHECKS", `["first","second"]`)
+	t.Setenv("HELPER_CHECK_FAILED", "first")
+	adapterMark := filepath.Join(cfg.ProjectRoot, "adapter-calls")
+	recordMark := filepath.Join(cfg.ProjectRoot, "check-records")
+	t.Setenv("HELPER_ADAPTER_MARK", adapterMark)
+	t.Setenv("HELPER_CHECK_RECORD_MARK", recordMark)
+
+	got := Run(context.Background(), cfg)
+	if got.ExitCode != 0 || got.ResultV3 == nil || got.ResultV3.Status != "stopped" ||
+		len(got.ResultV3.Checks) != 2 || got.ResultV3.Checks[0].Passed == nil ||
+		*got.ResultV3.Checks[0].Passed || got.ResultV3.Checks[1].Passed == nil ||
+		!*got.ResultV3.Checks[1].Passed {
+		t.Fatalf("Run = %#v", got)
+	}
+	for _, path := range []string{adapterMark, recordMark} {
+		data, _ := os.ReadFile(path)
+		if string(data) != "first\nsecond\n" {
+			t.Fatalf("%s = %q", path, data)
+		}
+	}
+}
+
+func TestRunCheckModeAlreadyRecordedSkipsAdapter(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts = true
+	cfg.CheckAdapter = os.Args[0]
+	cfg.CheckAdapterArgs = []string{"adapter"}
+	cfg.CheckTerminateGrace = 20 * time.Millisecond
+	t.Setenv("HELPER_ARTIFACTS", `[]`)
+	t.Setenv("HELPER_CHECKS", `["first"]`)
+	t.Setenv("HELPER_ALREADY", "first")
+	mark := filepath.Join(cfg.ProjectRoot, "adapter-calls")
+	t.Setenv("HELPER_ADAPTER_MARK", mark)
+
+	got := Run(context.Background(), cfg)
+	if got.ExitCode != 0 || got.ResultV3 == nil || len(got.ResultV3.Checks) != 1 ||
+		got.ResultV3.Checks[0].Status != "already_recorded" || got.ResultV3.Checks[0].Passed != nil {
+		t.Fatalf("Run = %#v", got)
+	}
+	if _, err := os.Stat(mark); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("adapter was called: %v", err)
+	}
+}
+
+func TestRunCheckModeAdapterFailureStopsFollowingChecks(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts = true
+	cfg.CheckAdapter = os.Args[0]
+	cfg.CheckAdapterArgs = []string{"adapter"}
+	cfg.CheckTerminateGrace = 20 * time.Millisecond
+	t.Setenv("HELPER_ARTIFACTS", `[]`)
+	t.Setenv("HELPER_CHECKS", `["first","second","third"]`)
+	t.Setenv("HELPER_ADAPTER_NONZERO", "second")
+	mark := filepath.Join(cfg.ProjectRoot, "adapter-calls")
+	t.Setenv("HELPER_ADAPTER_MARK", mark)
+
+	got := Run(context.Background(), cfg)
+	if got.ExitCode != 4 || got.ResultV3 == nil || got.ResultV3.Status != "failed" ||
+		len(got.ResultV3.Checks) != 2 || got.ResultV3.Checks[1].Status != "failed" {
+		t.Fatalf("Run = %#v", got)
+	}
+	data, _ := os.ReadFile(mark)
+	if string(data) != "first\nsecond\n" {
+		t.Fatalf("adapter calls = %q", data)
+	}
+}
+
+func TestRunCheckModeAdapterTimeout(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts = true
+	cfg.CheckAdapter = os.Args[0]
+	cfg.CheckAdapterArgs = []string{"adapter"}
+	cfg.CheckTimeout = 20 * time.Millisecond
+	cfg.CheckTerminateGrace = 20 * time.Millisecond
+	t.Setenv("HELPER_ARTIFACTS", `[]`)
+	t.Setenv("HELPER_CHECKS", `["first"]`)
+	t.Setenv("HELPER_ADAPTER_SLEEP", "first")
+
+	got := Run(context.Background(), cfg)
+	if got.ExitCode != 124 || got.ResultV3 == nil || got.ResultV3.Status != "timed_out" ||
+		len(got.ResultV3.Checks) != 1 || got.ResultV3.Checks[0].Status != "failed" ||
+		got.ResultV3.Checks[0].AdapterExitCode != nil {
+		t.Fatalf("Run = %#v", got)
+	}
 }
 
 func TestRunArtifactModeOrderAndPartialFailure(t *testing.T) {
@@ -489,6 +706,126 @@ func TestRunConfiguredOutputLimitsAndTempCleanup(t *testing.T) {
 			t.Fatalf("temp entries=%v err=%v", entries, err)
 		}
 	})
+}
+
+func TestCheckBoundedIOBoundaries(t *testing.T) {
+	t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+
+	t.Run("request and adapter stdout exact limit", func(t *testing.T) {
+		for _, limit := range []int{MaxCheckRequestBytes, MaxCheckAdapterStdoutBytes} {
+			t.Setenv("HELPER_BOUNDED_STDOUT", strconv.Itoa(limit))
+			got := runStreamProcess(context.Background(), t.TempDir(), os.Args[0], []string{"bounded"}, nil, limit, MaxCheckAdapterStderrTailBytes, 0, 0)
+			if got.startErr != nil || got.waitErr != nil || got.overflow || len(got.stdout) != limit || got.exitCode == nil || *got.exitCode != 0 {
+				t.Fatalf("limit=%d result=%#v", limit, got)
+			}
+		}
+	})
+
+	t.Run("request overflow stops before adapter and record", func(t *testing.T) {
+		cfg, _ := helperConfig(t)
+		cfg.RecordArtifacts = true
+		cfg.CheckAdapter = os.Args[0]
+		cfg.CheckAdapterArgs = []string{"adapter"}
+		cfg.CheckTerminateGrace = 20 * time.Millisecond
+		t.Setenv("HELPER_ARTIFACTS", `[]`)
+		t.Setenv("HELPER_CHECKS", `["first","second"]`)
+		t.Setenv("HELPER_CHECK_REQUEST_STDOUT", strconv.Itoa(MaxCheckRequestBytes+1))
+		adapterMark := filepath.Join(cfg.ProjectRoot, "adapter-calls")
+		recordMark := filepath.Join(cfg.ProjectRoot, "check-records")
+		t.Setenv("HELPER_ADAPTER_MARK", adapterMark)
+		t.Setenv("HELPER_CHECK_RECORD_MARK", recordMark)
+		tempRoot := t.TempDir()
+		t.Setenv("TMPDIR", tempRoot)
+
+		got := Run(context.Background(), cfg)
+		if got.ExitCode != 3 || got.ResultV3 == nil || len(got.ResultV3.Checks) != 1 || got.ResultV3.Checks[0].Error == nil || got.ResultV3.Checks[0].Error.Category != "check_request" || got.ResultV3.Checks[0].Error.Code != "request_output_oversized" {
+			t.Fatalf("Run=%#v", got)
+		}
+		assertNoPath(t, adapterMark)
+		assertNoPath(t, recordMark)
+		assertEmptyDir(t, tempRoot)
+		result, err := json.Marshal(got.ResultV3)
+		if err != nil || bytes.Contains(result, []byte("rrrr")) {
+			t.Fatalf("runtime result exposed request stdout: %v %s", err, result)
+		}
+	})
+
+	t.Run("adapter overflow stops before record", func(t *testing.T) {
+		cfg, _ := helperConfig(t)
+		cfg.RecordArtifacts = true
+		cfg.CheckAdapter = os.Args[0]
+		cfg.CheckAdapterArgs = []string{"adapter"}
+		cfg.CheckTerminateGrace = 20 * time.Millisecond
+		t.Setenv("HELPER_ARTIFACTS", `[]`)
+		t.Setenv("HELPER_CHECKS", `["first","second"]`)
+		t.Setenv("HELPER_ADAPTER_STDOUT", strconv.Itoa(MaxCheckAdapterStdoutBytes+1))
+		recordMark := filepath.Join(cfg.ProjectRoot, "check-records")
+		pidPath := filepath.Join(cfg.ProjectRoot, "adapter-child.pid")
+		t.Setenv("HELPER_CHECK_RECORD_MARK", recordMark)
+		t.Setenv("HELPER_ADAPTER_CHILD", "first")
+		t.Setenv("HELPER_ADAPTER_CHILD_PID", pidPath)
+		t.Setenv("HELPER_ADAPTER_SLEEP", "first")
+		tempRoot := t.TempDir()
+		t.Setenv("TMPDIR", tempRoot)
+
+		got := Run(context.Background(), cfg)
+		if got.ExitCode != 5 || got.ResultV3 == nil || len(got.ResultV3.Checks) != 1 || got.ResultV3.Checks[0].Status != "failed" || got.ResultV3.Checks[0].Error == nil || got.ResultV3.Checks[0].Error.Category != "check_adapter_protocol" || got.ResultV3.Checks[0].Error.Code != "output_oversized" {
+			t.Fatalf("Run=%#v", got)
+		}
+		assertNoPath(t, recordMark)
+		assertEmptyDir(t, tempRoot)
+		result, err := json.Marshal(got.ResultV3)
+		if err != nil || bytes.Contains(result, bytes.Repeat([]byte("a"), 128)) {
+			t.Fatalf("runtime result exposed adapter stdout: %v %s", err, result)
+		}
+		assertProcessGone(t, pidPath)
+	})
+
+	t.Run("adapter stderr tail boundaries and chunks", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			size      int
+			truncated bool
+		}{
+			{"below", MaxCheckAdapterStderrTailBytes - 1, false},
+			{"exact", MaxCheckAdapterStderrTailBytes, false},
+			{"plus one", MaxCheckAdapterStderrTailBytes + 1, true},
+			{"large", MaxCheckAdapterStderrTailBytes*4 + 17, true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Setenv("HELPER_BOUNDED_STDERR", strconv.Itoa(tt.size))
+				got := runStreamProcess(context.Background(), t.TempDir(), os.Args[0], []string{"bounded"}, nil, MaxCheckAdapterStdoutBytes, MaxCheckAdapterStderrTailBytes, 0, 0)
+				if got.startErr != nil || got.waitErr != nil || got.stderrTruncated != tt.truncated || len(got.stderr) != min(tt.size, MaxCheckAdapterStderrTailBytes) || !bytes.Equal(got.stderr, bytes.Repeat([]byte("e"), len(got.stderr))) {
+					t.Fatalf("size=%d result=%#v", tt.size, got)
+				}
+			})
+		}
+	})
+
+	t.Run("cancellation wins over stdout overflow", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		t.Setenv("HELPER_BOUNDED_STDOUT", strconv.Itoa(MaxCheckRequestBytes+1))
+		got := runStreamProcess(ctx, t.TempDir(), os.Args[0], []string{"bounded"}, nil, MaxCheckRequestBytes, MaxCheckAdapterStderrTailBytes, time.Hour, 0)
+		if !got.cancelled || got.timedOut || got.overflow || got.exitCode != nil {
+			t.Fatalf("result=%#v", got)
+		}
+	})
+}
+
+func assertNoPath(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected path %q: %v", path, err)
+	}
+}
+
+func assertEmptyDir(t *testing.T, path string) {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("temp entries=%v err=%v", entries, err)
+	}
 }
 
 func TestRunExecutorEarlyStdinClose(t *testing.T) {
@@ -854,4 +1191,458 @@ func TestIntegrationRealDevflowArtifactMode(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+const integrationCheckFlow = `flow: {
+  id: "check-runtime-review"
+  title: "Check runtime review"
+  description: "Check runtime integration fixture."
+  steps: [{
+    id: "build"
+    title: "Build"
+    instruction: "Build artifacts."
+    artifacts: [{path: "out/a.txt", required: true}, {path: "out/b.txt", required: false}]
+    required_checks: ["check-a", "check-b"]
+  }, {
+    id: "verify"
+    title: "Verify"
+    instruction: "Verify the build."
+  }]
+}`
+
+func TestIntegrationRealDevflowCheckMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("devflow call marker fixture is Unix-specific")
+	}
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	devflow := filepath.Join(binDir, "devflow")
+	runner := filepath.Join(binDir, "devflow-runner")
+	if output, err := buildCheckIntegrationBinaries(repositoryRoot, devflow, runner); err != nil {
+		t.Fatalf("build binaries: %v: %s", err, output)
+	}
+
+	t.Run("completed records checks in Flow order", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		before := checkInvariant(t, fixture)
+		result := runCheckRunner(t, runner, fixture)
+		assertCheckRun(t, result, []string{"check-a", "check-b"}, []bool{true, true}, []string{"recorded", "recorded"})
+		if len(result.ResultV3.Artifacts) != 1 || result.ResultV3.Artifacts[0].Path != "out/a.txt" || artifactEvidence(t, fixture.statePath, fixture.attemptID)["out/a.txt"] == nil {
+			t.Fatalf("artifacts=%#v evidence=%#v", result.ResultV3.Artifacts, artifactEvidence(t, fixture.statePath, fixture.attemptID))
+		}
+		assertCheckState(t, fixture, []string{"check-a", "check-b"})
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a", "check-b"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record", "check request", "check record"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record", "check request", "check record"})
+	})
+
+	t.Run("failed domain check continues to following check", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		t.Setenv("HELPER_CHECK_FAILED", "check-a")
+		before := checkInvariant(t, fixture)
+		result := runCheckRunner(t, runner, fixture)
+		assertCheckRun(t, result, []string{"check-a", "check-b"}, []bool{false, true}, []string{"recorded", "recorded"})
+		assertCheckState(t, fixture, []string{"check-a", "check-b"})
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a", "check-b"})
+	})
+
+	t.Run("blocked report does not run checks", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		t.Setenv("HELPER_OUTCOME", "blocked")
+		t.Setenv("HELPER_REFS", `["out/b.txt"]`)
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A",%q:"B"}`, filepath.Join(fixture.root, "out", "a.txt"), filepath.Join(fixture.root, "out", "b.txt")))
+		before := checkInvariant(t, fixture)
+		result := runCheckRunner(t, runner, fixture)
+		if result.ExitCode != 0 || result.ResultV3.Status != "stopped" || len(result.ResultV3.Checks) != 0 {
+			t.Fatalf("Run=%#v", result)
+		}
+		if len(result.ResultV3.Artifacts) != 1 || result.ResultV3.Artifacts[0].Path != "out/b.txt" || artifactEvidence(t, fixture.statePath, fixture.attemptID)["out/b.txt"] == nil {
+			t.Fatalf("blocked artifacts=%#v evidence=%#v", result.ResultV3.Artifacts, artifactEvidence(t, fixture.statePath, fixture.attemptID))
+		}
+		assertNoCheckState(t, fixture)
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, nil)
+		assertMarkLines(t, fixture.cliMark, nil)
+	})
+
+	t.Run("failed report does not run artifacts or checks", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		t.Setenv("HELPER_OUTCOME", "failed")
+		before := checkInvariant(t, fixture)
+		result := runCheckRunner(t, runner, fixture)
+		if result.ExitCode != 0 || result.ResultV3.Status != "stopped" || len(result.ResultV3.Artifacts) != 0 || len(result.ResultV3.Checks) != 0 {
+			t.Fatalf("Run=%#v", result)
+		}
+		assertNoCheckState(t, fixture)
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, nil)
+		assertMarkLines(t, fixture.cliMark, nil)
+	})
+
+	t.Run("same attempt rerun skips already recorded checks", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		first := runCheckRunner(t, runner, fixture)
+		assertCheckRun(t, first, []string{"check-a", "check-b"}, []bool{true, true}, []string{"recorded", "recorded"})
+		stateAfterFirst, err := os.ReadFile(fixture.statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reportAfterFirst, err := os.ReadFile(fixture.reportPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(fixture.adapterMark); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if err := os.Remove(fixture.cliMark); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		t.Setenv("HELPER_ALREADY", "check-a")
+		second := runCheckRunner(t, runner, fixture)
+		if second.ExitCode != 0 || second.ResultV3.Status != "stopped" || !second.ResultV3.ReportIdempotent || len(second.ResultV3.Checks) != 2 {
+			t.Fatalf("second=%#v", second)
+		}
+		for _, item := range second.ResultV3.Checks {
+			if item.Status != "already_recorded" || item.Passed != nil || item.CheckExitCode != nil || item.AdapterExitCode != nil || item.Error != nil {
+				t.Fatalf("already recorded item=%#v", item)
+			}
+		}
+		stateAfterSecond, _ := os.ReadFile(fixture.statePath)
+		reportAfterSecond, _ := os.ReadFile(fixture.reportPath)
+		if !bytes.Equal(stateAfterFirst, stateAfterSecond) || !bytes.Equal(reportAfterFirst, reportAfterSecond) {
+			t.Fatal("rerun changed persisted CheckResult or Report")
+		}
+		assertMarkLines(t, fixture.adapterMark, nil)
+		assertMarkLines(t, fixture.cliMark, []string{"check request", "check request"})
+	})
+}
+
+func TestIntegrationRealDevflowCheckModeFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("devflow call marker fixture is Unix-specific")
+	}
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	devflow := filepath.Join(binDir, "devflow")
+	runner := filepath.Join(binDir, "devflow-runner")
+	if output, err := buildCheckIntegrationBinaries(repositoryRoot, devflow, runner); err != nil {
+		t.Fatalf("build binaries: %v: %s", err, output)
+	}
+
+	t.Run("adapter nonzero preserves earlier CheckResult", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		before := checkInvariant(t, fixture)
+		t.Setenv("HELPER_CHECKS", `["check-a","check-b","check-c"]`)
+		t.Setenv("HELPER_ADAPTER_NONZERO", "check-b")
+		result := runCheckRunner(t, runner, fixture)
+		assertCheckFailure(t, result, 4, "failed", []string{"check-a", "check-b"}, []string{"recorded", "failed"}, "check_adapter_process")
+		assertCheckState(t, fixture, []string{"check-a"})
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a", "check-b"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record", "check request"})
+	})
+
+	t.Run("malformed adapter CheckRecord stops before Core record", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		before := checkInvariant(t, fixture)
+		t.Setenv("HELPER_CHECKS", `["check-a","check-b"]`)
+		t.Setenv("HELPER_ADAPTER_MALFORMED", "check-a")
+		result := runCheckRunner(t, runner, fixture)
+		assertCheckFailure(t, result, 5, "failed", []string{"check-a"}, []string{"failed"}, "check_adapter_protocol")
+		assertNoCheckState(t, fixture)
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request"})
+	})
+
+	t.Run("adapter timeout terminates process group and stops following checks", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		before := checkInvariant(t, fixture)
+		pidPath := filepath.Join(fixture.root, "adapter-child.pid")
+		t.Setenv("HELPER_CHECKS", `["check-a","check-b"]`)
+		t.Setenv("HELPER_ADAPTER_SLEEP", "check-a")
+		t.Setenv("HELPER_ADAPTER_CHILD", "check-a")
+		t.Setenv("HELPER_ADAPTER_CHILD_PID", pidPath)
+		result := runCheckRunnerArgs(t, runner, fixture, "--check-timeout", "50ms", "--check-terminate-grace", "50ms")
+		assertCheckFailure(t, result, 124, "timed_out", []string{"check-a"}, []string{"failed"}, "check_adapter_process")
+		if result.ResultV3.Checks[0].AdapterExitCode != nil {
+			t.Fatalf("adapter_exit_code=%v, want nil", *result.ResultV3.Checks[0].AdapterExitCode)
+		}
+		assertNoCheckState(t, fixture)
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request"})
+		assertProcessGone(t, pidPath)
+	})
+
+	t.Run("stale Attempt is rejected by Core without reusing CheckResult", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		t.Setenv("HELPER_CHECKS", `["check-a","check-b"]`)
+		t.Setenv("HELPER_CLOSE_ATTEMPT", "check-a")
+		result := runCheckRunner(t, runner, fixture)
+		assertCheckFailure(t, result, 3, "failed", []string{"check-a"}, []string{"failed"}, "check_record")
+		if result.ResultV3.Checks[0].Error.Code != "error_stale_attempt" {
+			t.Fatalf("stale diagnostic=%#v", result.ResultV3.Checks[0].Error)
+		}
+		state := readJSONMap(t, fixture.statePath)
+		for _, raw := range state["attempts"].([]any) {
+			attempt := raw.(map[string]any)
+			if attempt["id"] == fixture.attemptID && len(attempt["check_results"].(map[string]any)) != 0 {
+				t.Fatalf("stale Attempt got CheckResult: %#v", attempt)
+			}
+		}
+		if _, err := os.Stat(fixture.reportPath); err != nil {
+			t.Fatalf("Report was not saved: %v", err)
+		}
+		if artifactEvidence(t, fixture.statePath, fixture.attemptID)["out/a.txt"] == nil {
+			t.Fatal("ArtifactEvidence was not saved")
+		}
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record"})
+	})
+
+	t.Run("independent Core check record failure stops following checks", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		before := checkInvariant(t, fixture)
+		t.Setenv("HELPER_CHECKS", `["check-a","check-b"]`)
+		t.Setenv("HELPER_CHECK_RECORD_FAIL", "1")
+		result := runCheckRunner(t, runner, fixture)
+		assertCheckFailure(t, result, 3, "failed", []string{"check-a"}, []string{"failed"}, "check_record")
+		assertNoCheckState(t, fixture)
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.adapterMark, []string{"check-a"})
+		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record"})
+	})
+}
+
+func buildCheckIntegrationBinaries(repositoryRoot, devflow, runner string) (string, error) {
+	for output, target := range map[string]string{devflow: "./cmd/devflow", runner: "./cmd/devflow-runner"} {
+		cmd := exec.Command("go", "build", "-o", output, target)
+		cmd.Dir = repositoryRoot
+		if result, err := cmd.CombinedOutput(); err != nil {
+			return string(result), err
+		}
+	}
+	return "", nil
+}
+
+type checkIntegration struct {
+	root, devflow, coreDevflow, runID, stepID, attemptID, statePath, currentPath, reportPath, adapterMark, cliMark string
+}
+
+func setupCheckIntegration(t *testing.T, devflow string) checkIntegration {
+	t.Helper()
+	root := t.TempDir()
+	runCLI := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(devflow, args...)
+		cmd.Dir = root
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("devflow %v: %v: %s", args, err, output)
+		}
+	}
+	runCLI("init")
+	if err := os.WriteFile(filepath.Join(root, ".devflow", "flows", "check-runtime-review.cue"), []byte(integrationCheckFlow), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "task.md"), []byte("Build artifacts.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runCLI("start", "check-runtime-review", "--task-file", "task.md")
+	currentPath := filepath.Join(root, ".devflow", "current.json")
+	current := readJSONMap(t, currentPath)
+	runID := current["flow_run_id"].(string)
+	statePath := filepath.Join(root, ".devflow", "runs", runID, "state.json")
+	state := readJSONMap(t, statePath)
+	stepID := state["current_step_id"].(string)
+	attemptID := state["current_attempt_id"].(string)
+	cliMark := filepath.Join(root, "check-cli-calls")
+	wrapper := filepath.Join(root, "devflow-wrapper")
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = check ]; then printf '%%s %%s\\n' \"$1\" \"$2\" >> \"$DEVFLOW_CHECK_CLI_MARK\"; fi\nif [ \"$1\" = check ] && [ \"$2\" = record ] && [ -n \"$HELPER_CHECK_RECORD_FAIL\" ]; then echo 'error: error_check_record_fixture' >&2; exit 1; fi\nexec %q \"$@\"\n", devflow)
+	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return checkIntegration{root: root, devflow: wrapper, coreDevflow: devflow, runID: runID, stepID: stepID, attemptID: attemptID, statePath: statePath, currentPath: currentPath, reportPath: filepath.Join(root, ".devflow", "runs", runID, "execution-reports", attemptID+".json"), adapterMark: filepath.Join(root, "adapter-calls"), cliMark: cliMark}
+}
+
+func runCheckRunner(t *testing.T, runner string, fixture checkIntegration) RunResult {
+	return runCheckRunnerArgs(t, runner, fixture)
+}
+
+func runCheckRunnerArgs(t *testing.T, runner string, fixture checkIntegration, extra ...string) RunResult {
+	t.Helper()
+	t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+	t.Setenv("HELPER_OUTCOME", envDefault("HELPER_OUTCOME", "completed"))
+	if os.Getenv("HELPER_FILES") == "" {
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A"}`, filepath.Join(fixture.root, "out", "a.txt")))
+	}
+	t.Setenv("HELPER_ADAPTER_MARK", fixture.adapterMark)
+	t.Setenv("DEVFLOW_CHECK_CLI_MARK", fixture.cliMark)
+	t.Setenv("HELPER_REAL_DEVFLOW", fixture.coreDevflow)
+	t.Setenv("HELPER_PROJECT_ROOT", fixture.root)
+	args := []string{"execute", "--project-root", fixture.root, "--devflow", fixture.devflow, "--step", fixture.stepID, "--attempt", fixture.attemptID, "--record-artifacts", "--check-adapter", os.Args[0], "--check-adapter-arg", "adapter"}
+	args = append(args, extra...)
+	args = append(args, "--", os.Args[0])
+	cmd := exec.Command(runner, args...)
+	cmd.Dir = fixture.root
+	output, err := cmd.Output()
+	exitCode := 0
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("runner: %v: %s", err, output)
+		}
+		exitCode = exitErr.ExitCode()
+	}
+	var result ResultV3
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("runner: %v: %s", err, output)
+	}
+	return RunResult{ResultV3: &result, ExitCode: exitCode}
+}
+
+func assertCheckFailure(t *testing.T, got RunResult, exitCode int, status string, ids, statuses []string, category string) {
+	t.Helper()
+	if got.ExitCode != exitCode || got.ResultV3 == nil || got.ResultV3.Status != status || len(got.ResultV3.Checks) != len(ids) {
+		t.Fatalf("Run=%#v", got)
+	}
+	for i, item := range got.ResultV3.Checks {
+		if item.CheckID != ids[i] || item.Status != statuses[i] {
+			t.Fatalf("check[%d]=%#v", i, item)
+		}
+		if item.Status == "failed" && (item.Error == nil || item.Error.Category != category) {
+			t.Fatalf("failed check[%d]=%#v", i, item)
+		}
+	}
+}
+
+func assertProcessGone(t *testing.T, pidPath string) {
+	t.Helper()
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatalf("adapter child pid: %v", err)
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err = syscall.Kill(pid, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("adapter child process %d survived timeout: %v", pid, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func assertCheckRun(t *testing.T, got RunResult, ids []string, passed []bool, statuses []string) {
+	t.Helper()
+	if got.ExitCode != 0 || got.ResultV3.SchemaVersion != 3 || got.ResultV3.Status != "stopped" || got.ResultV3.Error != nil || len(got.ResultV3.Checks) != len(ids) {
+		t.Fatalf("Run=%#v", got)
+	}
+	for i, item := range got.ResultV3.Checks {
+		wantExitCode := 1
+		if passed[i] {
+			wantExitCode = 0
+		}
+		if item.CheckID != ids[i] || item.Status != statuses[i] || item.Passed == nil || *item.Passed != passed[i] || item.CheckExitCode == nil || *item.CheckExitCode != wantExitCode || item.AdapterExitCode == nil || *item.AdapterExitCode != 0 || item.Error != nil {
+			t.Fatalf("check[%d]=%#v", i, item)
+		}
+	}
+}
+
+func assertCheckState(t *testing.T, fixture checkIntegration, ids []string) {
+	t.Helper()
+	attempt := checkAttempt(t, fixture)
+	results := attempt["check_results"].(map[string]any)
+	if len(results) != len(ids) {
+		t.Fatalf("check results=%#v", results)
+	}
+	for _, id := range ids {
+		if results[id] == nil {
+			t.Fatalf("missing check result %q: %#v", id, results)
+		}
+	}
+}
+
+func assertNoCheckState(t *testing.T, fixture checkIntegration) {
+	t.Helper()
+	if results := checkAttempt(t, fixture)["check_results"].(map[string]any); len(results) != 0 {
+		t.Fatalf("unexpected CheckResult=%#v", results)
+	}
+}
+
+func checkAttempt(t *testing.T, fixture checkIntegration) map[string]any {
+	t.Helper()
+	state := readJSONMap(t, fixture.statePath)
+	if state["current_attempt_id"] != fixture.attemptID || state["current_step_id"] != fixture.stepID {
+		t.Fatalf("current state changed: %#v", state)
+	}
+	attempts := state["attempts"].([]any)
+	if len(attempts) != 1 {
+		t.Fatalf("unexpected next Attempt: %#v", attempts)
+	}
+	for _, raw := range attempts {
+		attempt := raw.(map[string]any)
+		if attempt["id"] == fixture.attemptID {
+			if attempt["status"] != "active" || attempt["approval"] != nil {
+				t.Fatalf("attempt changed: %#v", attempt)
+			}
+			return attempt
+		}
+	}
+	t.Fatalf("attempt %q missing", fixture.attemptID)
+	return nil
+}
+
+type checkInvariants struct{ current, report, flowSnapshot, taskSnapshot []byte }
+
+func checkInvariant(t *testing.T, fixture checkIntegration) checkInvariants {
+	t.Helper()
+	current, err := os.ReadFile(fixture.currentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := readJSONMap(t, fixture.statePath)
+	flowSnapshot, _ := json.Marshal(state["flow_snapshot"])
+	taskSnapshot, _ := json.Marshal(state["task_snapshot"])
+	return checkInvariants{current: current, flowSnapshot: flowSnapshot, taskSnapshot: taskSnapshot}
+}
+
+func assertCheckInvariant(t *testing.T, fixture checkIntegration, before checkInvariants) {
+	t.Helper()
+	after := checkInvariant(t, fixture)
+	if !bytes.Equal(before.current, after.current) || !bytes.Equal(before.flowSnapshot, after.flowSnapshot) || !bytes.Equal(before.taskSnapshot, after.taskSnapshot) {
+		t.Fatal("current pointer or snapshots changed")
+	}
+	if _, err := os.Stat(fixture.reportPath); err != nil {
+		t.Fatalf("Report was not saved: %v", err)
+	}
+}
+
+func assertMarkLines(t *testing.T, path string, want []string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) && len(want) == 0 {
+		return
+	}
+	got := []string(nil)
+	if err == nil {
+		got = strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("mark %s=%q err=%v want=%v", path, data, err, want)
+	}
 }

@@ -53,8 +53,25 @@ func runCaptured(ctx context.Context, cwd, executable string, args []string, lim
 }
 
 func runExecutor(ctx context.Context, cfg Config, input []byte) processResult {
-	cmd := exec.Command(cfg.Executor, cfg.ExecutorArgs...)
-	cmd.Dir = cfg.ProjectRoot
+	return runStreamProcess(ctx, cfg.ProjectRoot, cfg.Executor, cfg.ExecutorArgs, input,
+		MaxExecutorStdoutBytes, MaxExecutorStderrTailBytes, cfg.Timeout, cfg.TerminateGrace)
+}
+
+func runCheckAdapter(ctx context.Context, cfg Config, input []byte) processResult {
+	return runStreamProcess(ctx, cfg.ProjectRoot, cfg.CheckAdapter, cfg.CheckAdapterArgs, input,
+		MaxCheckAdapterStdoutBytes, MaxCheckAdapterStderrTailBytes, cfg.CheckTimeout, cfg.CheckTerminateGrace)
+}
+
+func runStreamProcess(
+	ctx context.Context,
+	cwd, executable string,
+	args []string,
+	input []byte,
+	stdoutLimit, stderrLimit int,
+	timeoutDuration, terminateGrace time.Duration,
+) processResult {
+	cmd := exec.Command(executable, args...)
+	cmd.Dir = cwd
 	cmd.Env = os.Environ()
 	configureProcessGroup(cmd)
 	stdinReader, stdinWriter, err := os.Pipe()
@@ -92,13 +109,13 @@ func runExecutor(ctx context.Context, cfg Config, input []byte) processResult {
 	_ = stderrWriter.Close()
 
 	overflowSignal := make(chan struct{}, 1)
-	out := newLimitedCapture(MaxExecutorStdoutBytes, func() {
+	out := newLimitedCapture(stdoutLimit, func() {
 		select {
 		case overflowSignal <- struct{}{}:
 		default:
 		}
 	})
-	errTail := newTailBuffer(MaxExecutorStderrTailBytes)
+	errTail := newTailBuffer(stderrLimit)
 	stdinDone := make(chan error, 1)
 	stdoutDone := make(chan error, 1)
 	stderrDone := make(chan error, 1)
@@ -126,8 +143,8 @@ func runExecutor(ctx context.Context, cfg Config, input []byte) processResult {
 
 	var timeout <-chan time.Time
 	var timer *time.Timer
-	if cfg.Timeout > 0 {
-		timer = time.NewTimer(cfg.Timeout)
+	if timeoutDuration > 0 {
+		timer = time.NewTimer(timeoutDuration)
 		timeout = timer.C
 		defer timer.Stop()
 	}
@@ -137,10 +154,10 @@ func runExecutor(ctx context.Context, cfg Config, input []byte) processResult {
 		_ = killProcess(cmd)
 	case <-ctx.Done():
 		result.cancelled = true
-		terminateAndWait(cmd, cfg.TerminateGrace, waitDone, &result)
+		terminateAndWait(cmd, terminateGrace, waitDone, &result)
 	case <-timeout:
 		result.timedOut = true
-		terminateAndWait(cmd, cfg.TerminateGrace, waitDone, &result)
+		terminateAndWait(cmd, terminateGrace, waitDone, &result)
 	case <-overflowSignal:
 		select {
 		case <-ctx.Done():
@@ -153,7 +170,7 @@ func runExecutor(ctx context.Context, cfg Config, input []byte) processResult {
 				result.overflow = true
 			}
 		}
-		terminateAndWait(cmd, cfg.TerminateGrace, waitDone, &result)
+		terminateAndWait(cmd, terminateGrace, waitDone, &result)
 	}
 	result.stdinErr = <-stdinDone
 	result.stdoutErr = <-stdoutDone

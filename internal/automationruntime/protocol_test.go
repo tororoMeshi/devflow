@@ -3,6 +3,7 @@ package automationruntime
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -142,6 +143,28 @@ func TestArtifactProjections(t *testing.T) {
 		input := bytes.Replace(wp, []byte(`[{"path":"b","required":false},{"path":"a","required":true}]`), []byte(artifacts), 1)
 		if _, err := parseWorkPackageForMode(input, "build", "attempt_1", true); err == nil {
 			t.Errorf("accepted artifacts=%s", artifacts)
+		}
+	}
+}
+
+func TestRequiredChecksProjection(t *testing.T) {
+	base := `{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
+		testDigest + `","step":{"artifacts":[],"required_checks":%s}}`
+	for _, tc := range []struct {
+		raw  string
+		want []string
+	}{
+		{`[]`, []string{}},
+		{`["b","a"]`, []string{"b", "a"}},
+	} {
+		pkg, err := parseWorkPackageForMode([]byte(fmt.Sprintf(base, tc.raw)), "build", "attempt_1", true, true)
+		if err != nil || !reflect.DeepEqual(pkg.RequiredChecks, tc.want) {
+			t.Fatalf("required_checks=%s: %#v, %v", tc.raw, pkg.RequiredChecks, err)
+		}
+	}
+	for _, raw := range []string{`null`, `"x"`, `[null]`, `[1]`, `[""]`, `["a","a"]`} {
+		if _, err := parseWorkPackageForMode([]byte(fmt.Sprintf(base, raw)), "build", "attempt_1", true, true); err == nil {
+			t.Errorf("accepted required_checks=%s", raw)
 		}
 	}
 }

@@ -8,7 +8,15 @@ import (
 )
 
 func Run(ctx context.Context, cfg Config) RunResult {
-	return finishV2(runWithFileOps(ctx, cfg, os.CreateTemp, os.Remove), cfg, nil)
+	run := runWithFileOps(ctx, cfg, os.CreateTemp, os.Remove)
+	if cfg.CheckAdapter != "" && run.ResultV3 == nil {
+		var artifacts []ArtifactResult
+		if run.ResultV2 != nil {
+			artifacts = run.ResultV2.Artifacts
+		}
+		return finishV3(run, artifacts, nil)
+	}
+	return finishV2(run, cfg, nil)
 }
 
 func finishV2(run RunResult, cfg Config, artifacts []ArtifactResult) RunResult {
@@ -35,6 +43,30 @@ func finishV2(run RunResult, cfg Config, artifacts []ArtifactResult) RunResult {
 		ReportOutcome:         run.Result.ReportOutcome, ReportIdempotent: run.Result.ReportIdempotent,
 		ExecutorExitCode: run.Result.ExecutorExitCode, StderrTruncated: run.Result.StderrTruncated,
 		Artifacts: artifacts, Error: run.Result.Error,
+	}
+	return run
+}
+
+func finishV3(run RunResult, artifacts []ArtifactResult, checks []CheckItem) RunResult {
+	status := run.Result.Status
+	if run.ExitCode == 0 {
+		status = "stopped"
+	} else if status != "timed_out" && status != "cancelled" {
+		status = "failed"
+	}
+	if artifacts == nil {
+		artifacts = []ArtifactResult{}
+	}
+	if checks == nil {
+		checks = []CheckItem{}
+	}
+	run.ResultV3 = &ResultV3{
+		SchemaVersion: 3, Status: status, FlowRunID: run.Result.FlowRunID,
+		StepID: run.Result.StepID, AttemptID: run.Result.AttemptID,
+		WorkPackageDigest: run.Result.WorkPackageDigest, ExecutionReportDigest: run.Result.ExecutionReportDigest,
+		ReportOutcome: run.Result.ReportOutcome, ReportIdempotent: run.Result.ReportIdempotent,
+		ExecutorExitCode: run.Result.ExecutorExitCode, StderrTruncated: run.Result.StderrTruncated,
+		Artifacts: artifacts, Checks: checks, Error: run.Result.Error,
 	}
 	return run
 }
@@ -78,7 +110,7 @@ func runWithFileOps(
 		}
 		return fail(result, "devflow_contract", code, 3)
 	}
-	pkg, err := parseWorkPackageForMode(wp.stdout, cfg.StepID, cfg.AttemptID, cfg.RecordArtifacts)
+	pkg, err := parseWorkPackageForMode(wp.stdout, cfg.StepID, cfg.AttemptID, cfg.RecordArtifacts, cfg.CheckAdapter != "")
 	if err != nil {
 		return fail(result, "devflow_process", "invalid_output", 3)
 	}
@@ -230,6 +262,12 @@ func runWithFileOps(
 			}
 		}
 		runResult = finishV2(runResult, cfg, artifactResults)
+		if cfg.CheckAdapter != "" {
+			runResult = finishV3(runResult, artifactResults, nil)
+			if report.Outcome == "completed" {
+				runResult = runChecks(ctx, cfg, pkg, result, artifactResults, createTemp, remove)
+			}
+		}
 	}
 	if err := cleanup(); err != nil {
 		runResult.CleanupCode = "temporary_report_cleanup_failed"
