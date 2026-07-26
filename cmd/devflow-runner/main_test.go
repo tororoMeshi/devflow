@@ -23,6 +23,20 @@ func TestParseArgs(t *testing.T) {
 	}
 }
 
+func TestParseArgsCheckMode(t *testing.T) {
+	args := []string{"execute", "--check-adapter-arg", "one", "--record-artifacts",
+		"--check-timeout", "0", "--check-adapter", "adapter", "--check-adapter-arg", "two",
+		"--check-terminate-grace", "1s", "--step", "s", "--attempt", "a", "--", "exec",
+		"--check-adapter", "preserved"}
+	got, ok := parseArgs(args)
+	if !ok || got.CheckAdapter != "adapter" || got.CheckTimeout != 0 ||
+		got.CheckTerminateGrace != time.Second ||
+		!reflect.DeepEqual(got.CheckAdapterArgs, []string{"one", "two"}) ||
+		!reflect.DeepEqual(got.ExecutorArgs, []string{"--check-adapter", "preserved"}) {
+		t.Fatalf("parseArgs = %#v, %t", got, ok)
+	}
+}
+
 func TestParseArgsRejectsInvalid(t *testing.T) {
 	tests := [][]string{
 		nil, {"other"}, {"execute"}, {"execute", "--step", "s", "--", "e"},
@@ -46,6 +60,12 @@ func TestParseArgsRejectsInvalid(t *testing.T) {
 		{"execute", "--step", "s", "--attempt", "a", "--timeout", "bad", "--", "e"},
 		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts", "--record-artifacts", "--", "e"},
 		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts=true", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--check-adapter", "a", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--check-adapter-arg", "x", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--check-timeout", "0", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--check-terminate-grace", "0", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts", "--check-adapter", "a", "--check-adapter", "a", "--", "e"},
+		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts", "--check-adapter", "a", "--check-timeout", "-1s", "--", "e"},
 	}
 	for i, args := range tests {
 		if _, ok := parseArgs(args); ok {

@@ -22,6 +22,7 @@ type workPackageHeader struct {
 	StepID            string `json:"step_id"`
 	AttemptID         string `json:"attempt_id"`
 	Artifacts         []ArtifactContract
+	RequiredChecks    []string
 }
 
 type ArtifactContract struct {
@@ -68,7 +69,8 @@ func parseWorkPackage(data []byte, stepID, attemptID string) (workPackageHeader,
 	return parseWorkPackageForMode(data, stepID, attemptID, false)
 }
 
-func parseWorkPackageForMode(data []byte, stepID, attemptID string, requireArtifacts bool) (workPackageHeader, error) {
+func parseWorkPackageForMode(data []byte, stepID, attemptID string, requireArtifacts bool, checkMode ...bool) (workPackageHeader, error) {
+	requireChecks := len(checkMode) > 0 && checkMode[0]
 	var projection struct {
 		SchemaVersion     *int            `json:"schema_version"`
 		WorkPackageDigest *string         `json:"work_package_digest"`
@@ -88,15 +90,21 @@ func parseWorkPackageForMode(data []byte, stepID, attemptID string, requireArtif
 		Path     *string `json:"path"`
 		Required *bool   `json:"required"`
 	}
+	var headerRequiredChecks []string
 	if requireArtifacts {
 		var step struct {
-			Artifacts json.RawMessage `json:"artifacts"`
+			Artifacts      json.RawMessage `json:"artifacts"`
+			RequiredChecks json.RawMessage `json:"required_checks"`
 		}
 		if err := json.Unmarshal(projection.Step, &step); err != nil || len(step.Artifacts) == 0 || bytes.Equal(step.Artifacts, []byte("null")) {
 			return workPackageHeader{}, errors.New("invalid WorkPackage artifacts")
 		}
 		if err := json.Unmarshal(step.Artifacts, &rawArtifacts); err != nil {
 			return workPackageHeader{}, errors.New("invalid WorkPackage artifacts")
+		}
+		if requireChecks && (len(step.RequiredChecks) == 0 || bytes.Equal(step.RequiredChecks, []byte("null")) ||
+			json.Unmarshal(step.RequiredChecks, &headerRequiredChecks) != nil) {
+			return workPackageHeader{}, errors.New("invalid WorkPackage required checks")
 		}
 	}
 	artifacts := make([]ArtifactContract, len(rawArtifacts))
@@ -111,10 +119,20 @@ func parseWorkPackageForMode(data []byte, stepID, attemptID string, requireArtif
 		seen[*item.Path] = struct{}{}
 		artifacts[i] = ArtifactContract{Path: *item.Path, Required: *item.Required}
 	}
+	seenChecks := map[string]struct{}{}
+	for _, checkID := range headerRequiredChecks {
+		if checkID == "" {
+			return workPackageHeader{}, errors.New("invalid WorkPackage required check")
+		}
+		if _, ok := seenChecks[checkID]; ok {
+			return workPackageHeader{}, errors.New("duplicate WorkPackage required check")
+		}
+		seenChecks[checkID] = struct{}{}
+	}
 	header := workPackageHeader{
 		SchemaVersion: *projection.SchemaVersion, WorkPackageDigest: *projection.WorkPackageDigest,
 		FlowRunID: *projection.FlowRunID, StepID: *projection.StepID, AttemptID: *projection.AttemptID,
-		Artifacts: artifacts,
+		Artifacts: artifacts, RequiredChecks: headerRequiredChecks,
 	}
 	if header.SchemaVersion != 1 || header.FlowRunID == "" || header.StepID != stepID ||
 		header.AttemptID != attemptID || !digestPattern.MatchString(header.WorkPackageDigest) {

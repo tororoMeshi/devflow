@@ -52,3 +52,27 @@ func TestWriteResultV2ExactJSON(t *testing.T) {
 		t.Fatalf("JSON = %q\nwant = %q", out.String(), want)
 	}
 }
+
+func TestWriteResultV3ExactJSON(t *testing.T) {
+	exit, checkExit, adapterExit := 0, 1, 0
+	passed := false
+	result := ResultV3{
+		SchemaVersion: 3, Status: "stopped", FlowRunID: "run_1", StepID: "build",
+		AttemptID: "attempt_1", WorkPackageDigest: testDigest, ExecutionReportDigest: reportDigest,
+		ReportOutcome: "completed", ExecutorExitCode: &exit, Artifacts: []ArtifactResult{},
+		Checks: []CheckItem{{
+			CheckID: "go-test", Status: "recorded", Passed: &passed, CheckExitCode: &checkExit,
+			AdapterExitCode: &adapterExit,
+		}},
+	}
+	var out bytes.Buffer
+	if err := WriteResultV3(&out, result); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"schema_version":3,"status":"stopped","flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
+		testDigest + `","execution_report_digest":"` + reportDigest +
+		`","report_outcome":"completed","report_idempotent":false,"executor_exit_code":0,"stderr_truncated":false,"artifacts":[],"checks":[{"check_id":"go-test","status":"recorded","passed":false,"check_exit_code":1,"adapter_exit_code":0,"stderr_truncated":false,"error":null}],"error":null}` + "\n"
+	if out.String() != want {
+		t.Fatalf("JSON = %q\nwant = %q", out.String(), want)
+	}
+}

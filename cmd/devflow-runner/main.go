@@ -14,7 +14,7 @@ import (
 )
 
 const usage = `Usage:
-  devflow-runner execute [--project-root <path>] [--devflow <executable>] --step <step-id> --attempt <attempt-id> [--timeout <duration>] [--terminate-grace <duration>] [--record-artifacts] -- <executor> [executor-args...]
+  devflow-runner execute [--project-root <path>] [--devflow <executable>] --step <step-id> --attempt <attempt-id> [--timeout <duration>] [--terminate-grace <duration>] [--record-artifacts] [--check-adapter <executable>] [--check-adapter-arg <argument>]... [--check-timeout <duration>] [--check-terminate-grace <duration>] -- <executor> [executor-args...]
 `
 
 func main() {
@@ -31,7 +31,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	outcome := automationruntime.Run(ctx, cfg)
 	var writeErr error
-	if cfg.RecordArtifacts {
+	if cfg.CheckAdapter != "" {
+		writeErr = automationruntime.WriteResultV3(stdout, *outcome.ResultV3)
+	} else if cfg.RecordArtifacts {
 		writeErr = automationruntime.WriteResultV2(stdout, *outcome.ResultV2)
 	} else {
 		writeErr = automationruntime.WriteResult(stdout, outcome.Result)
@@ -51,6 +53,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func parseArgs(args []string) (automationruntime.Config, bool) {
 	cfg := automationruntime.Config{
 		ProjectRoot: ".", Devflow: "devflow", TerminateGrace: 5 * time.Second,
+		CheckTerminateGrace: 5 * time.Second,
 	}
 	if len(args) == 0 || args[0] != "execute" {
 		return cfg, false
@@ -63,7 +66,8 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 			break
 		}
 		option := args[i]
-		if !strings.HasPrefix(option, "--") || strings.Contains(option, "=") || values[option] {
+		if !strings.HasPrefix(option, "--") || strings.Contains(option, "=") ||
+			(values[option] && option != "--check-adapter-arg") {
 			return cfg, false
 		}
 		if option == "--record-artifacts" {
@@ -76,7 +80,8 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 			return cfg, false
 		}
 		switch option {
-		case "--project-root", "--devflow", "--step", "--attempt", "--timeout", "--terminate-grace":
+		case "--project-root", "--devflow", "--step", "--attempt", "--timeout", "--terminate-grace",
+			"--check-adapter", "--check-adapter-arg", "--check-timeout", "--check-terminate-grace":
 		default:
 			return cfg, false
 		}
@@ -107,6 +112,22 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 				return cfg, false
 			}
 			cfg.TerminateGrace = duration
+		case "--check-adapter":
+			cfg.CheckAdapter = value
+		case "--check-adapter-arg":
+			cfg.CheckAdapterArgs = append(cfg.CheckAdapterArgs, raw)
+		case "--check-timeout":
+			duration, err := time.ParseDuration(value)
+			if err != nil || duration < 0 {
+				return cfg, false
+			}
+			cfg.CheckTimeout = duration
+		case "--check-terminate-grace":
+			duration, err := time.ParseDuration(value)
+			if err != nil || duration < 0 {
+				return cfg, false
+			}
+			cfg.CheckTerminateGrace = duration
 		}
 		i += 2
 	}
@@ -116,5 +137,9 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 	}
 	cfg.Executor = args[separator+1]
 	cfg.ExecutorArgs = append([]string(nil), args[separator+2:]...)
+	if cfg.CheckAdapter != "" && !cfg.RecordArtifacts ||
+		cfg.CheckAdapter == "" && (len(cfg.CheckAdapterArgs) > 0 || values["--check-timeout"] || values["--check-terminate-grace"]) {
+		return cfg, false
+	}
 	return cfg, true
 }
