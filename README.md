@@ -1,175 +1,223 @@
 # devflow
 
-devflow は、AI支援開発で固定すると安定する進行管理を CLI で扱う MVP ツールです。
+devflowは、AI支援開発で固定すると安定する工程契約と進行状態を管理するCLIです。
+Coreが工程と状態を管理し、Automation Runtime（`devflow-runner`）がその契約を使って外部Executorを一回実行します。**固定はdevflow、流動は外部ExecutorやAI。**
 
-Flow 定義を読み込み、現在工程、成果物、承認、完了、戻り、スキップ、終了を管理します。
-AI API 呼び出しや MCP 連携を行うツールではありません。
+CoreはFlow、State、Attempt、Gate、Artifact Evidence、CheckResult、Approval、lifecycle transitionを管理します。Automation RuntimeはCore CLIの呼出し、Executorの実行、Artifactの記録、Check Adapterの実行、Completion Contextの取得、runtime resultの出力を担当します。
 
 ## Build
 
 ```bash
 go build -o /tmp/devflow ./cmd/devflow
+go build -o /tmp/devflow-runner ./cmd/devflow-runner
 ```
 
-## Quick Start
+以降の例では、この2つのバイナリを使用します。
+
+## Core Quick Start
+
+`init`で標準Flowを配置し、`list`で利用可能なFlowを確認します。`start`にはタスク内容を保存したファイルを指定します。
 
 ```bash
+printf '%s\n' '実装対象と完了条件を書く' > /tmp/task.md
+
 /tmp/devflow init
 /tmp/devflow list
-/tmp/devflow start post-task-review
+/tmp/devflow start post-task-review --task-file /tmp/task.md
 /tmp/devflow status
 /tmp/devflow prompt
+```
+
+`prompt`の工程契約に従って作業し、必要な成果物・Check・Approvalを満たしたうえで完了します。
+
+```bash
+/tmp/devflow approve --step <step-id> --attempt <attempt-id> --note "確認済み"
 /tmp/devflow done
 ```
 
-`init` は `.devflow/` と標準の Flow 定義を作成します。
-`start` は Flow を開始し、最初の工程を current step として `.devflow/state.json` に保存します。
-`prompt` は現在工程で行う作業指示を表示します。
-`done` は現在工程を完了し、次の工程へ進めます。
-
-## Artifact が必要な工程
-
-標準 Flow の `write_review` 工程では `docs/code-review.md` が必要です。
-
-このファイルがない状態で `done` すると失敗します。
-作成してから `done` を実行します。
+現在の工程を戻す、スキップする、Flowを終了する操作には理由が必要です。
 
 ```bash
-mkdir -p docs
-printf 'review ok\n' > docs/code-review.md
-/tmp/devflow done
+/tmp/devflow back --reason "追加調査が必要"
+/tmp/devflow back --to <step-id> --reason "この工程からやり直す"
+/tmp/devflow skip --reason "今回のタスクでは不要"
+/tmp/devflow finish --reason "対象外と判断"
 ```
 
-## Approval が必要な工程
+`status`は進行状況、`prompt`は現在工程の指示を表示します。`context`は外部Executor向けの読み取り専用の現在文脈JSONを出力します。
 
-標準 Flow の `human_approval` 工程では承認が必要です。
+## Automation Runtime
 
-`done` の前に `approve` を実行します。
-
-```bash
-/tmp/devflow approve --note "確認済み"
-/tmp/devflow done
-```
-
-## Back / Skip / Finish
-
-前の工程へ戻る場合:
-
-```bash
-/tmp/devflow back --reason "確認に戻る"
-```
-
-任意の上流工程へ戻る場合:
-
-```bash
-/tmp/devflow back --to check_changes --reason "要件確認からやり直す"
-```
-
-`back` は戻り先以降の完了、スキップ、承認状態を無効化します。成果物ファイルは削除しません。
-
-## External Checks
-
-Flowの工程には、runnerが実行する必須checkを定義できます。
-
-```cue
-required_checks: ["go-test", "go-vet"]
-```
-
-runnerは実行前に文脈を取得し、実行後に結果を登録します。devflow自身はcheckを実行しません。
-
-```bash
-devflow check request go-test > check-request.json
-# runner executes the check and writes result.json
-devflow check record --file result.json
-devflow done
-```
-
-`result.json` にはrequestの `flow_run_id`、`step_id`、`entry_sequence`、`check_id` を引き継ぎ、`exit_code` を設定します。必須checkが未登録または失敗の場合、`done` は失敗します。
-
-## Inputs and execution context
-
-`inputs` は現在のstepが受け取る成果物、`artifacts` は現在のstepが作成する成果物です。どちらも `path` と任意の `required` を持ち、`required` の既定値は `true` です。
-
-```cue
-steps: [{
-	// ...
-	inputs: [{path: "docs/task-request.md"}]
-	artifacts: [{path: "docs/design.json"}]
-}]
-```
-
-required input は `done` のGateです。プロジェクトルート配下に通常ファイルとして存在しない場合、`done` は `error_missing_required_input` で失敗します。`inputs` を省略した既存Flowは引き続き有効です。
-
-`devflow context` はrunnerや外部AIが現在工程の契約を取得するための読み取り専用JSONをstdoutへ出力します。ファイル内容は含まれず、diagnosticはstderrへ出力されます。
-
-```sh
-devflow context
-```
-
-JSONにはschema version、Flow run ID、Flow、実行状態、現在step、inputs、artifacts、check・approval状態、完了可能性、completion blockerを含みます。running以外のcompleted / finished Stateでも、`step` と `completion` を`null`にした正常JSONを返します。
-
-`devflow check record` は、結果JSONを現在の文脈へ受理・保存できたかを表します。外部checkの `exit_code` が非0でも、JSONと文脈が正しければrecord自体は成功し、process exit codeは0です。その結果、後続の `devflow done` は `error_failed_required_check` を出して非0で失敗します。runnerは外部check自身の終了コードと、recordの終了コードを混同しないでください。
+`devflow-runner execute`は、指定したStepとAttemptに対して次の順で処理します。
 
 ```text
-external check:       exit_code = 1
-devflow check record: result stored, process exit code = 0
-devflow done:         error_failed_required_check, process exit code != 0
+WorkPackage取得
+→ Executor実行
+→ ExecutionReport記録
+→ ArtifactEvidence記録
+→ RequiredChecks実行・記録
+→ Completion Context取得
+→ 停止
 ```
 
-check実行後にworkspaceが変更されていないことはv0.2.0では検出しません。ファイルを変更した場合は必要なcheckを再実行してください。fingerprintや成果物freshnessは扱いません。
+後半のArtifact、Check、Completion Contextは対応するoptionを指定した場合だけ実行します。ExecutorにはWorkPackageがstdinで渡され、ExecutorはExecutionReport JSONをstdoutへ返します。
 
-## Breaking Changes
-
-v0.2.0ではState schema version 2を導入しました。v0.1.xで作成された `.devflow/state.json`、schema_versionを持たないState、対応値でないStateは利用できません。
-
-更新前に現在の作業状態を確認し、必要なら `.devflow/state.json` を退避してください。Stateを削除してFlowを再度 `start` することもできます。devflowは旧Stateを自動移行・削除しません。
-
-`.devflow/flows/*.cue` は引き続き利用でき、`required_checks` のない既存Flowと標準Quick Startも従来どおり動作します。
-
-現在工程をスキップする場合:
+### Reportのみ
 
 ```bash
-/tmp/devflow skip --reason "今回は不要と判断"
+/tmp/devflow-runner execute \
+  --step <step-id> \
+  --attempt <attempt-id> \
+  -- <executor> [executor-args...]
 ```
 
-Flow を理由付きで終了する場合:
+### Artifact記録
 
 ```bash
-/tmp/devflow finish --reason "対象外の作業だったため"
+/tmp/devflow-runner execute \
+  --step <step-id> \
+  --attempt <attempt-id> \
+  --record-artifacts \
+  -- <executor> [executor-args...]
 ```
+
+### Check実行
+
+```bash
+/tmp/devflow-runner execute \
+  --step <step-id> \
+  --attempt <attempt-id> \
+  --record-artifacts \
+  --check-adapter <check-adapter> \
+  -- <executor> [executor-args...]
+```
+
+Check AdapterはCoreから渡されるCheckRequestをstdinで受け取り、CheckRecord JSONをstdoutへ返します。必要なら`--check-adapter-arg <argument>`を複数指定できます。
+
+### Completion Contextまで
+
+```bash
+/tmp/devflow-runner execute \
+  --project-root . \
+  --devflow /tmp/devflow \
+  --step <step-id> \
+  --attempt <attempt-id> \
+  --record-artifacts \
+  --check-adapter <check-adapter> \
+  --completion-context \
+  -- <executor> [executor-args...]
+```
+
+## option間の制約
+
+- `--check-adapter`には`--record-artifacts`が必要です。
+- `--completion-context`にはArtifact modeとCheck mode、すなわち`--record-artifacts`と`--check-adapter`が必要です。
+- Executorの制限時間は`--timeout <duration>`、終了待機時間は`--terminate-grace <duration>`で指定します。
+- Check Adapterの制限時間は`--check-timeout <duration>`、終了待機時間は`--check-terminate-grace <duration>`で指定します。
+- Executor commandとその引数は必ず`--`より後ろに置きます。
+
+`--project-root`の既定値は`.`、`--devflow`の既定値は`devflow`です。timeoutを省略すると制限時間は設定されません。終了待機時間の既定値はExecutor、Check Adapterともに5秒です。
+
+## WorkPackageとExecutionReport
+
+WorkPackageはcurrent/active Attemptに束縛されたExecutor用の入力です。stdinでExecutorへ渡され、task、instruction、inputs、artifacts、checks、Approvalの要否を含みます。
+
+ExecutionReportはExecutorがstdoutへ返すJSONです。WorkPackageとAttemptに束縛され、Coreがimmutableに記録します。同一内容の再記録はidempotentですが、異なる内容を同じAttemptへ記録しようとすると競合として拒否されます。
+
+手動でExecutionReportを記録する場合は次を使います。
+
+```bash
+/tmp/devflow execution-report record --file <report.json>
+```
+
+## Artifact Evidence
+
+Artifact Evidenceとして記録できるのは、Flowで宣言したArtifactだけです。requiredとoptionalのどちらも記録でき、Coreはファイルのdigestとsizeを保存します。未宣言Artifactは拒否されます。
+
+一度保存された記録はrollbackしません。同じ記録の再実行は収束し、途中で停止した場合も未記録のArtifactから続行できます。
+
+手動での記録には次を使います。
+
+```bash
+/tmp/devflow artifact record \
+  --step <step-id> \
+  --attempt <attempt-id> \
+  --path <project-relative-path>
+```
+
+## RequiredChecks
+
+RequiredChecksはcurrent/active Attemptに束縛されます。CoreがCheckRequestを生成し、AdapterがCheckRecordを返します。Automation RuntimeはFlowの定義順にRequiredChecksを処理します。
+
+Check自体の非ゼロexit codeはCheckRecordに保存されるドメイン結果です。これに対し、Adapter processの起動失敗・timeout・非ゼロ終了、またはJSON protocolの不正はRuntimeの実行失敗として区別されます。記録済みのCheckはAdapterを再実行しません。
+
+手動操作も可能です。
+
+```bash
+/tmp/devflow check request \
+  --step <step-id> \
+  --attempt <attempt-id> \
+  --check <check-id>
+
+/tmp/devflow check record --file <result.json>
+```
+
+## Completion Context
+
+Completion Contextは、指定したAttemptの完了判断に必要な読み取り専用JSONです。
+
+```bash
+/tmp/devflow completion-context \
+  --step <step-id> \
+  --attempt <attempt-id>
+```
+
+Artifact状態、Check状態、Approval状態、Completion Gate、blockerを返します。Stateは変更しません。RuntimeはこのGateを再評価して遷移せず、Completion Contextを返して停止します。
+
+## 再実行と部分適用
+
+Runtimeは同一Attemptへの再実行を前提に、保存済みの事実を壊さず処理します。
+
+- Reportは同一内容へ収束します。
+- Artifact Evidenceは同一記録へ収束します。
+- 記録済みCheckはAdapterを再実行しません。
+- 停止後は未記録の処理から継続します。
+- 保存済み記録をrollbackしません。
+- current/activeではないstale AttemptはCoreが拒否します。
+
+## 人間判断境界
+
+Automation Runtimeは作業を実行・記録しますが、判断や進行を自動化しません。Approval判断、`approve`、`done`、次Attemptの作成、次Stepへの遷移、retry判断は実行しません。Completion Contextを返して停止し、その後の判断は人間または外部の運用に委ねます。
 
 ## Files
 
-`.devflow/flows/*.cue` は Flow 定義です。
+- `.devflow/flows/`: Flow定義（CUE）の保存場所です。
+- `.devflow/current.json`: 現在のFlow runを指すpointerです。runごとのStateとsnapshotは`.devflow/runs/`に保存されます。
+- `.devflow/logs/`: CoreやRuntimeの固定保存先ではありません。CheckRecordの`log_path`はAdapterが返すプロジェクトルート相対のパスであり、ログの生成・配置はAdapter側の責務です。
 
-`.devflow/state.json` は現在の Flow と工程を保存するローカル状態です。
-`.devflow/state.json` は Git 管理対象外です。
+ExecutionReportは`.devflow/runs/<flow-run-id>/execution-reports/<attempt-id>.json`にimmutableに保存されます。
 
-`devflow init` では `state.json` を作りません。
-`devflow start <flow>` で `state.json` を作ります。
+## Current Scope
 
-## MVP Scope
+現在のCore commandsは`init`、`list`、`start`、`status`、`prompt`、`context`、`completion-context`、`work-package`、`approve`、`artifact record`、`check request`、`check record`、`execution-report record`、`done`、`back`、`skip`、`finish`です。Automation Runtimeは`devflow-runner execute`を提供します。
 
-対応済み:
+次は対象外です。
 
-* `init`
-* `list`
-* `start`
-* `status`
-* `prompt`
-* `approve`
-* `done`
-* `back`
-* `skip`
-* `finish`
+- AI API呼出し
+- MCP
+- 自動Approval
+- 自動done
+- retry policy
+- 複数Attemptの自律進行
+- daemon
+- queue
+- remote executor
+- model selection
+- conversation／hidden reasoning管理
+- Windowsネイティブ対応
 
-MVP で扱わないもの:
+## State compatibility
 
-* AI API 呼び出し
-* MCP 連携
-* 禁止コマンド制御
-* 複雑な条件式エンジン
-* `--json`
-* 高度な CLI ライブラリ
-* 対話式 UI
-* 色付き出力
+現在のState schema versionは8です。対応しないschema versionのState、schema versionを持たない旧State、旧来のState配置は利用できません。devflowはこれらを自動migration・削除しません。
+
+更新前に作業中のStateを確認し、必要なら退避してください。移行手順を提供していないため、旧Stateを使えない場合は新しいFlow runを開始してください。
