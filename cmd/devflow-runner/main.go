@@ -14,7 +14,7 @@ import (
 )
 
 const usage = `Usage:
-  devflow-runner execute [--project-root <path>] [--devflow <executable>] --step <step-id> --attempt <attempt-id> [--timeout <duration>] [--terminate-grace <duration>] [--record-artifacts] [--check-adapter <executable>] [--check-adapter-arg <argument>]... [--check-timeout <duration>] [--check-terminate-grace <duration>] -- <executor> [executor-args...]
+  devflow-runner execute [--project-root <path>] [--devflow <executable>] --step <step-id> --attempt <attempt-id> [--timeout <duration>] [--terminate-grace <duration>] [--record-artifacts] [--check-adapter <executable>] [--check-adapter-arg <argument>]... [--check-timeout <duration>] [--check-terminate-grace <duration>] [--completion-context] -- <executor> [executor-args...]
 `
 
 func main() {
@@ -31,7 +31,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	outcome := automationruntime.Run(ctx, cfg)
 	var writeErr error
-	if cfg.CheckAdapter != "" {
+	if cfg.CompletionContext {
+		writeErr = automationruntime.WriteResultV4(stdout, *outcome.ResultV4)
+	} else if cfg.CheckAdapter != "" {
 		writeErr = automationruntime.WriteResultV3(stdout, *outcome.ResultV3)
 	} else if cfg.RecordArtifacts {
 		writeErr = automationruntime.WriteResultV2(stdout, *outcome.ResultV2)
@@ -70,9 +72,13 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 			(values[option] && option != "--check-adapter-arg") {
 			return cfg, false
 		}
-		if option == "--record-artifacts" {
+		if option == "--record-artifacts" || option == "--completion-context" {
 			values[option] = true
-			cfg.RecordArtifacts = true
+			if option == "--record-artifacts" {
+				cfg.RecordArtifacts = true
+			} else {
+				cfg.CompletionContext = true
+			}
 			i++
 			continue
 		}
@@ -139,6 +145,9 @@ func parseArgs(args []string) (automationruntime.Config, bool) {
 	cfg.ExecutorArgs = append([]string(nil), args[separator+2:]...)
 	if cfg.CheckAdapter != "" && !cfg.RecordArtifacts ||
 		cfg.CheckAdapter == "" && (len(cfg.CheckAdapterArgs) > 0 || values["--check-timeout"] || values["--check-terminate-grace"]) {
+		return cfg, false
+	}
+	if cfg.CompletionContext && (cfg.CheckAdapter == "" || !cfg.RecordArtifacts) {
 		return cfg, false
 	}
 	return cfg, true

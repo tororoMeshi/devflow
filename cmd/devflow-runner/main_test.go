@@ -37,6 +37,22 @@ func TestParseArgsCheckMode(t *testing.T) {
 	}
 }
 
+func TestParseArgsCompletionContext(t *testing.T) {
+	args := []string{"execute", "--step", "s", "--attempt", "a", "--record-artifacts", "--check-adapter", "adapter", "--completion-context", "--", "exec"}
+	got, ok := parseArgs(args)
+	if !ok || !got.CompletionContext || !got.RecordArtifacts || got.CheckAdapter != "adapter" {
+		t.Fatalf("parseArgs = %#v, %t", got, ok)
+	}
+	for _, args := range [][]string{
+		{"execute", "--step", "s", "--attempt", "a", "--completion-context", "--", "exec"},
+		{"execute", "--step", "s", "--attempt", "a", "--record-artifacts", "--completion-context", "--", "exec"},
+	} {
+		if _, ok := parseArgs(args); ok {
+			t.Fatalf("accepted invalid completion context args: %v", args)
+		}
+	}
+}
+
 func TestParseArgsRejectsInvalid(t *testing.T) {
 	tests := [][]string{
 		nil, {"other"}, {"execute"}, {"execute", "--step", "s", "--", "e"},

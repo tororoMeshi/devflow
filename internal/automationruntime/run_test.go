@@ -86,6 +86,31 @@ func runHelper() int {
 		}
 		return 0
 	}
+	if len(args) > 0 && args[0] == "completion-context" {
+		if len(args) != 5 || args[1] != "--step" || args[3] != "--attempt" {
+			return 104
+		}
+		if mark := os.Getenv("HELPER_COMPLETION_MARK"); mark != "" {
+			_ = os.WriteFile(mark, []byte(strings.Join(args, " ")), 0o600)
+		}
+		switch os.Getenv("HELPER_COMPLETION") {
+		case "nonzero":
+			fmt.Fprintln(os.Stderr, "sensitive core stderr")
+			return 1
+		case "malformed":
+			fmt.Print("{")
+			return 0
+		case "mismatch":
+			args[2] = "other"
+		case "oversized":
+			_, _ = os.Stdout.Write(make([]byte, MaxExecutorStdoutBytes+1))
+			return 0
+		case "sleep":
+			time.Sleep(5 * time.Second)
+		}
+		fmt.Printf(`{"schema_version":1,"flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"attempt_status":"active","is_current_attempt":true,"artifacts":[],"checks":[],"approval":{"required":false,"status":"not_required","evidence_set_digest":null,"approved_evidence_set_digest":null},"completion":{"status":"ready","blocker":null}}`+"\n", args[2], args[4])
+		return 0
+	}
 	if len(args) > 2 && args[0] == "execution-report" {
 		if len(args) != 4 || args[1] != "record" || args[2] != "--file" {
 			return 92
@@ -457,6 +482,121 @@ func TestRunArtifactModeStoppedEmptyForFailedOutcome(t *testing.T) {
 	if got.ExitCode != 0 || got.ResultV2 == nil || got.ResultV2.Status != "stopped" ||
 		got.ResultV2.Artifacts == nil || len(got.ResultV2.Artifacts) != 0 {
 		t.Fatalf("Run = %#v", got)
+	}
+}
+
+func TestRunCompletionContextResultV4(t *testing.T) {
+	for _, outcome := range []string{"completed", "blocked", "failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			cfg, _ := helperConfig(t)
+			cfg.RecordArtifacts, cfg.CheckAdapter, cfg.CheckAdapterArgs, cfg.CompletionContext = true, os.Args[0], []string{"adapter"}, true
+			t.Setenv("HELPER_ARTIFACTS", `[]`)
+			t.Setenv("HELPER_CHECKS", `["check-a"]`)
+			t.Setenv("HELPER_OUTCOME", outcome)
+			if outcome == "completed" {
+				t.Setenv("HELPER_CHECK_FAILED", "check-a")
+			}
+			mark := filepath.Join(cfg.ProjectRoot, "completion-called")
+			t.Setenv("HELPER_COMPLETION_MARK", mark)
+			got := Run(context.Background(), cfg)
+			if got.ExitCode != 0 || got.ResultV4 == nil || got.ResultV4.SchemaVersion != 4 || got.ResultV4.Status != "recorded" || got.ResultV4.Error != nil || !bytes.Contains(got.ResultV4.CompletionContext, []byte(`"schema_version":1`)) {
+				t.Fatalf("Run = %#v", got)
+			}
+			data, err := os.ReadFile(mark)
+			if err != nil || string(data) != "completion-context --step build --attempt attempt_1" {
+				t.Fatalf("completion args=%q err=%v", data, err)
+			}
+		})
+	}
+}
+
+func TestRunCompletionContextFailures(t *testing.T) {
+	tests := []struct {
+		name, mode, category, code string
+		exit                       int
+	}{
+		{"process", "nonzero", "completion_context_process", "failed", 3},
+		{"protocol", "malformed", "completion_context_protocol", "invalid_output", 5},
+		{"identity", "mismatch", "completion_context_protocol", "invalid_output", 5},
+		{"overflow", "oversized", "completion_context_protocol", "oversized_stdout", 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, _ := helperConfig(t)
+			cfg.RecordArtifacts, cfg.CheckAdapter, cfg.CheckAdapterArgs, cfg.CompletionContext = true, os.Args[0], []string{"adapter"}, true
+			t.Setenv("HELPER_ARTIFACTS", `[]`)
+			t.Setenv("HELPER_CHECKS", `[]`)
+			t.Setenv("HELPER_COMPLETION", tt.mode)
+			got := Run(context.Background(), cfg)
+			if got.ExitCode != tt.exit || got.ResultV4 == nil || got.ResultV4.CompletionContext == nil || string(got.ResultV4.CompletionContext) != "null" || got.ResultV4.Error == nil || got.ResultV4.Error.Category != tt.category || got.ResultV4.Error.Code != tt.code {
+				t.Fatalf("Run = %#v", got)
+			}
+			encoded, _ := json.Marshal(got.ResultV4)
+			if bytes.Contains(encoded, []byte("sensitive core stderr")) {
+				t.Fatalf("result leaks Core stderr: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestRunCompletionContextSkipsV3Failure(t *testing.T) {
+	cfg, _ := helperConfig(t)
+	cfg.RecordArtifacts, cfg.CheckAdapter, cfg.CheckAdapterArgs, cfg.CompletionContext = true, os.Args[0], []string{"adapter"}, true
+	t.Setenv("HELPER_ARTIFACTS", `[]`)
+	t.Setenv("HELPER_CHECKS", `["check-a"]`)
+	t.Setenv("HELPER_ADAPTER_NONZERO", "check-a")
+	mark := filepath.Join(cfg.ProjectRoot, "completion-called")
+	t.Setenv("HELPER_COMPLETION_MARK", mark)
+	got := Run(context.Background(), cfg)
+	if got.ExitCode == 0 || got.ResultV4 == nil || got.ResultV4.Error == nil {
+		t.Fatalf("Run = %#v", got)
+	}
+	if _, err := os.Stat(mark); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("completion context was called: %v", err)
+	}
+}
+
+func TestRunCompletionContextTimeoutAndCancellation(t *testing.T) {
+	for _, tt := range []struct {
+		name, wantStatus, wantCode string
+		context                    func() (context.Context, context.CancelFunc)
+	}{
+		{"timeout", "timed_out", "timeout", func() (context.Context, context.CancelFunc) {
+			return context.Background(), func() {}
+		}},
+		{"cancellation", "cancelled", "cancelled", func() (context.Context, context.CancelFunc) { return context.WithCancel(context.Background()) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, _ := helperConfig(t)
+			cfg.RecordArtifacts, cfg.CheckAdapter, cfg.CheckAdapterArgs, cfg.CompletionContext = true, os.Args[0], []string{"adapter"}, true
+			if tt.name == "timeout" {
+				cfg.Timeout = 100 * time.Millisecond
+			}
+			t.Setenv("HELPER_ARTIFACTS", `[]`)
+			t.Setenv("HELPER_CHECKS", `[]`)
+			t.Setenv("HELPER_COMPLETION", "sleep")
+			mark := filepath.Join(cfg.ProjectRoot, "completion-called")
+			t.Setenv("HELPER_COMPLETION_MARK", mark)
+			ctx, cancel := tt.context()
+			defer cancel()
+			if tt.name == "cancellation" {
+				go func() {
+					for {
+						if _, err := os.Stat(mark); err == nil {
+							cancel()
+							return
+						}
+						time.Sleep(time.Millisecond)
+					}
+				}()
+			}
+			base := Result{FlowRunID: "run_1", StepID: "build", AttemptID: "attempt_1"}
+			v3 := &ResultV3{SchemaVersion: 3, Status: "stopped", FlowRunID: "run_1", StepID: "build", AttemptID: "attempt_1", Artifacts: []ArtifactResult{}, Checks: []CheckItem{}}
+			got := finishV4(ctx, cfg, RunResult{Result: base, ResultV3: v3})
+			if got.ExitCode != map[string]int{"timeout": 124, "cancellation": 130}[tt.name] || got.ResultV4 == nil || got.ResultV4.Status != tt.wantStatus || got.ResultV4.Error == nil || got.ResultV4.Error.Code != tt.wantCode {
+				t.Fatalf("Run = %#v", got)
+			}
+		})
 	}
 }
 
@@ -1238,6 +1378,7 @@ func TestIntegrationRealDevflowCheckMode(t *testing.T) {
 		assertMarkLines(t, fixture.adapterMark, []string{"check-a", "check-b"})
 		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record", "check request", "check record"})
 		assertMarkLines(t, fixture.cliMark, []string{"check request", "check record", "check request", "check record"})
+		assertMarkLines(t, fixture.completionMark, nil)
 	})
 
 	t.Run("failed domain check continues to following check", func(t *testing.T) {
@@ -1320,6 +1461,186 @@ func TestIntegrationRealDevflowCheckMode(t *testing.T) {
 		assertMarkLines(t, fixture.adapterMark, nil)
 		assertMarkLines(t, fixture.cliMark, []string{"check request", "check request"})
 	})
+}
+
+const integrationCompletionApprovalFlow = `flow: {
+  id: "check-runtime-review"
+  title: "Check runtime review"
+  steps: [{
+    id: "build"
+    title: "Build"
+    instruction: "Build artifacts."
+    artifacts: [{path: "out/a.txt", required: true}]
+    approval: {required: true}
+    required_checks: ["check-a", "check-b"]
+  }, {
+    id: "verify"
+    title: "Verify"
+    instruction: "Verify the build."
+  }]
+}`
+
+func TestIntegrationRealDevflowCompletionContextMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("devflow call marker fixture is Unix-specific")
+	}
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	devflow := filepath.Join(binDir, "devflow")
+	runner := filepath.Join(binDir, "devflow-runner")
+	if output, err := buildCheckIntegrationBinaries(repositoryRoot, devflow, runner); err != nil {
+		t.Fatalf("build binaries: %v: %s", err, output)
+	}
+
+	t.Run("ready without approval", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		before := checkInvariant(t, fixture)
+		got := runCompletionContextRunner(t, runner, fixture)
+		assertCompletionResult(t, got, fixture, "ready", "", "not_required")
+		if artifactEvidence(t, fixture.statePath, fixture.attemptID)["out/a.txt"] == nil {
+			t.Fatal("required ArtifactEvidence was not recorded")
+		}
+		assertCheckState(t, fixture, []string{"check-a", "check-b"})
+		assertCheckInvariant(t, fixture, before)
+		assertMarkLines(t, fixture.completionMark, []string{"completion-context --step build --attempt " + fixture.attemptID})
+		assertNoCompletionTransition(t, fixture)
+
+		direct := runCompletionContextCLI(t, fixture)
+		if !bytes.Equal(got.CompletionContext, direct) {
+			t.Fatalf("completion context differs on direct Core retrieval\nrunner=%s\ncore=%s", got.CompletionContext, direct)
+		}
+	})
+
+	t.Run("pending approval", func(t *testing.T) {
+		fixture := setupCheckIntegrationFlow(t, devflow, integrationCompletionApprovalFlow)
+		before := checkInvariant(t, fixture)
+		got := runCompletionContextRunner(t, runner, fixture)
+		context := assertCompletionResult(t, got, fixture, "blocked", "missing_approval", "pending")
+		approval := context["approval"].(map[string]any)
+		if approval["evidence_set_digest"] == nil || approval["approved_evidence_set_digest"] != nil {
+			t.Fatalf("approval digest=%#v", approval)
+		}
+		assertCheckState(t, fixture, []string{"check-a", "check-b"})
+		assertCheckInvariant(t, fixture, before)
+		assertNoCompletionTransition(t, fixture)
+	})
+
+	t.Run("valid failed check", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		t.Setenv("HELPER_CHECK_FAILED", "check-a")
+		before := checkInvariant(t, fixture)
+		got := runCompletionContextRunner(t, runner, fixture)
+		context := assertCompletionResult(t, got, fixture, "blocked", "failed_check", "not_required")
+		checks := context["checks"].([]any)
+		if len(checks) != 2 || checks[0].(map[string]any)["id"] != "check-a" || checks[0].(map[string]any)["status"] != "failed" || checks[0].(map[string]any)["exit_code"] != float64(1) || checks[1].(map[string]any)["id"] != "check-b" || checks[1].(map[string]any)["status"] != "passed" || checks[1].(map[string]any)["exit_code"] != float64(0) {
+			t.Fatalf("checks=%#v", checks)
+		}
+		blocker := context["completion"].(map[string]any)["blocker"].(map[string]any)
+		if blocker["subject_id"] != "check-a" {
+			t.Fatalf("blocker=%#v", blocker)
+		}
+		assertCheckState(t, fixture, []string{"check-a", "check-b"})
+		assertCheckInvariant(t, fixture, before)
+		assertNoCompletionTransition(t, fixture)
+	})
+
+	t.Run("blocked report still retrieves context", func(t *testing.T) {
+		fixture := setupCheckIntegration(t, devflow)
+		t.Setenv("HELPER_OUTCOME", "blocked")
+		before := checkInvariant(t, fixture)
+		got := runCompletionContextRunner(t, runner, fixture)
+		if got.SchemaVersion != 4 || got.ReportOutcome != "blocked" || bytes.Equal(got.CompletionContext, []byte("null")) {
+			t.Fatalf("result=%#v", got)
+		}
+		context := decodeCompletionContext(t, got.CompletionContext)
+		if context["completion"].(map[string]any)["status"] != "blocked" {
+			t.Fatalf("context=%#v", context)
+		}
+		assertNoCheckState(t, fixture)
+		assertCheckInvariant(t, fixture, before)
+		assertNoCompletionTransition(t, fixture)
+	})
+}
+
+func runCompletionContextRunner(t *testing.T, runner string, fixture checkIntegration) ResultV4 {
+	t.Helper()
+	t.Setenv("DEVFLOW_RUNTIME_HELPER", "1")
+	t.Setenv("HELPER_OUTCOME", envDefault("HELPER_OUTCOME", "completed"))
+	if os.Getenv("HELPER_FILES") == "" {
+		t.Setenv("HELPER_FILES", fmt.Sprintf(`{%q:"A"}`, filepath.Join(fixture.root, "out", "a.txt")))
+	}
+	t.Setenv("HELPER_ADAPTER_MARK", fixture.adapterMark)
+	t.Setenv("DEVFLOW_CHECK_CLI_MARK", fixture.cliMark)
+	t.Setenv("DEVFLOW_COMPLETION_CONTEXT_CLI_MARK", fixture.completionMark)
+	t.Setenv("HELPER_REAL_DEVFLOW", fixture.coreDevflow)
+	t.Setenv("HELPER_PROJECT_ROOT", fixture.root)
+	args := []string{"execute", "--project-root", fixture.root, "--devflow", fixture.devflow, "--step", fixture.stepID, "--attempt", fixture.attemptID, "--record-artifacts", "--check-adapter", os.Args[0], "--check-adapter-arg", "adapter", "--completion-context", "--", os.Args[0]}
+	cmd := exec.Command(runner, args...)
+	cmd.Dir = fixture.root
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("runner: %v: %s", err, output)
+	}
+	var got ResultV4
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("runner JSON: %v: %s", err, output)
+	}
+	return got
+}
+
+func runCompletionContextCLI(t *testing.T, fixture checkIntegration) []byte {
+	t.Helper()
+	cmd := exec.Command(fixture.devflow, "completion-context", "--step", fixture.stepID, "--attempt", fixture.attemptID)
+	cmd.Dir = fixture.root
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("completion-context: %v: %s", err, output)
+	}
+	return bytes.TrimSpace(output)
+}
+
+func decodeCompletionContext(t *testing.T, raw json.RawMessage) map[string]any {
+	t.Helper()
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("completion context: %v: %s", err, raw)
+	}
+	return got
+}
+
+func assertCompletionResult(t *testing.T, got ResultV4, fixture checkIntegration, status, blockerCode, approvalStatus string) map[string]any {
+	t.Helper()
+	if got.SchemaVersion != 4 || got.FlowRunID != fixture.runID || got.StepID != fixture.stepID || got.AttemptID != fixture.attemptID || got.Error != nil || got.CompletionContext == nil {
+		t.Fatalf("result=%#v", got)
+	}
+	context := decodeCompletionContext(t, got.CompletionContext)
+	if context["schema_version"] != float64(1) || context["flow_run_id"] != fixture.runID || context["step_id"] != fixture.stepID || context["attempt_id"] != fixture.attemptID || context["attempt_status"] != "active" || context["is_current_attempt"] != true || context["approval"].(map[string]any)["status"] != approvalStatus || context["completion"].(map[string]any)["status"] != status {
+		t.Fatalf("context=%#v", context)
+	}
+	blocker := context["completion"].(map[string]any)["blocker"]
+	if blockerCode == "" {
+		if blocker != nil {
+			t.Fatalf("blocker=%#v", blocker)
+		}
+	} else if blocker.(map[string]any)["code"] != blockerCode {
+		t.Fatalf("blocker=%#v", blocker)
+	}
+	return context
+}
+
+func assertNoCompletionTransition(t *testing.T, fixture checkIntegration) {
+	t.Helper()
+	state := readJSONMap(t, fixture.statePath)
+	if state["current_step_id"] != fixture.stepID || state["current_attempt_id"] != fixture.attemptID || len(state["attempts"].([]any)) != 1 {
+		t.Fatalf("state advanced: %#v", state)
+	}
+	attempt := checkAttempt(t, fixture)
+	if attempt["status"] != "active" || attempt["approval"] != nil {
+		t.Fatalf("attempt transitioned: %#v", attempt)
+	}
 }
 
 func TestIntegrationRealDevflowCheckModeFailures(t *testing.T) {
@@ -1435,10 +1756,14 @@ func buildCheckIntegrationBinaries(repositoryRoot, devflow, runner string) (stri
 }
 
 type checkIntegration struct {
-	root, devflow, coreDevflow, runID, stepID, attemptID, statePath, currentPath, reportPath, adapterMark, cliMark string
+	root, devflow, coreDevflow, runID, stepID, attemptID, statePath, currentPath, reportPath, adapterMark, cliMark, completionMark string
 }
 
 func setupCheckIntegration(t *testing.T, devflow string) checkIntegration {
+	return setupCheckIntegrationFlow(t, devflow, integrationCheckFlow)
+}
+
+func setupCheckIntegrationFlow(t *testing.T, devflow, flow string) checkIntegration {
 	t.Helper()
 	root := t.TempDir()
 	runCLI := func(args ...string) {
@@ -1450,7 +1775,7 @@ func setupCheckIntegration(t *testing.T, devflow string) checkIntegration {
 		}
 	}
 	runCLI("init")
-	if err := os.WriteFile(filepath.Join(root, ".devflow", "flows", "check-runtime-review.cue"), []byte(integrationCheckFlow), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".devflow", "flows", "check-runtime-review.cue"), []byte(flow), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "task.md"), []byte("Build artifacts.\n"), 0o600); err != nil {
@@ -1465,12 +1790,13 @@ func setupCheckIntegration(t *testing.T, devflow string) checkIntegration {
 	stepID := state["current_step_id"].(string)
 	attemptID := state["current_attempt_id"].(string)
 	cliMark := filepath.Join(root, "check-cli-calls")
+	completionMark := filepath.Join(root, "completion-context-cli-calls")
 	wrapper := filepath.Join(root, "devflow-wrapper")
-	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = check ]; then printf '%%s %%s\\n' \"$1\" \"$2\" >> \"$DEVFLOW_CHECK_CLI_MARK\"; fi\nif [ \"$1\" = check ] && [ \"$2\" = record ] && [ -n \"$HELPER_CHECK_RECORD_FAIL\" ]; then echo 'error: error_check_record_fixture' >&2; exit 1; fi\nexec %q \"$@\"\n", devflow)
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = check ]; then printf '%%s %%s\\n' \"$1\" \"$2\" >> \"$DEVFLOW_CHECK_CLI_MARK\"; fi\nif [ \"$1\" = completion-context ]; then printf '%%s %%s %%s %%s %%s\\n' \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" >> \"$DEVFLOW_COMPLETION_CONTEXT_CLI_MARK\"; fi\nif [ \"$1\" = check ] && [ \"$2\" = record ] && [ -n \"$HELPER_CHECK_RECORD_FAIL\" ]; then echo 'error: error_check_record_fixture' >&2; exit 1; fi\nexec %q \"$@\"\n", devflow)
 	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return checkIntegration{root: root, devflow: wrapper, coreDevflow: devflow, runID: runID, stepID: stepID, attemptID: attemptID, statePath: statePath, currentPath: currentPath, reportPath: filepath.Join(root, ".devflow", "runs", runID, "execution-reports", attemptID+".json"), adapterMark: filepath.Join(root, "adapter-calls"), cliMark: cliMark}
+	return checkIntegration{root: root, devflow: wrapper, coreDevflow: devflow, runID: runID, stepID: stepID, attemptID: attemptID, statePath: statePath, currentPath: currentPath, reportPath: filepath.Join(root, ".devflow", "runs", runID, "execution-reports", attemptID+".json"), adapterMark: filepath.Join(root, "adapter-calls"), cliMark: cliMark, completionMark: completionMark}
 }
 
 func runCheckRunner(t *testing.T, runner string, fixture checkIntegration) RunResult {
@@ -1486,6 +1812,7 @@ func runCheckRunnerArgs(t *testing.T, runner string, fixture checkIntegration, e
 	}
 	t.Setenv("HELPER_ADAPTER_MARK", fixture.adapterMark)
 	t.Setenv("DEVFLOW_CHECK_CLI_MARK", fixture.cliMark)
+	t.Setenv("DEVFLOW_COMPLETION_CONTEXT_CLI_MARK", fixture.completionMark)
 	t.Setenv("HELPER_REAL_DEVFLOW", fixture.coreDevflow)
 	t.Setenv("HELPER_PROJECT_ROOT", fixture.root)
 	args := []string{"execute", "--project-root", fixture.root, "--devflow", fixture.devflow, "--step", fixture.stepID, "--attempt", fixture.attemptID, "--record-artifacts", "--check-adapter", os.Args[0], "--check-adapter-arg", "adapter"}
