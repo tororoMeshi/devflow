@@ -29,6 +29,7 @@ type Config struct {
 	CheckAdapterArgs    []string
 	CheckTimeout        time.Duration
 	CheckTerminateGrace time.Duration
+	CompletionContext   bool
 }
 
 type ErrorInfo struct {
@@ -55,6 +56,7 @@ type RunResult struct {
 	Result      Result
 	ResultV2    *ResultV2
 	ResultV3    *ResultV3
+	ResultV4    *ResultV4
 	ExitCode    int
 	CleanupCode string
 }
@@ -83,6 +85,27 @@ type ResultV3 struct {
 	StderrTruncated       bool             `json:"stderr_truncated"`
 	Artifacts             []ArtifactResult `json:"artifacts"`
 	Checks                []CheckItem      `json:"checks"`
+	Error                 *ErrorInfo       `json:"error"`
+}
+
+// ResultV4 is emitted only when completion context was explicitly requested.
+// Keep the v3 fields in their original order; completion_context is inserted
+// immediately before error by contract.
+type ResultV4 struct {
+	SchemaVersion         int              `json:"schema_version"`
+	Status                string           `json:"status"`
+	FlowRunID             string           `json:"flow_run_id"`
+	StepID                string           `json:"step_id"`
+	AttemptID             string           `json:"attempt_id"`
+	WorkPackageDigest     string           `json:"work_package_digest"`
+	ExecutionReportDigest string           `json:"execution_report_digest"`
+	ReportOutcome         string           `json:"report_outcome"`
+	ReportIdempotent      bool             `json:"report_idempotent"`
+	ExecutorExitCode      *int             `json:"executor_exit_code"`
+	StderrTruncated       bool             `json:"stderr_truncated"`
+	Artifacts             []ArtifactResult `json:"artifacts"`
+	Checks                []CheckItem      `json:"checks"`
+	CompletionContext     json.RawMessage  `json:"completion_context"`
 	Error                 *ErrorInfo       `json:"error"`
 }
 
@@ -131,6 +154,12 @@ func WriteResultV2(w io.Writer, result ResultV2) error {
 }
 
 func WriteResultV3(w io.Writer, result ResultV3) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(result)
+}
+
+func WriteResultV4(w io.Writer, result ResultV4) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(result)

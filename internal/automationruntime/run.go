@@ -2,21 +2,82 @@ package automationruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 )
 
+func runCompletionContext(ctx context.Context, cfg Config) processResult {
+	return runStreamProcess(ctx, cfg.ProjectRoot, cfg.Devflow, []string{
+		"completion-context", "--step", cfg.StepID, "--attempt", cfg.AttemptID,
+	}, nil, MaxExecutorStdoutBytes, MaxExecutorStderrTailBytes, cfg.Timeout, cfg.TerminateGrace)
+}
+
 func Run(ctx context.Context, cfg Config) RunResult {
+	if root, err := filepath.Abs(cfg.ProjectRoot); err == nil {
+		cfg.ProjectRoot = root
+	}
 	run := runWithFileOps(ctx, cfg, os.CreateTemp, os.Remove)
 	if cfg.CheckAdapter != "" && run.ResultV3 == nil {
 		var artifacts []ArtifactResult
 		if run.ResultV2 != nil {
 			artifacts = run.ResultV2.Artifacts
 		}
-		return finishV3(run, artifacts, nil)
+		run = finishV3(run, artifacts, nil)
+	} else {
+		run = finishV2(run, cfg, nil)
 	}
-	return finishV2(run, cfg, nil)
+	if cfg.CompletionContext {
+		return finishV4(ctx, cfg, run)
+	}
+	return run
+}
+
+func finishV4(ctx context.Context, cfg Config, run RunResult) RunResult {
+	// A completion context is a post-v3 projection. Never mask or extend an
+	// existing v3 failure with another Core invocation.
+	if run.ExitCode != 0 || run.ResultV3 == nil {
+		return withResultV4(run, nil, run.Result.Error, run.Result.Status, run.ExitCode)
+	}
+
+	contextResult := runCompletionContext(ctx, cfg)
+	if contextResult.cancelled || ctx.Err() == context.Canceled {
+		return withResultV4(run, nil, &ErrorInfo{Category: "completion_context_process", Code: "cancelled"}, "cancelled", 130)
+	}
+	if contextResult.timedOut || ctx.Err() == context.DeadlineExceeded {
+		return withResultV4(run, nil, &ErrorInfo{Category: "completion_context_process", Code: "timeout"}, "timed_out", 124)
+	}
+	if contextResult.overflow {
+		return withResultV4(run, nil, &ErrorInfo{Category: "completion_context_protocol", Code: "oversized_stdout"}, "failed", 5)
+	}
+	if contextResult.startErr != nil || contextResult.waitErr != nil {
+		return withResultV4(run, nil, &ErrorInfo{Category: "completion_context_process", Code: "failed"}, "failed", 3)
+	}
+	if contextResult.stdoutErr != nil || contextResult.stderrErr != nil || contextResult.stdinErr != nil {
+		return withResultV4(run, nil, &ErrorInfo{Category: "completion_context_io", Code: "process_output_read_failed"}, "failed", 6)
+	}
+	value, err := parseCompletionContext(contextResult.stdout, run.Result.FlowRunID, run.Result.StepID, run.Result.AttemptID)
+	if err != nil {
+		return withResultV4(run, nil, &ErrorInfo{Category: "completion_context_protocol", Code: "invalid_output"}, "failed", 5)
+	}
+	return withResultV4(run, value, nil, "recorded", 0)
+}
+
+func withResultV4(run RunResult, completion json.RawMessage, errorInfo *ErrorInfo, status string, exitCode int) RunResult {
+	v3 := run.ResultV3
+	if v3 == nil {
+		v3 = &ResultV3{Artifacts: []ArtifactResult{}, Checks: []CheckItem{}}
+	}
+	if completion == nil {
+		completion = json.RawMessage("null")
+	}
+	run.ResultV4 = &ResultV4{SchemaVersion: 4, Status: status, FlowRunID: v3.FlowRunID, StepID: v3.StepID,
+		AttemptID: v3.AttemptID, WorkPackageDigest: v3.WorkPackageDigest, ExecutionReportDigest: v3.ExecutionReportDigest,
+		ReportOutcome: v3.ReportOutcome, ReportIdempotent: v3.ReportIdempotent, ExecutorExitCode: v3.ExecutorExitCode,
+		StderrTruncated: v3.StderrTruncated, Artifacts: v3.Artifacts, Checks: v3.Checks, CompletionContext: completion, Error: errorInfo}
+	run.ExitCode = exitCode
+	return run
 }
 
 func finishV2(run RunResult, cfg Config, artifacts []ArtifactResult) RunResult {
