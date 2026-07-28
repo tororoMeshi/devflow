@@ -6,17 +6,18 @@ import (
 )
 
 type CommandResult struct {
-	ExitCode         int
-	Actions          []CommandAction
-	Flows            []FlowListItem
-	Status           *StatusResult
-	Prompt           *PromptResult
-	ExecutionContext *ExecutionContextResult
-	Success          *SuccessResult
-	CheckRequest     *CheckRequestResult
-	WorkPackage      *workpackage.WorkPackage
-	ExecutionReport  *ExecutionReportRecordResult
-	Diagnostics      []transition.Diagnostic
+	ExitCode          int
+	Actions           []CommandAction
+	Flows             []FlowListItem
+	Status            *StatusResult
+	Prompt            *PromptResult
+	ExecutionContext  *ExecutionContextResult
+	CompletionContext *CompletionContextResult
+	Success           *SuccessResult
+	CheckRequest      *CheckRequestResult
+	WorkPackage       *workpackage.WorkPackage
+	ExecutionReport   *ExecutionReportRecordResult
+	Diagnostics       []transition.Diagnostic
 }
 
 type CommandAction struct {

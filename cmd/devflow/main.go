@@ -18,6 +18,7 @@ const usage = `Usage:
   devflow status
   devflow prompt
   devflow context
+	devflow completion-context --step <step-id> --attempt <attempt-id>
   devflow work-package --step <step-id> --attempt <attempt-id>
   devflow approve --step <step-id> --attempt <attempt-id> --note <note>
   devflow artifact record --step <step-id> --attempt <attempt-id> --path <project-relative-path>
@@ -90,6 +91,13 @@ func run(args []string, projectRoot string, stdout io.Writer, stderr io.Writer) 
 			return 1
 		}
 		result = command.CurrentContext(ctx)
+	case "completion-context":
+		stepID, attemptID, ok := parseCompletionContextArgs(args[1:])
+		if !ok {
+			writeUsage(stderr)
+			return 1
+		}
+		result = command.CompletionContext(ctx, stepID, attemptID)
 	case "work-package":
 		stepID, attemptID, ok := parseWorkPackageArgs(args[1:])
 		if !ok {
@@ -245,6 +253,10 @@ func parseWorkPackageArgs(args []string) (string, string, bool) {
 	return values["--step"], values["--attempt"], true
 }
 
+func parseCompletionContextArgs(args []string) (string, string, bool) {
+	return parseWorkPackageArgs(args)
+}
+
 func parseCheckRecordArgs(args []string) (string, bool) {
 	values, ok := parseExactOptions(args, "--file")
 	if !ok {
@@ -336,6 +348,11 @@ func writeResult(ctx command.Context, result command.CommandResult) error {
 	}
 	if result.ExecutionContext != nil {
 		_ = json.NewEncoder(ctx.Stdout).Encode(result.ExecutionContext)
+	}
+	if result.CompletionContext != nil {
+		if err := json.NewEncoder(ctx.Stdout).Encode(result.CompletionContext); err != nil {
+			return err
+		}
 	}
 	if result.CheckRequest != nil {
 		_ = json.NewEncoder(ctx.Stdout).Encode(result.CheckRequest)
