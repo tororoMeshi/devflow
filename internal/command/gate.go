@@ -1,8 +1,8 @@
 package command
 
 import (
-	"github.com/8noki8/devflow/internal/gate"
-	"github.com/8noki8/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/gate"
+	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
 func entryGateDiagnostics(stepID string, result gate.EntryGateResult) []transition.Diagnostic {

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/8noki8/devflow/internal/command"
+	"github.com/tororoMeshi/devflow/internal/command"
 )
 
 const usage = `Usage:

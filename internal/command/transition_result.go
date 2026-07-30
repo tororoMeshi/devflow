@@ -1,6 +1,6 @@
 package command
 
-import "github.com/8noki8/devflow/internal/transition"
+import "github.com/tororoMeshi/devflow/internal/transition"
 
 func transitionCommandResult(ctx Context, result transition.TransitionResult, success *SuccessResult) CommandResult {
 	if saveDiagnostics := SaveTransitionState(ctx, result); len(saveDiagnostics) > 0 {

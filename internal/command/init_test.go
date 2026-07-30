@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/8noki8/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/flow"
 )
 
 func TestInitCreatesDevflowFiles(t *testing.T) {

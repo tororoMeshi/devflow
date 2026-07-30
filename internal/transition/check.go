@@ -3,7 +3,7 @@ package transition
 import (
 	"strings"
 
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func ApplyRecordCheckResult(st state.State, stepID, attemptID, checkID string, result state.CheckResult) TransitionResult {

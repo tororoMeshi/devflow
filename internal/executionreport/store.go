@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func Record(projectRoot string, report Report) (RecordResult, error) {

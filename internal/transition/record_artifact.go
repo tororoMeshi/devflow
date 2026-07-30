@@ -3,8 +3,8 @@ package transition
 import (
 	"strings"
 
-	"github.com/8noki8/devflow/internal/pathcheck"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/pathcheck"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func ApplyRecordArtifactEvidence(st state.State, stepID, attemptID, path string, evidence state.ArtifactEvidence) TransitionResult {

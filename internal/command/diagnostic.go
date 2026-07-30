@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/8noki8/devflow/internal/state"
-	"github.com/8noki8/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
 const (

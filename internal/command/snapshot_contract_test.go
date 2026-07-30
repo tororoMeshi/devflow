@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func TestStartedRunIgnoresInstructionAndGateChanges(t *testing.T) {

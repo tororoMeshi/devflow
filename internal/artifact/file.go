@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/8noki8/devflow/internal/pathcheck"
+	"github.com/tororoMeshi/devflow/internal/pathcheck"
 )
 
 var (

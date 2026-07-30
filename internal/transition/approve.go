@@ -4,8 +4,8 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func ApplyApprove(_ flow.Flow, st state.State, stepID string, attemptID string, note string) TransitionResult {

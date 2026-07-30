@@ -1,8 +1,8 @@
 package transition
 
 import (
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func ApplySkip(flow flow.Flow, st state.State, reason string) TransitionResult {

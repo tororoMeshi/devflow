@@ -1,8 +1,8 @@
 package transition
 
 import (
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 // ApplyDone assumes command-layer Completion and destination Entry Gates have

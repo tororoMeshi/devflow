@@ -3,8 +3,8 @@ package command
 import (
 	"strings"
 
-	"github.com/8noki8/devflow/internal/gate"
-	"github.com/8noki8/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/gate"
+	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
 func Back(ctx Context, toStepID string, reason string) CommandResult {

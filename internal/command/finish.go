@@ -1,6 +1,6 @@
 package command
 
-import "github.com/8noki8/devflow/internal/transition"
+import "github.com/tororoMeshi/devflow/internal/transition"
 
 func Finish(ctx Context, reason string) CommandResult {
 	active, diagnostics := LoadActiveFlow(ctx)

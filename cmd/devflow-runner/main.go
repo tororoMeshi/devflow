@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/8noki8/devflow/internal/automationruntime"
+	"github.com/tororoMeshi/devflow/internal/automationruntime"
 )
 
 const usage = `Usage:

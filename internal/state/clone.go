@@ -1,6 +1,6 @@
 package state
 
-import "github.com/8noki8/devflow/internal/flow"
+import "github.com/tororoMeshi/devflow/internal/flow"
 
 func (s State) Clone() State {
 	next := State{

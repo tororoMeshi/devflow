@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func TestApplyRecordCheckResultContracts(t *testing.T) {

@@ -3,9 +3,9 @@ package command
 import (
 	"strings"
 
-	"github.com/8noki8/devflow/internal/gate"
-	"github.com/8noki8/devflow/internal/state"
-	"github.com/8noki8/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/gate"
+	"github.com/tororoMeshi/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
 func Skip(ctx Context, reason string) CommandResult {

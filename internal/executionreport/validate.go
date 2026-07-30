@@ -9,11 +9,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/jsonprotocol"
-	"github.com/8noki8/devflow/internal/pathcheck"
-	"github.com/8noki8/devflow/internal/state"
-	"github.com/8noki8/devflow/internal/workpackage"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/jsonprotocol"
+	"github.com/tororoMeshi/devflow/internal/pathcheck"
+	"github.com/tororoMeshi/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/workpackage"
 )
 
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)

@@ -1,8 +1,8 @@
 package gate
 
 import (
-	"github.com/8noki8/devflow/internal/artifact"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/artifact"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 type EntryBlockerKind string

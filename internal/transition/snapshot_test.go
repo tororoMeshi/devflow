@@ -2,7 +2,7 @@ package transition
 
 import (
 	"fmt"
-	"github.com/8noki8/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/flow"
 )
 
 func testSnapshot(value flow.Flow) flow.FlowSnapshot {

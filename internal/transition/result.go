@@ -1,6 +1,6 @@
 package transition
 
-import "github.com/8noki8/devflow/internal/state"
+import "github.com/tororoMeshi/devflow/internal/state"
 
 const (
 	LevelError   = "error"

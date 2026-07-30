@@ -1,8 +1,8 @@
 package command
 
 import (
-	"github.com/8noki8/devflow/internal/transition"
-	"github.com/8noki8/devflow/internal/workpackage"
+	"github.com/tororoMeshi/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/workpackage"
 )
 
 type CommandResult struct {

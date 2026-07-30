@@ -3,8 +3,8 @@ package workpackage
 import (
 	"fmt"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 // Generate creates an immutable projection from the snapshots and current

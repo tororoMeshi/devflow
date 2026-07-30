@@ -1,7 +1,7 @@
 package command
 
 import (
-	"github.com/8noki8/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
 func SaveTransitionState(ctx Context, result transition.TransitionResult) []transition.Diagnostic {

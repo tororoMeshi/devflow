@@ -3,8 +3,8 @@ package state
 import (
 	"regexp"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/task"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/task"
 )
 
 const CurrentSchemaVersion = 8

@@ -4,8 +4,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func success(next state.State, diagnostics ...Diagnostic) TransitionResult {

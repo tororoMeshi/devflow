@@ -19,16 +19,19 @@ go build -o /tmp/devflow-runner ./cmd/devflow-runner
 `init`で標準Flowを配置し、`list`で利用可能なFlowを確認します。`start`にはタスク内容を保存したファイルを指定します。
 
 ```bash
-printf '%s\n' '実装対象と完了条件を書く' > /tmp/task.md
+mkdir -p docs
+printf '%s\n' '実装対象と完了条件を書く' > docs/task-request.md
 
 /tmp/devflow init
 /tmp/devflow list
-/tmp/devflow start post-task-review --task-file /tmp/task.md
+/tmp/devflow start post-task-review --task-file docs/task-request.md
 /tmp/devflow status
 /tmp/devflow prompt
 ```
 
 `prompt`の工程契約に従って作業し、必要な成果物・Check・Approvalを満たしたうえで完了します。
+
+`--task-file`はプロジェクトルートからの相対パスです。絶対パス、および`..`を含むパスは受理されません。
 
 ```bash
 /tmp/devflow approve --step <step-id> --attempt <attempt-id> --note "確認済み"
@@ -59,6 +62,16 @@ WorkPackage取得
 → Completion Context取得
 → 停止
 ```
+
+`devflow-runner`がExecutionReportを記録できたことと、Completion Gateを通過できることは別です。外側の運用が工程の`done`を検討できるのは、少なくとも次の両方を満たす場合です。
+
+```text
+report_outcome == "completed"
+かつ
+completion_context.completion.status == "ready"
+```
+
+Executorが`blocked`または`failed`を返した場合は、Completion Contextが形式上readyに見える工程であっても、`done`へ進める判断をしてはいけません。
 
 後半のArtifact、Check、Completion Contextは対応するoptionを指定した場合だけ実行します。ExecutorにはWorkPackageがstdinで渡され、ExecutorはExecutionReport JSONをstdoutへ返します。
 
@@ -173,6 +186,10 @@ Completion Contextは、指定したAttemptの完了判断に必要な読み取�
 ```
 
 Artifact状態、Check状態、Approval状態、Completion Gate、blockerを返します。Stateは変更しません。RuntimeはこのGateを再評価して遷移せず、Completion Contextを返して停止します。
+
+Completion ContextはExecutorの成功を単独で判断する結果ではありません。Runtime resultには、Executorの`ExecutionReport`に基づく`report_outcome`と、要求した場合の`completion_context`が含まれます。両者を確認して完了を判断してください。
+
+標準Flowの`check_quality`は、テスト、lint、型チェックなどを確認するようExecutorへ指示する工程です。標準Flowには`required_checks`が定義されていないため、これは作業指示であり、RequiredChecksによる機械的な強制ではありません。テスト結果をCompletion Gateで必須にする場合は、プロジェクト固有Flowへ`required_checks`を定義してください。
 
 ## 再実行と部分適用
 

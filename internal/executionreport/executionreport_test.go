@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/8noki8/devflow/internal/workpackage"
+	"github.com/tororoMeshi/devflow/internal/workpackage"
 )
 
 const (

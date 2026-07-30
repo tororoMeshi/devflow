@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/state"
-	"github.com/8noki8/devflow/internal/task"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/task"
 )
 
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)

@@ -3,8 +3,8 @@ package command
 import (
 	"errors"
 
-	"github.com/8noki8/devflow/internal/transition"
-	"github.com/8noki8/devflow/internal/workpackage"
+	"github.com/tororoMeshi/devflow/internal/transition"
+	"github.com/tororoMeshi/devflow/internal/workpackage"
 )
 
 func WorkPackage(ctx Context, stepID, attemptID string) CommandResult {

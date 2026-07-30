@@ -1,7 +1,7 @@
 package transition
 
 import (
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func ApplyFinish(st state.State, reason string) TransitionResult {

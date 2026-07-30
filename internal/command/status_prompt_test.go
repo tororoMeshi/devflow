@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/8noki8/devflow/internal/flow"
-	"github.com/8noki8/devflow/internal/gate"
-	"github.com/8noki8/devflow/internal/state"
+	"github.com/tororoMeshi/devflow/internal/flow"
+	"github.com/tororoMeshi/devflow/internal/gate"
+	"github.com/tororoMeshi/devflow/internal/state"
 )
 
 func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/8noki8/devflow
+module github.com/tororoMeshi/devflow
 
 go 1.26
 
