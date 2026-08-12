@@ -132,7 +132,7 @@ func validateStepContract(stepID string, contract StepContract) error {
 		Steps: []flow.Step{{
 			ID:             stepID,
 			Title:          contract.Title,
-			Instruction:    contract.Instruction,
+			Objective:      contract.Objective,
 			Inputs:         inputs,
 			Artifacts:      artifacts,
 			Approval:       approval,

@@ -20,7 +20,7 @@ func TestStartEntryGateFailureLeavesNoRunArtifactsAndCanRetry(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Work."
+			objective: "Work."
 			inputs: [
 				{path: "inputs/missing.txt"}
 				{path: "inputs/unavailable"}
@@ -119,7 +119,7 @@ func TestSkipAndBackRequireDestinationEntry(t *testing.T) {
 	})
 }
 
-func TestPromptSeparatesNextEntryBlockersAndSuppressesDone(t *testing.T) {
+func TestPromptSuppressesDoneAndNextEntryInformation(t *testing.T) {
 	root := t.TempDir()
 	writeCommandTestFile(t, filepath.Join(root, "first", "input.txt"), "ready")
 	st := gateCommandState(t, "first")
@@ -129,9 +129,7 @@ func TestPromptSeparatesNextEntryBlockersAndSuppressesDone(t *testing.T) {
 	before := st.Clone()
 	got := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, got)
-	if got.Prompt == nil || len(got.Prompt.NextEntryBlockers) != 1 ||
-		got.Prompt.NextEntryBlockers[0] != "second: next/input.txt: missing_input" ||
-		containsCommand(got.Prompt.AfterCompleting.Commands, "devflow done") {
+	if got.Prompt == nil {
 		t.Fatalf("Prompt() = %#v", got.Prompt)
 	}
 	after := loadCommandState(t, root)
@@ -140,7 +138,7 @@ func TestPromptSeparatesNextEntryBlockersAndSuppressesDone(t *testing.T) {
 	}
 }
 
-func TestPromptDoneMatchesDoneCommand(t *testing.T) {
+func TestPromptDoesNotSuggestDoneCommand(t *testing.T) {
 	root := t.TempDir()
 	writeCommandTestFile(t, filepath.Join(root, "first", "input.txt"), "ready")
 	writeCommandTestFile(t, filepath.Join(root, "next", "input.txt"), "ready")
@@ -151,8 +149,8 @@ func TestPromptDoneMatchesDoneCommand(t *testing.T) {
 
 	prompt := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, prompt)
-	if prompt.Prompt == nil || !containsCommand(prompt.Prompt.AfterCompleting.Commands, "devflow done") {
-		t.Fatalf("Prompt() = %#v, want devflow done", prompt.Prompt)
+	if prompt.Prompt == nil {
+		t.Fatalf("Prompt() = %#v", prompt.Prompt)
 	}
 	done := Done(Context{ProjectRoot: root})
 	assertCommandSuccess(t, done)
@@ -220,21 +218,12 @@ func TestCompletionGateDiagnosticsPreserveBlockerOrderAndInformationLimits(t *te
 func gateCommandState(t *testing.T, currentStepID string) state.State {
 	t.Helper()
 	fl := flow.Flow{ID: "gate-flow", Title: "Gate", Steps: []flow.Step{
-		{ID: "first", Title: "First", Instruction: "First.", Inputs: []flow.Artifact{{Path: "first/input.txt", Required: true}}},
-		{ID: "second", Title: "Second", Instruction: "Second.", Inputs: []flow.Artifact{{Path: "next/input.txt", Required: true}}},
+		{ID: "first", Title: "First", Objective: "First.", Inputs: []flow.Artifact{{Path: "first/input.txt", Required: true}}},
+		{ID: "second", Title: "Second", Objective: "Second.", Inputs: []flow.Artifact{{Path: "next/input.txt", Required: true}}},
 	}}
 	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return commandStateWithAttempt(snapshot, testTaskSnapshot(), state.StatusRunning, currentStepID, "run_11111111111111111111111111111111")
-}
-
-func containsCommand(commands []string, target string) bool {
-	for _, command := range commands {
-		if command == target {
-			return true
-		}
-	}
-	return false
 }

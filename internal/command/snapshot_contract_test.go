@@ -8,21 +8,21 @@ import (
 	"github.com/tororoMeshi/devflow/internal/state"
 )
 
-func TestStartedRunIgnoresInstructionAndGateChanges(t *testing.T) {
+func TestStartedRunIgnoresObjectiveAndGateChanges(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
-	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`instruction: "Original instruction."`))
+	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`objective: "Original objective."`))
 	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 
 	writeCommandTestFile(t, flowPath, fixedFlow(`
-		instruction: "Changed instruction."
+		objective: "Changed objective."
 		artifacts: [{path: "missing.txt", required: true}]
 		required_checks: ["changed-check"]`))
 
 	prompt := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, prompt)
-	if prompt.Prompt.CurrentStepInstruction != "Original instruction." {
-		t.Fatalf("instruction = %q", prompt.Prompt.CurrentStepInstruction)
+	if prompt.Prompt.CurrentStepObjective != "Original objective." {
+		t.Fatalf("objective = %q", prompt.Prompt.CurrentStepObjective)
 	}
 	if len(prompt.Prompt.RequiredArtifacts) != 0 || len(prompt.Prompt.RequiredChecks) != 0 {
 		t.Fatalf("prompt uses changed gate: %#v", prompt.Prompt)
@@ -36,15 +36,15 @@ func TestStartedRunIgnoresInstructionAndGateChanges(t *testing.T) {
 func TestStartedRunIgnoresStepOrderChanges(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
-	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`instruction: "Original instruction."`))
+	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`objective: "Original objective."`))
 	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 
 	writeCommandTestFile(t, flowPath, `flow: {
 		id: "fixed-flow"
 		title: "Changed title"
 		steps: [
-			{id: "second", title: "Second", instruction: "Changed second."},
-			{id: "first", title: "First", instruction: "Changed first."}
+			{id: "second", title: "Second", objective: "Changed second."},
+			{id: "first", title: "First", objective: "Changed first."}
 		]
 	}`)
 
@@ -63,7 +63,7 @@ func TestCommandsUseSnapshotAfterFlowDeletion(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Original instruction."
+			objective: "Original objective."
 			required_checks: ["verify"]
 		}]
 	}`)
@@ -86,7 +86,7 @@ func TestCommandsUseSnapshotAfterFlowDeletion(t *testing.T) {
 func TestStateTransitionUsesSnapshotAfterFlowDeletion(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
-	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`instruction: "Original instruction."`))
+	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`objective: "Original objective."`))
 	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 	if err := os.Remove(flowPath); err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestCompletedContextUsesSnapshotAfterFlowDeletion(t *testing.T) {
 	writeCommandFlow(t, root, "terminal-flow", `flow: {
 		id: "terminal-flow"
 		title: "Terminal Flow"
-		steps: [{id: "only", title: "Only", instruction: "Finish."}]
+		steps: [{id: "only", title: "Only", objective: "Finish."}]
 	}`)
 	assertCommandSuccess(t, startWithTestTask(t, root, "terminal-flow"))
 	runID := loadCommandState(t, root).FlowRunID
@@ -128,7 +128,7 @@ func TestFinishedContextUsesSnapshotAfterFlowDeletion(t *testing.T) {
 	writeCommandFlow(t, root, "terminal-flow", `flow: {
 		id: "terminal-flow"
 		title: "Terminal Flow"
-		steps: [{id: "only", title: "Only", instruction: "Finish."}]
+		steps: [{id: "only", title: "Only", objective: "Finish."}]
 	}`)
 	assertCommandSuccess(t, startWithTestTask(t, root, "terminal-flow"))
 	runID := loadCommandState(t, root).FlowRunID
@@ -155,7 +155,7 @@ func fixedFlow(firstBody string) string {
 		}, {
 			id: "second"
 			title: "Second"
-			instruction: "Original second."
+			objective: "Original second."
 		}]
 	}`
 }

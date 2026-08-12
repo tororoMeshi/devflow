@@ -116,12 +116,12 @@ func TestCloneSnapshotDoesNotShareFlowMemory(t *testing.T) {
 func TestBuildSnapshotTreatsNilAndEmptySlicesEqually(t *testing.T) {
 	nilSlices := Flow{
 		ID: "test-flow", Title: "Test Flow",
-		Steps: []Step{{ID: "first", Title: "First", Instruction: "Do first thing."}},
+		Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}},
 	}
 	emptySlices := Flow{
 		ID: "test-flow", Title: "Test Flow",
 		Steps: []Step{{
-			ID: "first", Title: "First", Instruction: "Do first thing.",
+			ID: "first", Title: "First", Objective: "Do first thing.",
 			Inputs: []Artifact{}, Artifacts: []Artifact{}, RequiredChecks: []string{},
 		}},
 	}
@@ -142,7 +142,7 @@ func TestBuildSnapshotTreatsNilAndEmptySlicesEqually(t *testing.T) {
 func TestBuildSnapshotDoesNotModifyInput(t *testing.T) {
 	flow := Flow{
 		ID: "test-flow", Title: "Test Flow",
-		Steps: []Step{{ID: "first", Title: "First", Instruction: "Do first thing."}},
+		Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}},
 	}
 
 	if _, err := BuildSnapshot(flow, FlowSource{}); err != nil {
@@ -166,7 +166,7 @@ func TestBuildSnapshotCUEDefaultMatchesExplicitValue(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			artifacts: [{path: "result.txt"}]
 		}]
 	}`)
@@ -176,7 +176,7 @@ func TestBuildSnapshotCUEDefaultMatchesExplicitValue(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			artifacts: [{path: "result.txt", required: true}]
 		}]
 	}`)
@@ -205,7 +205,7 @@ func TestBuildSnapshotDigestChangesWithContractFields(t *testing.T) {
 		{"flow description", func(flow *Flow) { flow.Description = "Other description." }},
 		{"step ID", func(flow *Flow) { flow.Steps[0].ID = "other-first" }},
 		{"step title", func(flow *Flow) { flow.Steps[0].Title = "Other First" }},
-		{"step instruction", func(flow *Flow) { flow.Steps[0].Instruction = "Other instruction." }},
+		{"step objective", func(flow *Flow) { flow.Steps[0].Objective = "Other objective." }},
 		{"step order", func(flow *Flow) { flow.Steps[0], flow.Steps[1] = flow.Steps[1], flow.Steps[0] }},
 		{"input path", func(flow *Flow) { flow.Steps[0].Inputs[0].Path = "other-input.txt" }},
 		{"input required", func(flow *Flow) { flow.Steps[0].Inputs[0].Required = false }},
@@ -253,7 +253,7 @@ func TestBuildSnapshotDeepCopiesInput(t *testing.T) {
 	wantDigest := snapshot.Digest
 
 	flow.Steps[0].Title = "Changed title"
-	flow.Steps[0].Instruction = "Changed instruction"
+	flow.Steps[0].Objective = "Changed objective"
 	flow.Steps[0].Inputs[0] = Artifact{Path: "changed-input.txt", Required: false}
 	flow.Steps[0].Artifacts[0] = Artifact{Path: "changed-artifact.txt", Required: false}
 	flow.Steps[0].RequiredChecks[0] = "changed-check"
@@ -273,9 +273,9 @@ func TestBuildSnapshotRejectsInvalidFlow(t *testing.T) {
 		flow     Flow
 		wantCode ErrorCode
 	}{
-		{"invalid ID", Flow{ID: "invalid id", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Instruction: "Do first thing."}}}, ErrorInvalidFlowID},
+		{"invalid ID", Flow{ID: "invalid id", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}}}, ErrorInvalidFlowID},
 		{"no steps", Flow{ID: "test-flow", Title: "Test Flow"}, ErrorFlowHasNoSteps},
-		{"duplicate step ID", Flow{ID: "test-flow", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Instruction: "Do first thing."}, {ID: "first", Title: "Second", Instruction: "Do second thing."}}}, ErrorDuplicateStepID},
+		{"duplicate step ID", Flow{ID: "test-flow", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}, {ID: "first", Title: "Second", Objective: "Do second thing."}}}, ErrorDuplicateStepID},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := BuildSnapshot(tt.flow, FlowSource{})
@@ -304,7 +304,7 @@ func TestBuildSnapshotSchemaVersionAndDigestFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(canonical), `"schema_version":1`) {
+	if !strings.Contains(string(canonical), `"schema_version":2`) {
 		t.Fatalf("canonical payload does not include schema version: %s", canonical)
 	}
 }
@@ -312,7 +312,7 @@ func TestBuildSnapshotSchemaVersionAndDigestFormat(t *testing.T) {
 func TestFlowSnapshotJSON(t *testing.T) {
 	flow := Flow{
 		ID: "test-flow", Title: "Test Flow",
-		Steps: []Step{{ID: "first", Title: "First", Instruction: "Do first thing."}},
+		Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}},
 	}
 	snapshot, err := BuildSnapshot(flow, FlowSource{Path: ".devflow/flows/test-flow.cue"})
 	if err != nil {
@@ -323,7 +323,7 @@ func TestFlowSnapshotJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema_version":1,"digest":"` + snapshot.Digest + `","source":{"path":".devflow/flows/test-flow.cue"},"flow":{"id":"test-flow","title":"Test Flow","description":"","steps":[{"id":"first","title":"First","instruction":"Do first thing.","inputs":[],"artifacts":[],"approval":null,"required_checks":[]}]}}`
+	want := `{"schema_version":2,"digest":"` + snapshot.Digest + `","source":{"path":".devflow/flows/test-flow.cue"},"flow":{"id":"test-flow","title":"Test Flow","description":"","steps":[{"id":"first","title":"First","objective":"Do first thing.","inputs":[],"artifacts":[],"approval":null,"required_checks":[]}]}}`
 	if string(data) != want {
 		t.Fatalf("snapshot JSON = %s\nwant %s", data, want)
 	}
@@ -333,7 +333,7 @@ func TestCanonicalJSON(t *testing.T) {
 	flow := Flow{
 		ID: "test-flow", Title: "Test Flow", Description: "Test description.",
 		Steps: []Step{{
-			ID: "first", Title: "First", Instruction: "Do first thing.",
+			ID: "first", Title: "First", Objective: "Do first thing.",
 			Inputs:    []Artifact{{Path: "input.txt", Required: true}},
 			Artifacts: []Artifact{{Path: "result.txt", Required: false}},
 			Approval:  &Approval{Required: true}, RequiredChecks: []string{"go-test"},
@@ -344,7 +344,7 @@ func TestCanonicalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema_version":1,"flow":{"id":"test-flow","title":"Test Flow","description":"Test description.","steps":[{"id":"first","title":"First","instruction":"Do first thing.","inputs":[{"path":"input.txt","required":true}],"artifacts":[{"path":"result.txt","required":false}],"approval":{"required":true},"required_checks":["go-test"]}]}}`
+	want := `{"schema_version":2,"flow":{"id":"test-flow","title":"Test Flow","description":"Test description.","steps":[{"id":"first","title":"First","objective":"Do first thing.","inputs":[{"path":"input.txt","required":true}],"artifacts":[{"path":"result.txt","required":false}],"approval":{"required":true},"required_checks":["go-test"]}]}}`
 	if string(canonical) != want {
 		t.Fatalf("canonical JSON = %s\nwant %s", canonical, want)
 	}
@@ -352,7 +352,7 @@ func TestCanonicalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "sha256:d2ce416540a41193f90915615848d633a8be58adce711e5e28dcba815980c113"
+	const wantDigest = "sha256:3a2ad1163ab2f8b06129bc34dad4a258e538fc913992f321902d2fca0923a9c9"
 	if snapshot.Digest != wantDigest {
 		t.Fatalf("Digest = %q, want %q", snapshot.Digest, wantDigest)
 	}
@@ -363,12 +363,12 @@ func snapshotTestFlow() Flow {
 		ID: "test-flow", Title: "Test Flow", Description: "Test description.",
 		Steps: []Step{
 			{
-				ID: "first", Title: "First", Instruction: "Do first thing.",
+				ID: "first", Title: "First", Objective: "Do first thing.",
 				Inputs:    []Artifact{{Path: "input.txt", Required: true}},
 				Artifacts: []Artifact{{Path: "artifact.txt", Required: true}},
 				Approval:  &Approval{Required: true}, RequiredChecks: []string{"go-test"},
 			},
-			{ID: "second", Title: "Second", Instruction: "Do second thing."},
+			{ID: "second", Title: "Second", Objective: "Do second thing."},
 		},
 	}
 }

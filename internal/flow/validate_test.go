@@ -74,11 +74,11 @@ func TestValidate(t *testing.T) {
 			wantCode: ErrorMissingStepTitle,
 		},
 		{
-			name: validFlowName("missing step instruction"),
+			name: validFlowName("missing step objective"),
 			flow: validFlow(func(flow *Flow) {
-				flow.Steps[0].Instruction = ""
+				flow.Steps[0].Objective = ""
 			}),
-			wantCode: ErrorMissingStepInstruction,
+			wantCode: ErrorMissingStepObjective,
 		},
 		{
 			name: validFlowName("duplicate step id"),
@@ -86,7 +86,7 @@ func TestValidate(t *testing.T) {
 				flow.Steps = append(flow.Steps, Step{
 					ID:          flow.Steps[0].ID,
 					Title:       "Duplicate",
-					Instruction: "Duplicate instruction.",
+					Objective: "Duplicate objective.",
 					Artifacts:   []Artifact{},
 				})
 			}),
@@ -148,7 +148,7 @@ func validFlow(mutator func(*Flow)) Flow {
 			{
 				ID:          "first_step",
 				Title:       "First Step",
-				Instruction: "Do first thing.",
+				Objective: "Do first thing.",
 				Artifacts:   []Artifact{},
 			},
 		},

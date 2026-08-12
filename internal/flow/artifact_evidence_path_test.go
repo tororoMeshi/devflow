@@ -3,7 +3,7 @@ package flow
 import "testing"
 
 func TestValidateRejectsDevflowArtifactButDoesNotChangeInputContract(t *testing.T) {
-	base := Flow{ID: "flow", Title: "Flow", Steps: []Step{{ID: "step", Title: "Step", Instruction: "Do."}}}
+	base := Flow{ID: "flow", Title: "Flow", Steps: []Step{{ID: "step", Title: "Step", Objective: "Do."}}}
 	for _, path := range []string{".devflow", ".devflow/state.json", ".devflow/runs/out"} {
 		withArtifact := base
 		withArtifact.Steps = append([]Step(nil), base.Steps...)

@@ -149,7 +149,7 @@ flow: {
 #Step: {
 	id: string
 	title: string
-	instruction: string
+	objective: string
 	inputs?: [...#Artifact]
 	artifacts?: [...#Artifact]
 	approval?: #Approval
@@ -191,7 +191,7 @@ flow: {
 		{
 			id: "check_changes"
 			title: "変更ファイル確認"
-			instruction: "git status と diff を確認し、変更されたファイルを整理してください。"
+			objective: "変更されたファイルを整理する。"
 		},
 	]
 }
@@ -205,7 +205,7 @@ flow: {
 
 * `id`
 * `title`
-* `instruction`
+* `objective`
 
 任意項目は次の通りです。
 
@@ -277,7 +277,7 @@ Flow定義では、最低限次を確認します。
 * `flow.steps` が1件以上存在する
 * 各工程に `id` が存在する
 * 各工程に `title` が存在する
-* 各工程に `instruction` が存在する
+* 各工程に `objective` が存在する
 * 工程IDがFlow内で重複していない
 * artifact path が有効である
 
@@ -289,7 +289,7 @@ Flow定義では、最低限次を確認します。
 * `flow.title`
 * `step.id`
 * `step.title`
-* `step.instruction`
+* `step.objective`
 * `artifact.path`
 
 `description` は任意説明なので、空でも致命的なエラーにはしません。
@@ -405,7 +405,7 @@ Flow層のテストでは、次を扱います。
 * `flow.steps`
 * `step.id`
 * `step.title`
-* `step.instruction`
+* `step.objective`
 * `step.artifacts`
 * `artifact.path`
 * `artifact.required`
@@ -449,7 +449,7 @@ Flow層が見るartifactは、pathの静的な妥当性だけです。
 * `flow.steps` がない、または空配列
 * `step.id` がない
 * `step.title` がない
-* `step.instruction` がない
+* `step.objective` がない
 * step ID が重複している
 * `artifact.path` がない
 * `artifact.path` が不正
@@ -466,7 +466,7 @@ error_missing_flow_title
 error_flow_has_no_steps
 error_missing_step_id
 error_missing_step_title
-error_missing_step_instruction
+error_missing_step_objective
 error_duplicate_step_id
 error_missing_artifact_path
 error_invalid_artifact_path
@@ -1083,7 +1083,7 @@ active Flow が存在しない場合は、非0の終了コードを返し、acti
 Flow: post-task-review
 Step: check_changes - 変更ファイル確認
 
-Instruction:
+Objective:
 git status と diff を確認し、変更されたファイルを整理してください。
 
 Required artifacts:
@@ -1092,8 +1092,10 @@ Required artifacts:
 Required approval:
 - none
 
-After completing:
-- devflow done
+Current Step contract rules:
+- Execute only the current Step.
+- Do not advance the workflow to the next Step yourself.
+- Stop when the current Step is in a completable state.
 ```
 
 成果物がある場合:
@@ -1185,22 +1187,22 @@ flow: {
 		{
 			id: "check_changes"
 			title: "変更ファイル確認"
-			instruction: "git status と diff を確認し、変更されたファイルを整理してください。"
+			objective: "変更されたファイルを整理する。"
 		},
 		{
 			id: "summarize_changes"
 			title: "変更内容の要約"
-			instruction: "変更内容を確認し、依頼内容に対して何を変更したかを要約してください。"
+			objective: "変更内容を要約する。"
 		},
 		{
 			id: "check_quality"
 			title: "品質確認"
-			instruction: "テスト、lint、型チェックなど、今回の変更に必要な確認を行い、結果を整理してください。"
+			objective: "必要な確認結果を整理する。"
 		},
 		{
 			id: "write_review"
 			title: "レビュー結果作成"
-			instruction: "変更内容、確認結果、懸念点、必要な修正を docs/code-review.md にまとめてください。"
+			objective: "レビュー結果を docs/code-review.md にまとめる。"
 			artifacts: [
 				{
 					path: "docs/code-review.md"
@@ -1211,7 +1213,7 @@ flow: {
 		{
 			id: "human_approval"
 			title: "人間承認"
-			instruction: "レビュー結果を人間に提示し、次へ進んでよいか確認してください。"
+			objective: "レビュー結果について人間の承認を得る。"
 			approval: {
 				required: true
 			}
@@ -2191,7 +2193,7 @@ active Flow が既にある場合は非0で終了し、`state.json` を変更し
 `status` では、active Flow のFlow ID、Flow title、current step ID、current step title、completed steps、skipped steps、approval stateが表示されることを確認します。
 active Flow がない場合やstateが壊れている場合は非0で終了します。
 
-`prompt` では、現在工程のFlow、Step、Instruction、Required artifacts、Required approval、After completingが表示されることを確認します。
+`prompt` では、現在工程のFlow、Step、Objective、current Step contract（Inputs、Artifacts、Required checks、Approval要否）が表示されることを確認します。
 required artifact や approval がある工程では、それらが表示されることを確認します。
 optional artifact がある工程では、`Optional artifacts` が表示されることを確認します。
 active Flow がない場合は非0で終了します。
@@ -2262,10 +2264,10 @@ command層では、表示文言の完全一致は避けます。
 ```text
 Flow:
 Step:
-Instruction:
+Objective:
 Required artifacts:
 Required approval:
-After completing:
+Current Step contract rules:
 ```
 
 ### テストヘルパー

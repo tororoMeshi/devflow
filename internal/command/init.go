@@ -18,22 +18,22 @@ const (
 		{
 			id: "check_changes"
 			title: "変更ファイル確認"
-			instruction: "git status と diff を確認し、変更されたファイルを整理してください。"
+			objective: "変更されたファイルを整理する。"
 		},
 		{
 			id: "summarize_changes"
 			title: "変更内容の要約"
-			instruction: "変更内容を確認し、依頼内容に対して何を変更したかを要約してください。"
+			objective: "変更内容を要約する。"
 		},
 		{
 			id: "check_quality"
 			title: "品質確認"
-			instruction: "テスト、lint、型チェックなど、今回の変更に必要な確認を行い、結果を整理してください。"
+			objective: "必要な確認結果を整理する。"
 		},
 		{
 			id: "write_review"
 			title: "レビュー結果作成"
-			instruction: "変更内容、確認結果、懸念点、必要な修正を docs/code-review.md にまとめてください。"
+			objective: "レビュー結果を docs/code-review.md にまとめる。"
 			artifacts: [
 				{
 					path: "docs/code-review.md"
@@ -44,7 +44,7 @@ const (
 		{
 			id: "human_approval"
 			title: "人間承認"
-			instruction: "レビュー結果を人間に提示し、次へ進んでよいか確認してください。"
+			objective: "レビュー結果について人間の承認を得る。"
 			approval: {
 				required: true
 			}

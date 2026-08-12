@@ -101,7 +101,7 @@ type rawFlow struct {
 type rawStep struct {
 	ID             string        `json:"id"`
 	Title          string        `json:"title"`
-	Instruction    string        `json:"instruction"`
+	Objective      string        `json:"objective"`
 	Inputs         []rawArtifact `json:"inputs"`
 	Artifacts      []rawArtifact `json:"artifacts"`
 	Approval       *rawApproval  `json:"approval"`
@@ -150,7 +150,7 @@ func (s rawStep) toStep() Step {
 	return Step{
 		ID:             s.ID,
 		Title:          s.Title,
-		Instruction:    s.Instruction,
+		Objective:      s.Objective,
 		Inputs:         inputs,
 		Artifacts:      artifacts,
 		Approval:       approval,

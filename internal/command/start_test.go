@@ -218,7 +218,7 @@ func TestStartDoesNotCheckArtifactsOrGate(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 			artifacts: [{
 				path: "docs/missing.md"
 				required: true
@@ -362,11 +362,11 @@ func startTestFlow(id string) string {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}, {
 			id: "second"
 			title: "Second"
-			instruction: "Do second."
+			objective: "Do second."
 		}]
 	}`
 }

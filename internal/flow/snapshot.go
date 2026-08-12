@@ -10,7 +10,7 @@ import (
 	"regexp"
 )
 
-const FlowSnapshotSchemaVersion = 1
+const FlowSnapshotSchemaVersion = 2
 
 var (
 	ErrUnsupportedSnapshotSchema = errors.New("unsupported flow snapshot schema version")
@@ -112,7 +112,7 @@ type canonicalFlow struct {
 type canonicalStep struct {
 	ID             string              `json:"id"`
 	Title          string              `json:"title"`
-	Instruction    string              `json:"instruction"`
+	Objective      string              `json:"objective"`
 	Inputs         []canonicalArtifact `json:"inputs"`
 	Artifacts      []canonicalArtifact `json:"artifacts"`
 	Approval       *canonicalApproval  `json:"approval"`
@@ -149,7 +149,7 @@ func canonicalJSON(flow Flow) ([]byte, error) {
 		steps[i] = canonicalStep{
 			ID:             step.ID,
 			Title:          step.Title,
-			Instruction:    step.Instruction,
+			Objective:      step.Objective,
 			Inputs:         inputs,
 			Artifacts:      artifacts,
 			Approval:       approval,
@@ -180,9 +180,9 @@ func copyFlow(flow Flow) Flow {
 
 	for i, step := range flow.Steps {
 		copy.Steps[i] = Step{
-			ID:          step.ID,
-			Title:       step.Title,
-			Instruction: step.Instruction,
+			ID:        step.ID,
+			Title:     step.Title,
+			Objective: step.Objective,
 		}
 		if step.Inputs != nil {
 			copy.Steps[i].Inputs = append([]Artifact{}, step.Inputs...)

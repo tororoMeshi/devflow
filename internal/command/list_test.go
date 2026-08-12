@@ -47,7 +47,7 @@ func TestListReturnsValidFlows(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}]
 	}`)
 
@@ -82,7 +82,7 @@ func TestListKeepsValidFlowsWhenInvalidFlowExists(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}]
 	}`)
 	writeCommandFlow(t, root, "broken-flow", `flow: {
@@ -111,7 +111,7 @@ func TestListDoesNotDependOnState(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}]
 	}`)
 

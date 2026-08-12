@@ -14,5 +14,5 @@ func testSnapshot(value flow.Flow) flow.FlowSnapshot {
 }
 
 func stateSnapshot(id string) flow.FlowSnapshot {
-	return testSnapshot(flow.Flow{ID: id, Title: fmt.Sprintf("%s title", id), Steps: []flow.Step{{ID: "first", Title: "first", Instruction: "test instruction"}, {ID: "second", Title: "second", Instruction: "test instruction"}, {ID: "current", Title: "current", Instruction: "test instruction"}}})
+	return testSnapshot(flow.Flow{ID: id, Title: fmt.Sprintf("%s title", id), Steps: []flow.Step{{ID: "first", Title: "first", Objective: "test objective"}, {ID: "second", Title: "second", Objective: "test objective"}, {ID: "current", Title: "current", Objective: "test objective"}}})
 }

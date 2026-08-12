@@ -611,7 +611,7 @@ func TestStoreLoadStrictApprovalEvidenceSetDigestV8(t *testing.T) {
 
 func testState(t testing.TB, status Status, currentStepID string) State {
 	t.Helper()
-	fl := flow.Flow{ID: "post-task-review", Title: "Post Task Review", Steps: []flow.Step{{ID: "first", Title: "First", Instruction: "Do first."}, {ID: "second", Title: "Second", Instruction: "Do second."}}}
+	fl := flow.Flow{ID: "post-task-review", Title: "Post Task Review", Steps: []flow.Step{{ID: "first", Title: "First", Objective: "Do first."}, {ID: "second", Title: "Second", Objective: "Do second."}}}
 	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: ".devflow/flows/post-task-review.cue"})
 	if err != nil {
 		t.Fatal(err)

@@ -19,7 +19,7 @@ func TestLoadInputsDefaultsRequiredToTrue(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			inputs: [{path: "docs/request.md"}]
 		}]
 	}`)
@@ -35,7 +35,7 @@ func TestLoadInputsKeepsRequiredFalse(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			inputs: [{
 				path: "docs/optional-context.md"
 				required: false

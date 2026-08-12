@@ -14,7 +14,7 @@ func TestRequiredChecksValidation(t *testing.T) {
 		{name: "rejects duplicate check", checks: `required_checks: ["go-test", "go-test"]`, want: ErrorDuplicateRequiredCheckID},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Load([]byte(`flow: { id: "test", title: "Test", steps: [{ id: "step", title: "Step", instruction: "Do.", ` + tt.checks + ` }] }`))
+			got, err := Load([]byte(`flow: { id: "test", title: "Test", steps: [{ id: "step", title: "Step", objective: "Do.", ` + tt.checks + ` }] }`))
 			if tt.want == "" {
 				if err != nil || len(got.Steps[0].RequiredChecks) != 2 {
 					t.Fatalf("flow=%#v err=%v", got, err)

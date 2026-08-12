@@ -48,7 +48,7 @@ func TestParseRecordOutputStrict(t *testing.T) {
 }
 
 func TestHeaders(t *testing.T) {
-	wp := []byte(`{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` + testDigest + `"}` + "\n")
+	wp := []byte(`{"schema_version":2,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` + testDigest + `"}` + "\n")
 	pkg, err := parseWorkPackage(wp, "build", "attempt_1")
 	if err != nil {
 		t.Fatal(err)
@@ -65,12 +65,12 @@ func TestHeaders(t *testing.T) {
 }
 
 func TestWorkPackageHeaderRejectsInvalid(t *testing.T) {
-	valid := `{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` + testDigest + `"}`
+	valid := `{"schema_version":2,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` + testDigest + `"}`
 	tests := []string{
 		"", "null", "1", `"value"`, "[]", "{}", valid + `{}`,
-		strings.Replace(valid, `"schema_version":1`, `"schema_version":0`, 1),
-		strings.Replace(valid, `"schema_version":1`, `"schema_version":2`, 1),
-		strings.Replace(valid, `"schema_version":1`, `"schema_version":null`, 1),
+		strings.Replace(valid, `"schema_version":2`, `"schema_version":0`, 1),
+		strings.Replace(valid, `"schema_version":2`, `"schema_version":1`, 1),
+		strings.Replace(valid, `"schema_version":2`, `"schema_version":null`, 1),
 		strings.Replace(valid, `"flow_run_id":"run_1"`, `"flow_run_id":""`, 1),
 		strings.Replace(valid, `"flow_run_id":"run_1"`, `"flow_run_id":null`, 1),
 		strings.Replace(valid, `"step_id":"build"`, `"step_id":"other"`, 1),
@@ -121,7 +121,7 @@ func TestReportHeaderValidation(t *testing.T) {
 }
 
 func TestArtifactProjections(t *testing.T) {
-	wp := []byte(`{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
+	wp := []byte(`{"schema_version":2,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
 		testDigest + `","extra":true,"step":{"artifacts":[{"path":"b","required":false},{"path":"a","required":true}]}}`)
 	pkg, err := parseWorkPackageForMode(wp, "build", "attempt_1", true)
 	if err != nil || len(pkg.Artifacts) != 2 || pkg.Artifacts[0].Path != "b" || pkg.Artifacts[1].Path != "a" {
@@ -148,7 +148,7 @@ func TestArtifactProjections(t *testing.T) {
 }
 
 func TestRequiredChecksProjection(t *testing.T) {
-	base := `{"schema_version":1,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
+	base := `{"schema_version":2,"flow_run_id":"run_1","step_id":"build","attempt_id":"attempt_1","work_package_digest":"` +
 		testDigest + `","step":{"artifacts":[],"required_checks":%s}}`
 	for _, tc := range []struct {
 		raw  string

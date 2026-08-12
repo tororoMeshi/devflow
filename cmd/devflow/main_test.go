@@ -288,10 +288,10 @@ func TestArtifactStateHumanOutput(t *testing.T) {
 	var promptOutput bytes.Buffer
 	writePrompt(&promptOutput, command.PromptResult{
 		FlowID: "flow", TaskContent: "task", CurrentStepID: "step", CurrentStepTitle: "Step",
-		ArtifactBlockers: []string{"out/report.md: changed; recorded evidence is no longer current; continue in a new attempt"},
+		ArtifactBlockers: []string{"out/report.md: changed; recorded evidence is no longer current"},
 	})
 	promptText := promptOutput.String()
-	if !strings.Contains(promptText, "Artifact blockers:\n- out/report.md: changed; recorded evidence is no longer current; continue in a new attempt\n") {
+	if !strings.Contains(promptText, "Artifact blockers:\n- out/report.md: changed; recorded evidence is no longer current\n") {
 		t.Fatalf("prompt output = %q", promptText)
 	}
 	for _, forbidden := range []string{"devflow artifact record", "devflow approve", "devflow done", "sha256:"} {
@@ -408,7 +408,7 @@ func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runSuccess(t, root, []string{"start", "check-flow"})
@@ -451,7 +451,7 @@ func TestRunCheckRecordWritesExactHumanSuccess(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runSuccess(t, root, []string{"start", "check-flow"})
@@ -480,7 +480,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", instruction: "Design.", inputs: [{path: "docs/request.md"}] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", objective: "Design.", inputs: [{path: "docs/request.md"}] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
@@ -502,7 +502,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	stateValue := value["state"].(map[string]any)
 	_, hasTopLevelEntrySequence := value["entry_sequence"]
 	_, hasStateEntrySequence := stateValue["entry_sequence"]
-	if value["schema_version"].(float64) != 4 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != true {
+	if value["schema_version"].(float64) != 5 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != true {
 		t.Fatalf("context = %#v", value)
 	}
 }
@@ -529,7 +529,7 @@ func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", instruction: "Design." }] }`), 0o644); err != nil {
+			if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", objective: "Design." }] }`), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			runSuccess(t, root, []string{"start", "context-flow"})
@@ -547,7 +547,7 @@ func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
 			attempt, hasAttempt := value["attempt"]
 			_, hasTopLevelEntrySequence := value["entry_sequence"]
 			_, hasStateEntrySequence := state["entry_sequence"]
-			if value["schema_version"].(float64) != 4 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
+			if value["schema_version"].(float64) != 5 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
 				t.Fatalf("context = %#v", value)
 			}
 		})
@@ -560,7 +560,7 @@ func TestRunCheckRequestRejectsLegacyStateWithoutOutput(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(root, ".devflow", "state.json")
@@ -819,7 +819,7 @@ func TestWritePromptPreservesTaskContentAndSeparatesCurrentStep(t *testing.T) {
 				TaskContent:            content,
 				CurrentStepID:          "step",
 				CurrentStepTitle:       "Step",
-				CurrentStepInstruction: "Instruction",
+				CurrentStepObjective: "Objective",
 			})
 			wantPrefix := "Flow: flow\nTask:\n" + content
 			if !strings.HasPrefix(stdout.String(), wantPrefix) {
@@ -1089,7 +1089,7 @@ func TestRunWritesNormalResultToStdout(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exitCode = %d, want 0; stderr = %q", exitCode, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Instruction:") {
+	if !strings.Contains(stdout.String(), "Objective:") {
 		t.Fatalf("stdout = %q, want prompt output", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "Task:\nok\n\nCurrent step:") {

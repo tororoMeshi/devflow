@@ -21,7 +21,7 @@ func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testin
 		steps: [{
 			id: "design"
 			title: "Design"
-			instruction: "Create the design."
+			objective: "Create the design."
 			inputs: [
 				{path: "docs/request.md"},
 				{path: "docs/optional-input.md", required: false},
@@ -109,8 +109,8 @@ func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 		id: "context-flow"
 		title: "Context Flow"
 		steps: [
-			{id: "design", title: "Design", instruction: "Create the design.", artifacts: [{path: "docs/design.md"}], required_checks: ["validate", "review"], approval: {required: true}},
-			{id: "review", title: "Review", instruction: "Review the design."},
+			{id: "design", title: "Design", objective: "Create the design.", artifacts: [{path: "docs/design.md"}], required_checks: ["validate", "review"], approval: {required: true}},
+			{id: "review", title: "Review", objective: "Review the design."},
 		]
 	}`)
 	currentState := executionTestState(state.StatusRunning)
@@ -207,7 +207,7 @@ func TestCurrentContextJSONAttemptContract(t *testing.T) {
 			if err := json.Unmarshal(data, &value); err != nil {
 				t.Fatal(err)
 			}
-			if value["schema_version"] != float64(4) {
+			if value["schema_version"] != float64(5) {
 				t.Fatalf("schema_version = %#v", value["schema_version"])
 			}
 			attempt, exists := value["attempt"]
@@ -352,12 +352,12 @@ func TestDoneRejectsMissingRequiredInputWithoutChangingState(t *testing.T) {
 		steps: [{
 			id: "design"
 			title: "Design"
-			instruction: "Create the design."
+			objective: "Create the design."
 			inputs: [{path: "docs/request.md"}]
 		}, {
 			id: "review"
 			title: "Review"
-			instruction: "Review the design."
+			objective: "Review the design."
 		}]
 	}`)
 	saveExecutionState(t, root, executionTestState(state.StatusRunning))
@@ -461,12 +461,12 @@ func executionTestFlow() string {
 	return `flow: {
 		id: "context-flow"
 		title: "Context Flow"
-		steps: [{id: "design", title: "Design", instruction: "Create the design."}]
+		steps: [{id: "design", title: "Design", objective: "Create the design."}]
 	}`
 }
 
 func executionTestState(status state.Status) state.State {
-	snapshot, err := flow.BuildSnapshot(flow.Flow{ID: "context-flow", Title: "Context Flow", Steps: []flow.Step{{ID: "design", Title: "Design", Instruction: "Create the design.", RequiredChecks: []string{"validate", "review"}}, {ID: "review", Title: "Review", Instruction: "Review the design."}}}, flow.FlowSource{})
+	snapshot, err := flow.BuildSnapshot(flow.Flow{ID: "context-flow", Title: "Context Flow", Steps: []flow.Step{{ID: "design", Title: "Design", Objective: "Create the design.", RequiredChecks: []string{"validate", "review"}}, {ID: "review", Title: "Review", Objective: "Review the design."}}}, flow.FlowSource{})
 	if err != nil {
 		panic(err)
 	}

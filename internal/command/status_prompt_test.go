@@ -52,14 +52,6 @@ func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {
 }
 
 func TestPromptCompoundArtifactStateOnlySuggestsRecordableEvidence(t *testing.T) {
-	attempt, err := state.NewStepAttempt("step", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	active := ActiveFlow{
-		State:       state.State{Status: state.StatusRunning, Attempts: []state.StepAttempt{attempt}, CurrentAttemptID: attempt.ID},
-		CurrentStep: flow.Step{ID: "step"},
-	}
 	inspections := []gate.ArtifactInspection{
 		{Path: "missing.md", Required: true, Problem: gate.CompletionBlockerMissingArtifactEvidence},
 		{Path: "current.md", Required: true},
@@ -68,14 +60,10 @@ func TestPromptCompoundArtifactStateOnlySuggestsRecordableEvidence(t *testing.T)
 		{Path: "unsafe.md", Required: true, Problem: gate.CompletionBlockerArtifactUnavailable},
 		{Path: "optional.md", Required: false},
 	}
-	approval := &RequiredApprovalResult{StepID: "step", AttemptID: attempt.ID}
-	assertCommands(t, promptAfterCompleting(active, inspections, approval, gate.CompletionGateResult{}, gate.EntryGateResult{Ready: true}).Commands, []string{
-		`devflow artifact record --step "step" --attempt "` + attempt.ID + `" --path "missing.md"`,
-	})
 	wantBlockers := []string{
-		"changed.md: changed; recorded evidence is no longer current; continue in a new attempt",
-		"gone.md: missing_file; recorded evidence is no longer current; continue in a new attempt",
-		"unsafe.md: unavailable; recorded evidence is no longer current; continue in a new attempt",
+		"changed.md: changed; recorded evidence is no longer current",
+		"gone.md: missing_file; recorded evidence is no longer current",
+		"unsafe.md: unavailable; recorded evidence is no longer current",
 	}
 	if got := promptArtifactBlockers(inspections); !reflect.DeepEqual(got, wantBlockers) {
 		t.Fatalf("blockers = %#v, want %#v", got, wantBlockers)
@@ -169,9 +157,9 @@ func TestStatusDoesNotExposePastAttemptApproval(t *testing.T) {
 	}
 	prompt := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, prompt)
-	assertCommands(t, prompt.Prompt.AfterCompleting.Commands, []string{
-		`devflow artifact record --step "current" --attempt "` + current.ID + `" --path "docs/required.md"`,
-	})
+	if prompt.Prompt == nil {
+		t.Fatalf("Prompt = nil")
+	}
 }
 
 func TestStatusReportsCurrentArtifactState(t *testing.T) {
@@ -198,7 +186,6 @@ func TestStatusReportsCurrentArtifactState(t *testing.T) {
 	}
 	blockedPrompt := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, blockedPrompt)
-	assertCommands(t, blockedPrompt.Prompt.AfterCompleting.Commands, nil)
 	if len(blockedPrompt.Prompt.ArtifactBlockers) != 1 {
 		t.Fatalf("changed prompt = %#v", blockedPrompt.Prompt)
 	}
@@ -242,8 +229,8 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.CurrentStepTitle != "Current" {
 		t.Fatalf("CurrentStepTitle = %q", got.Prompt.CurrentStepTitle)
 	}
-	if got.Prompt.CurrentStepInstruction != "Do current work." {
-		t.Fatalf("CurrentStepInstruction = %q", got.Prompt.CurrentStepInstruction)
+	if got.Prompt.CurrentStepObjective != "Do current work." {
+		t.Fatalf("CurrentStepObjective = %q", got.Prompt.CurrentStepObjective)
 	}
 	assertArtifactPaths(t, got.Prompt.RequiredArtifacts, []string{"docs/required.md"})
 	assertArtifactPaths(t, got.Prompt.OptionalArtifacts, []string{"docs/optional.md"})
@@ -255,13 +242,6 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	}
 	if got.Prompt.RequiredApproval.AttemptID != st.CurrentAttemptID {
 		t.Fatalf("AttemptID = %q", got.Prompt.RequiredApproval.AttemptID)
-	}
-	if len(got.Prompt.AfterCompleting.Commands) != 1 {
-		t.Fatalf("AfterCompleting.Commands = %#v", got.Prompt.AfterCompleting.Commands)
-	}
-	wantRecord := `devflow artifact record --step "current" --attempt "` + st.CurrentAttemptID + `" --path "docs/required.md"`
-	if got.Prompt.AfterCompleting.Commands[0] != wantRecord {
-		t.Fatalf("record command = %q, want %q", got.Prompt.AfterCompleting.Commands[0], wantRecord)
 	}
 }
 
@@ -283,10 +263,6 @@ func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
 	}
 	got := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, got)
-	assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{
-		`devflow approve --step "current" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`,
-	})
-
 	approvalDigest, err := state.ArtifactEvidenceSetDigest([]string{"docs/required.md"}, st.Attempts[0].ArtifactEvidence)
 	if err != nil {
 		t.Fatal(err)
@@ -301,7 +277,6 @@ func TestPromptArtifactCommandsRemainExplicitUntilApproval(t *testing.T) {
 	}
 	got = Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, got)
-	assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{"devflow done"})
 }
 
 func TestPromptTreatsNoArtifactsAndNoApprovalAsEmpty(t *testing.T) {
@@ -332,7 +307,6 @@ func TestPromptTreatsNoArtifactsAndNoApprovalAsEmpty(t *testing.T) {
 			if got.Prompt.RequiredApproval != nil {
 				t.Fatalf("RequiredApproval = %#v, want nil", got.Prompt.RequiredApproval)
 			}
-			assertCommands(t, got.Prompt.AfterCompleting.Commands, []string{"devflow done"})
 		})
 	}
 }
@@ -461,11 +435,11 @@ func statusPromptTestFlow() string {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}, {
 			id: "current"
 			title: "Current"
-			instruction: "Do current work."
+			objective: "Do current work."
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
@@ -479,14 +453,14 @@ func statusPromptTestFlow() string {
 		}, {
 			id: "no_approval"
 			title: "No Approval"
-			instruction: "Do work without approval."
+			objective: "Do work without approval."
 			approval: {
 				required: false
 			}
 		}, {
 			id: "skipped"
 			title: "Skipped"
-			instruction: "Skip me."
+			objective: "Skip me."
 		}]
 	}`
 }
@@ -504,19 +478,6 @@ func assertArtifactPaths(t *testing.T, got []ArtifactResult, want []string) {
 	for i := range want {
 		if got[i].Path != want[i] {
 			t.Fatalf("artifact[%d].Path = %q, want %q", i, got[i].Path, want[i])
-		}
-	}
-}
-
-func assertCommands(t *testing.T, got []string, want []string) {
-	t.Helper()
-
-	if len(got) != len(want) {
-		t.Fatalf("len(commands) = %d, want %d: %#v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("command[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
 }

@@ -10,7 +10,7 @@ type Flow struct {
 type Step struct {
 	ID             string     `json:"id"`
 	Title          string     `json:"title"`
-	Instruction    string     `json:"instruction"`
+	Objective      string     `json:"objective"`
 	Inputs         []Artifact `json:"inputs"`
 	Artifacts      []Artifact `json:"artifacts"`
 	Approval       *Approval  `json:"approval"`

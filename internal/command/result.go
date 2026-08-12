@@ -89,20 +89,18 @@ const (
 )
 
 type PromptResult struct {
-	FlowID                 string
-	TaskContent            string
-	CurrentStepID          string
-	CurrentStepTitle       string
-	CurrentStepInstruction string
-	RequiredArtifacts      []ArtifactResult
-	OptionalArtifacts      []ArtifactResult
-	RequiredApproval       *RequiredApprovalResult
-	RequiredChecks         []string
-	AfterCompleting        AfterCompletingResult
-	ArtifactBlockers       []string
-	CheckBlockers          []string
-	CompletionBlockers     []string
-	NextEntryBlockers      []string
+	FlowID               string
+	TaskContent          string
+	CurrentStepID        string
+	CurrentStepTitle     string
+	CurrentStepObjective string
+	RequiredArtifacts    []ArtifactResult
+	OptionalArtifacts    []ArtifactResult
+	RequiredApproval     *RequiredApprovalResult
+	RequiredChecks       []string
+	ArtifactBlockers     []string
+	CheckBlockers        []string
+	CompletionBlockers   []string
 }
 
 type ArtifactResult struct {
@@ -112,10 +110,6 @@ type ArtifactResult struct {
 type RequiredApprovalResult struct {
 	StepID    string
 	AttemptID string
-}
-
-type AfterCompletingResult struct {
-	Commands []string
 }
 
 type SuccessResult struct {

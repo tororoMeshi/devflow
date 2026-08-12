@@ -279,32 +279,6 @@ func TestCheckRecordSaveFailureHasNoSuccess(t *testing.T) {
 	}
 }
 
-func TestPromptUsesAttemptAwareCheckCommands(t *testing.T) {
-	root, st := startCheckFlow(t)
-	got := Prompt(Context{ProjectRoot: root})
-	if got.ExitCode != 0 {
-		t.Fatal(got.Diagnostics)
-	}
-	wantFirst := `devflow check request --step "quality" --attempt "` + st.CurrentAttemptID + `" --check "go-test"`
-	wantSecond := `devflow check request --step "quality" --attempt "` + st.CurrentAttemptID + `" --check "go-vet"`
-	if len(got.Prompt.AfterCompleting.Commands) != 2 ||
-		got.Prompt.AfterCompleting.Commands[0] != wantFirst ||
-		got.Prompt.AfterCompleting.Commands[1] != wantSecond {
-		t.Fatalf("commands=%#v", got.Prompt.AfterCompleting.Commands)
-	}
-
-	path := filepath.Join(root, "record.json")
-	writeCheckRecord(t, path, validRecord(st, "go-test", state.CheckResult{ExitCode: 1}))
-	if recorded := CheckRecord(Context{ProjectRoot: root}, path); recorded.ExitCode != 0 {
-		t.Fatal(recorded.Diagnostics)
-	}
-	got = Prompt(Context{ProjectRoot: root})
-	if len(got.Prompt.AfterCompleting.Commands) != 1 || got.Prompt.AfterCompleting.Commands[0] != wantSecond ||
-		len(got.Prompt.CheckBlockers) != 1 || !strings.Contains(got.Prompt.CheckBlockers[0], "go-test") {
-		t.Fatalf("failed-check prompt=%#v", got.Prompt)
-	}
-}
-
 func TestCheckRecordAfterApprovalPreservesApprovalAndEvidence(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approved-check-flow", `flow: {
@@ -313,7 +287,7 @@ func TestCheckRecordAfterApprovalPreservesApprovalAndEvidence(t *testing.T) {
 		steps: [{
 			id: "quality"
 			title: "Quality"
-			instruction: "Check."
+			objective: "Check."
 			approval: {required: true}
 			required_checks: ["go-test"]
 		}]
@@ -355,7 +329,7 @@ func TestPromptCompoundCheckArtifactApprovalState(t *testing.T) {
 		steps: [{
 			id: "quality"
 			title: "Quality"
-			instruction: "Check."
+			objective: "Check."
 			artifacts: [{path: "out/report.txt", required: true}]
 			approval: {required: true}
 			required_checks: ["check-a", "check-b", "check-c"]
@@ -386,11 +360,6 @@ func TestPromptCompoundCheckArtifactApprovalState(t *testing.T) {
 	if got.ExitCode != 0 {
 		t.Fatal(got.Diagnostics)
 	}
-	wantRequest := `devflow check request --step "quality" --attempt "` + st.CurrentAttemptID + `" --check "check-a"`
-	wantApprove := `devflow approve --step "quality" --attempt "` + st.CurrentAttemptID + `" --note "<note>"`
-	if !reflect.DeepEqual(got.Prompt.AfterCompleting.Commands, []string{wantRequest, wantApprove}) {
-		t.Fatalf("compound commands=%#v", got.Prompt.AfterCompleting.Commands)
-	}
 	if len(got.Prompt.CheckBlockers) != 1 || !strings.HasPrefix(got.Prompt.CheckBlockers[0], "check-c:") {
 		t.Fatalf("compound blockers=%#v", got.Prompt.CheckBlockers)
 	}
@@ -407,7 +376,7 @@ func startCheckFlow(t *testing.T) (string, state.State) {
 }
 
 func checkTestFlow() string {
-	return `flow: { id: "check-flow", title: "Check Flow", steps: [{ id: "quality", title: "Quality", instruction: "Check.", required_checks: ["go-test", "go-vet"] }, { id: "review", title: "Review", instruction: "Review." }] }`
+	return `flow: { id: "check-flow", title: "Check Flow", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test", "go-vet"] }, { id: "review", title: "Review", objective: "Review." }] }`
 }
 
 func validRecord(st state.State, checkID string, result state.CheckResult) string {

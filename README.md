@@ -133,7 +133,7 @@ Check AdapterはCoreから渡されるCheckRequestをstdinで受け取り、Chec
 
 ## WorkPackageとExecutionReport
 
-WorkPackageはcurrent/active Attemptに束縛されたExecutor用の入力です。stdinでExecutorへ渡され、task、instruction、inputs、artifacts、checks、Approvalの要否を含みます。
+WorkPackageはcurrent/active Attemptに束縛されたExecutor用の入力です。stdinでExecutorへ渡され、task、objective、inputs、artifacts、checks、Approvalの要否を含みます。
 
 ExecutionReportはExecutorがstdoutへ返すJSONです。WorkPackageとAttemptに束縛され、Coreがimmutableに記録します。同一内容の再記録はidempotentですが、異なる内容を同じAttemptへ記録しようとすると競合として拒否されます。
 

@@ -278,7 +278,7 @@ Flowは、必要に応じて次の情報を持ちます。
 
 * `id`
 * `title`
-* `instruction`
+* `objective`
 
 工程は、必要に応じて次の情報を持ちます。
 
@@ -514,7 +514,7 @@ MVPでは、主に次の項目を確認します。
 * 工程の存在
 * 工程ID
 * 工程title
-* 工程instruction
+* 工程objective
 
 ## コマンドの成功・失敗方針
 

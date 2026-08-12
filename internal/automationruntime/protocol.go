@@ -134,7 +134,7 @@ func parseWorkPackageForMode(data []byte, stepID, attemptID string, requireArtif
 		FlowRunID: *projection.FlowRunID, StepID: *projection.StepID, AttemptID: *projection.AttemptID,
 		Artifacts: artifacts, RequiredChecks: headerRequiredChecks,
 	}
-	if header.SchemaVersion != 1 || header.FlowRunID == "" || header.StepID != stepID ||
+	if header.SchemaVersion != 2 || header.FlowRunID == "" || header.StepID != stepID ||
 		header.AttemptID != attemptID || !digestPattern.MatchString(header.WorkPackageDigest) {
 		return header, errors.New("invalid WorkPackage header")
 	}

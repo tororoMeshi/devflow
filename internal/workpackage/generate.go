@@ -94,7 +94,7 @@ func projectStep(step flow.Step) StepContract {
 	approvalRequired := step.Approval != nil && step.Approval.Required
 	return StepContract{
 		Title:            step.Title,
-		Instruction:      step.Instruction,
+		Objective:        step.Objective,
 		Inputs:           inputs,
 		Artifacts:        artifacts,
 		RequiredChecks:   append([]string{}, step.RequiredChecks...),

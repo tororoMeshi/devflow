@@ -22,7 +22,7 @@ func TestLoadFile(t *testing.T) {
 				steps: [{
 					id: "first"
 					title: "First"
-					instruction: "Do first thing."
+					objective: "Do first thing."
 				}]
 			}`,
 			wantFlow: Flow{
@@ -30,10 +30,10 @@ func TestLoadFile(t *testing.T) {
 				Title: "Test Flow",
 				Steps: []Step{
 					{
-						ID:          "first",
-						Title:       "First",
-						Instruction: "Do first thing.",
-						Artifacts:   []Artifact{},
+						ID:        "first",
+						Title:     "First",
+						Objective: "Do first thing.",
+						Artifacts: []Artifact{},
 					},
 				},
 			},
@@ -49,7 +49,7 @@ func TestLoadFile(t *testing.T) {
 					{
 						id: "check_changes"
 						title: "Check Changes"
-						instruction: "Check git status."
+						objective: "Check git status."
 						artifacts: [
 							{path: "docs/code-review.md"},
 							{path: "docs/optional.md", required: false},
@@ -58,7 +58,7 @@ func TestLoadFile(t *testing.T) {
 					{
 						id: "human_approval"
 						title: "Human Approval"
-						instruction: "Ask for approval."
+						objective: "Ask for approval."
 						approval: {required: true}
 					},
 				]
@@ -69,20 +69,20 @@ func TestLoadFile(t *testing.T) {
 				Description: "Review after a task.",
 				Steps: []Step{
 					{
-						ID:          "check_changes",
-						Title:       "Check Changes",
-						Instruction: "Check git status.",
+						ID:        "check_changes",
+						Title:     "Check Changes",
+						Objective: "Check git status.",
 						Artifacts: []Artifact{
 							{Path: "docs/code-review.md", Required: true},
 							{Path: "docs/optional.md", Required: false},
 						},
 					},
 					{
-						ID:          "human_approval",
-						Title:       "Human Approval",
-						Instruction: "Ask for approval.",
-						Artifacts:   []Artifact{},
-						Approval:    &Approval{Required: true},
+						ID:        "human_approval",
+						Title:     "Human Approval",
+						Objective: "Ask for approval.",
+						Artifacts: []Artifact{},
+						Approval:  &Approval{Required: true},
 					},
 				},
 			},
@@ -103,6 +103,20 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsLegacyInstructionWithoutObjective(t *testing.T) {
+	_, err := Load([]byte(`flow: {
+		id: "test-flow"
+		title: "Test Flow"
+		steps: [{
+			id: "first"
+			title: "First"
+			instruction: "Do first thing."
+		}]
+	}`))
+
+	assertValidationErrorCode(t, err, ErrorMissingStepObjective)
+}
+
 func TestLoadFileReturnsErrorForFilenameMismatch(t *testing.T) {
 	path := writeFlowFile(t, "actual-file.cue", `flow: {
 		id: "different-id"
@@ -110,7 +124,7 @@ func TestLoadFileReturnsErrorForFilenameMismatch(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 		}]
 	}`)
 
@@ -132,7 +146,7 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 				steps: [{
 					id: "first"
 					title: "First"
-					instruction: "Do first thing."
+					objective: "Do first thing."
 				}]
 			}`,
 			wantCode: ErrorMissingFlowID,
@@ -144,7 +158,7 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 				steps: [{
 					id: "first"
 					title: "First"
-					instruction: "Do first thing."
+					objective: "Do first thing."
 				}]
 			}`,
 			wantCode: ErrorMissingFlowTitle,
@@ -165,7 +179,7 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 				steps: [{
 					id: "first"
 					title: "First"
-					instruction: "Do first thing."
+					objective: "Do first thing."
 					artifacts: [{}]
 				}]
 			}`,
@@ -179,7 +193,7 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 				steps: [{
 					id: "first"
 					title: "First"
-					instruction: "Do first thing."
+					objective: "Do first thing."
 					artifacts: [{path: "../secret.md"}]
 				}]
 			}`,
@@ -207,7 +221,7 @@ func TestLoadDirContinuesWhenValidAndInvalidFlowsAreMixed(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 		}]
 	}`)
 	writeFile(t, filepath.Join(dir, "invalid-flow.cue"), `flow: {

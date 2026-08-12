@@ -253,11 +253,11 @@ func approveDoneTestFlow() string {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}, {
 			id: "artifact"
 			title: "Artifact"
-			instruction: "Create artifact."
+			objective: "Create artifact."
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
@@ -274,14 +274,14 @@ func approveDoneTestFlow() string {
 		}, {
 			id: "approval"
 			title: "Approval"
-			instruction: "Get approval."
+			objective: "Get approval."
 			approval: {
 				required: true
 			}
 		}, {
 			id: "final"
 			title: "Final"
-			instruction: "Finish."
+			objective: "Finish."
 		}]
 	}`
 }

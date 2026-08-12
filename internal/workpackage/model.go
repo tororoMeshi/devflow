@@ -2,7 +2,7 @@ package workpackage
 
 import "errors"
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 const WorkingRoot = "."
 
@@ -44,7 +44,7 @@ type WorkPackage struct {
 
 type StepContract struct {
 	Title            string             `json:"title"`
-	Instruction      string             `json:"instruction"`
+	Objective        string             `json:"objective"`
 	Inputs           []ArtifactContract `json:"inputs"`
 	Artifacts        []ArtifactContract `json:"artifacts"`
 	RequiredChecks   []string           `json:"required_checks"`

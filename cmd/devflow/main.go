@@ -508,7 +508,11 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 		_, _ = io.WriteString(stdout, "\n\n")
 	}
 	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", prompt.CurrentStepID, prompt.CurrentStepTitle)
-	_, _ = fmt.Fprintf(stdout, "Instruction:\n%s\n", prompt.CurrentStepInstruction)
+	_, _ = fmt.Fprintf(stdout, "Objective:\n%s\n", prompt.CurrentStepObjective)
+	_, _ = fmt.Fprintln(stdout, "Current Step contract rules:")
+	_, _ = fmt.Fprintln(stdout, "- Execute only the current Step.")
+	_, _ = fmt.Fprintln(stdout, "- Do not advance the workflow to the next Step yourself.")
+	_, _ = fmt.Fprintln(stdout, "- Stop when the current Step is in a completable state.")
 	writeArtifactList(stdout, "Required artifacts", prompt.RequiredArtifacts)
 	if len(prompt.OptionalArtifacts) > 0 {
 		writeArtifactList(stdout, "Optional artifacts", prompt.OptionalArtifacts)
@@ -529,10 +533,6 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	if len(prompt.CompletionBlockers) > 0 {
 		writeStringList(stdout, "Completion blockers", prompt.CompletionBlockers)
 	}
-	if len(prompt.NextEntryBlockers) > 0 {
-		writeStringList(stdout, "Next-step entry blockers", prompt.NextEntryBlockers)
-	}
-	writeStringList(stdout, "After completing", prompt.AfterCompleting.Commands)
 }
 
 func writeArtifactList(stdout io.Writer, label string, artifacts []command.ArtifactResult) {

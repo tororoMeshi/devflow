@@ -36,7 +36,7 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	cloned.BackHistory[0].InvalidatedStepIDs[0] = "changed"
 	cloned.BackHistory[0].InvalidatedStepIDs = append(cloned.BackHistory[0].InvalidatedStepIDs, "added")
 	cloned.Finish.Reason = "changed"
-	cloned.FlowSnapshot.Flow.Steps[0].Instruction = "changed"
+	cloned.FlowSnapshot.Flow.Steps[0].Objective = "changed"
 	cloned.TaskSnapshot.Content = "changed"
 	cloned.TaskSnapshot.Source.Path = "changed.md"
 
@@ -70,7 +70,7 @@ func TestStateCloneDoesNotShareCollectionsOrPointers(t *testing.T) {
 	if original.Finish.Reason != "out of scope" {
 		t.Fatalf("Finish pointer was shared")
 	}
-	if original.FlowSnapshot.Flow.Steps[0].Instruction != "Do first." {
+	if original.FlowSnapshot.Flow.Steps[0].Objective != "Do first." {
 		t.Fatalf("FlowSnapshot shares Flow memory")
 	}
 	if original.TaskSnapshot.Content != "Test task\n" || original.TaskSnapshot.Source.Path != "tasks/task.md" {

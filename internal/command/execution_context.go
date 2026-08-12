@@ -8,7 +8,7 @@ import (
 	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
-const executionContextSchemaVersion = 4
+const executionContextSchemaVersion = 5
 
 type CheckStatus string
 
@@ -58,13 +58,13 @@ type ExecutionAttemptResult struct {
 }
 
 type ExecutionStepResult struct {
-	ID          string                    `json:"id"`
-	Title       string                    `json:"title"`
-	Instruction string                    `json:"instruction"`
-	Inputs      []ExecutionArtifactResult `json:"inputs"`
-	Artifacts   []ExecutionArtifactResult `json:"artifacts"`
-	Checks      []ExecutionCheckResult    `json:"checks"`
-	Approval    ExecutionApprovalResult   `json:"approval"`
+	ID        string                    `json:"id"`
+	Title     string                    `json:"title"`
+	Objective string                    `json:"objective"`
+	Inputs    []ExecutionArtifactResult `json:"inputs"`
+	Artifacts []ExecutionArtifactResult `json:"artifacts"`
+	Checks    []ExecutionCheckResult    `json:"checks"`
+	Approval  ExecutionApprovalResult   `json:"approval"`
 }
 
 type ExecutionArtifactResult struct {
@@ -176,13 +176,13 @@ func LoadExecutionContext(ctx Context) (LoadedExecutionContext, []transition.Dia
 
 func executionStep(step flow.Step, current state.State, projectRoot string, inspections []gate.ArtifactInspection, inspectionSet *gate.InspectionSet) *ExecutionStepResult {
 	return &ExecutionStepResult{
-		ID:          step.ID,
-		Title:       step.Title,
-		Instruction: step.Instruction,
-		Inputs:      executionInputArtifacts(step.Inputs, projectRoot, inspectionSet),
-		Artifacts:   executionArtifacts(inspections),
-		Checks:      executionChecks(step.RequiredChecks, current),
-		Approval:    executionApproval(step, current),
+		ID:        step.ID,
+		Title:     step.Title,
+		Objective: step.Objective,
+		Inputs:    executionInputArtifacts(step.Inputs, projectRoot, inspectionSet),
+		Artifacts: executionArtifacts(inspections),
+		Checks:    executionChecks(step.RequiredChecks, current),
+		Approval:  executionApproval(step, current),
 	}
 }
 

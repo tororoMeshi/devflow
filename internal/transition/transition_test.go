@@ -62,14 +62,14 @@ func TestApplyStart(t *testing.T) {
 		got := ApplyStart(snapshot, taskSnapshot, nil, "run_test")
 		assertSuccess(t, got)
 
-		snapshot.Flow.Steps[0].Instruction = "changed input"
+		snapshot.Flow.Steps[0].Objective = "changed input"
 		snapshot.Flow.Steps[2].Approval.Required = false
-		if got.State.FlowSnapshot.Flow.Steps[0].Instruction != "Do first." || !got.State.FlowSnapshot.Flow.Steps[2].Approval.Required {
+		if got.State.FlowSnapshot.Flow.Steps[0].Objective != "Do first." || !got.State.FlowSnapshot.Flow.Steps[2].Approval.Required {
 			t.Fatal("State snapshot shares memory with input snapshot")
 		}
-		got.State.FlowSnapshot.Flow.Steps[0].Instruction = "changed state"
+		got.State.FlowSnapshot.Flow.Steps[0].Objective = "changed state"
 		got.State.FlowSnapshot.Flow.Steps[2].Approval.Required = true
-		if snapshot.Flow.Steps[0].Instruction != "changed input" || snapshot.Flow.Steps[2].Approval.Required {
+		if snapshot.Flow.Steps[0].Objective != "changed input" || snapshot.Flow.Steps[2].Approval.Required {
 			t.Fatal("input snapshot shares memory with State snapshot")
 		}
 		got.State.TaskSnapshot.Content = "changed state"
@@ -533,13 +533,13 @@ func testFlow() flow.Flow {
 			{
 				ID:          "first",
 				Title:       "First",
-				Instruction: "Do first.",
+				Objective: "Do first.",
 				Artifacts:   []flow.Artifact{},
 			},
 			{
 				ID:          "second",
 				Title:       "Second",
-				Instruction: "Do second.",
+				Objective: "Do second.",
 				Artifacts: []flow.Artifact{
 					{Path: "docs/code-review.md", Required: true},
 				},
@@ -547,7 +547,7 @@ func testFlow() flow.Flow {
 			{
 				ID:          "approval",
 				Title:       "Approval",
-				Instruction: "Approve.",
+				Objective: "Approve.",
 				Artifacts:   []flow.Artifact{},
 				Approval:    &flow.Approval{Required: true},
 			},

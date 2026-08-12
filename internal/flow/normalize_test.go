@@ -10,7 +10,7 @@ func TestNormalizeMakesMissingArtifactsEmptySlice(t *testing.T) {
 			{
 				ID:          "first",
 				Title:       "First",
-				Instruction: "Do first thing.",
+				Objective: "Do first thing.",
 			},
 		},
 	}
@@ -29,7 +29,7 @@ func TestLoadDefaultsArtifactRequiredToTrue(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			artifacts: [{path: "README.md"}]
 		}]
 	}`)
@@ -46,7 +46,7 @@ func TestLoadKeepsArtifactRequiredFalse(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			artifacts: [{path: "README.md", required: false}]
 		}]
 	}`)
@@ -63,7 +63,7 @@ func TestLoadDefaultsApprovalRequiredToFalse(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 			approval: {}
 		}]
 	}`)
@@ -83,7 +83,7 @@ func TestLoadKeepsMissingApprovalNil(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first thing."
+			objective: "Do first thing."
 		}]
 	}`)
 
@@ -131,8 +131,8 @@ func assertStepEqual(t *testing.T, got Step, want Step) {
 	if got.Title != want.Title {
 		t.Fatalf("Step.Title = %q, want %q", got.Title, want.Title)
 	}
-	if got.Instruction != want.Instruction {
-		t.Fatalf("Step.Instruction = %q, want %q", got.Instruction, want.Instruction)
+	if got.Objective != want.Objective {
+		t.Fatalf("Step.Objective = %q, want %q", got.Objective, want.Objective)
 	}
 	if len(got.Artifacts) != len(want.Artifacts) {
 		t.Fatalf("len(Step.Artifacts) = %d, want %d", len(got.Artifacts), len(want.Artifacts))

@@ -389,19 +389,19 @@ func backSkipFinishTestFlow() string {
 		steps: [{
 			id: "first"
 			title: "First"
-			instruction: "Do first."
+			objective: "Do first."
 		}, {
 			id: "second"
 			title: "Second"
-			instruction: "Do second."
+			objective: "Do second."
 		}, {
 			id: "third"
 			title: "Third"
-			instruction: "Do third."
+			objective: "Do third."
 		}, {
 			id: "artifact"
 			title: "Artifact"
-			instruction: "Create artifact."
+			objective: "Create artifact."
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
@@ -409,14 +409,14 @@ func backSkipFinishTestFlow() string {
 		}, {
 			id: "approval"
 			title: "Approval"
-			instruction: "Get approval."
+			objective: "Get approval."
 			approval: {
 				required: true
 			}
 		}, {
 			id: "final_approval"
 			title: "Final Approval"
-			instruction: "Get final approval."
+			objective: "Get final approval."
 			approval: {
 				required: true
 			}
