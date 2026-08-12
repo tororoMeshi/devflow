@@ -74,7 +74,7 @@ devflow が担うことは、次の通りです。
 * 工程の完了を記録する
 * 必須成果物（artifact）の存在を確認する
 * 承認（approval）が必要な工程を管理する
-* 通過条件（gate）を満たした場合に次の工程へ進める
+* 通過条件（gate）を評価し、完了可能かを示す
 * 必要に応じて前の工程へ戻る
 * 必要に応じて工程をスキップする
 * 対象外になったFlowや途中で終えたいFlowを終了する
@@ -83,7 +83,7 @@ devflow が担うことは、次の通りです。
 devflow は、AIが作業を始める前に「今やること」を提示します。
 
 AIは `devflow prompt` の出力を確認し、その工程の中で作業します。
-工程が終わったら、`devflow done` によって次の工程へ進めます。
+工程の実行主体は現在の工程に限定されます。工程完了後の判断と `devflow done` の実行は、AIやExecutorではなく、人間または外部の運用が行います。
 
 ## AI に任せること
 
@@ -212,14 +212,17 @@ MVPでは、Flow定義と状態ファイルを次の場所に置きます。
   .gitignore
 ```
 
-`devflow start <flow>` 後は、ローカル状態として `state.json` が作成されます。
+`devflow start <flow>` 後は、Flow runを識別するpointerと、run単位のStateが作成されます。
 
 ```text
 .devflow/
   flows/
     post-task-review.cue
   .gitignore
-  state.json
+  current.json
+  runs/
+    <flow-run-id>/
+      state.json
 ```
 
 ### `.devflow/flows/`
@@ -241,19 +244,22 @@ MVPでは、まず `post-task-review.cue` を公開サンプルFlowとして扱�
   purpose-driven-development.cue
 ```
 
-### `.devflow/state.json`
+### `.devflow/current.json` と `.devflow/runs/<flow-run-id>/state.json`
 
-現在地（state）を保存するファイルです。
+`.devflow/current.json` は現在のFlow runを指すpointerです。現在地（State）本体は、
+`.devflow/runs/<flow-run-id>/state.json` にrun単位で保存します。
 
-現在どのFlowのどの工程（step）にいるか、完了済み工程、承認、スキップ、戻り、終了理由などを記録します。
+runのStateには、現在どのFlowのどの工程（step）にいるか、完了済み工程、Attempt、Artifact Evidence、Check、承認、スキップ、戻り、終了理由などを記録します。
 
-`.devflow/state.json` は、作業者、ブランチ、AIセッション、現在の依頼に依存するローカル状態です。
-そのため、原則としてGit管理対象外にします。
+pointerとrunのStateは、作業者、ブランチ、AIセッション、現在の依頼に依存するローカル状態です。
+そのため、原則としてGit管理対象外にします。旧来の `.devflow/state.json` を現在のState保存先としては扱いません。
 
 MVPでは、`.devflow/.gitignore` に次の内容を置きます。
 
 ```gitignore
 state.json
+current.json
+runs/
 ```
 
 ## Flow定義の最小要件
@@ -278,7 +284,7 @@ Flowは、必要に応じて次の情報を持ちます。
 
 * `id`
 * `title`
-* `objective`
+* `objective`（現在工程で達成する目的）
 
 工程は、必要に応じて次の情報を持ちます。
 
@@ -380,11 +386,11 @@ devflow は、利用可能なFlowを一覧表示できます。
 devflow は、`.devflow/flows/` 配下の Flow 定義を読み込めるようにします。
 
 Flow定義は、英語のIDと設定キーを使います。
-説明文、表示名、AIへの指示文は日本語で書けます。
+説明文、表示名、`objective` は日本語で書けます。
 
 ### 現在地を保存できること
 
-devflow は、現在どのFlowのどの工程にいるかを `.devflow/state.json` に保存します。
+devflow は、`.devflow/current.json` と `.devflow/runs/<flow-run-id>/state.json` を使って、現在どのFlow runのどの工程にいるかを保存します。
 
 現在地は、AIの会話文脈ではなく、devflowの状態ファイルに保存します。
 
@@ -404,7 +410,7 @@ devflow は、現在の工程を表示できます。
 
 ### AIへの作業指示を表示できること
 
-devflow は、現在の工程に書かれたAI向けの作業指示を表示できます。
+devflow は、現在の工程の `objective` と、完了に必要な条件を表示できます。
 
 AIは、作業の節目で `devflow prompt` を確認し、その出力に従って作業します。
 
@@ -414,20 +420,20 @@ AIは、作業の節目で `devflow prompt` を確認し、その出力に従っ
 * Flow title
 * 現在の工程ID
 * 現在の工程title
-* AIへの指示
+* 現在工程の `objective`
 * 必要な成果物
 * 承認の要否
-* 作業後に使うdevflowコマンド
+* 必須Checkと現在のCompletion Gateの状態
 
 ### 工程を完了できること
 
-devflow は、現在の工程を完了扱いにできます。
+Coreの `devflow done` は、現在の工程を完了扱いにできます。
 
-工程を完了すると、現在地は次の工程へ進みます。
+`done` が成功すると、Coreは現在地を次の工程へ進めます。これは明示的なライフサイクル操作であり、AI、Executor、Automation Runtimeが自動的に実行するものではありません。
 
 成果物や承認が不足している場合は、完了扱いにしません。
 
-最後の工程で `devflow done` を実行した場合、Flowは完了状態になります。
+最後の工程で明示的に `devflow done` を実行した場合、Flowは完了状態になります。
 
 ### 成果物を確認できること
 
@@ -606,15 +612,18 @@ devflow用の初期ディレクトリとサンプルFlowを作成します。
 
 既存ファイルがある場合は、原則として上書きしません。
 
-`state.json` は、`devflow init` では作成しません。
+`current.json` とrunのStateは、`devflow init` では作成しません。
 
-`state.json` は、`devflow start <flow>` によってFlowを開始した時に作成します。
-これは、state が active Flow の現在地を表すローカル状態であり、Flow開始前には意味を持たないためです。
+`devflow start <flow>` によってFlowを開始すると、`.devflow/current.json` と
+`.devflow/runs/<flow-run-id>/state.json` を作成します。これは、Stateがactive Flow runの
+現在地を表すローカル状態であり、Flow開始前には意味を持たないためです。
 
 `.devflow/.gitignore` には、次の内容を入れます。
 
 ```gitignore
 state.json
+current.json
+runs/
 ```
 
 ### `devflow list`
@@ -644,15 +653,16 @@ activeなFlowが存在する状態で実行した場合はエラーにします�
 
 ### `devflow prompt`
 
-現在の工程でAIが行う作業指示を表示します。
+現在の工程の `objective`、成果物、RequiredChecks、承認、Completion Gateの状態を表示します。
+作業後の遷移コマンドをAIへ指示するものではありません。
 
 ### `devflow done`
 
-現在の工程を完了扱いにし、次の工程へ進めます。
+現在の工程を完了扱いにし、次の工程へ進める明示的なCore操作です。
 
 成果物や承認が不足している場合は、完了扱いにしません。
 
-最後の工程で `devflow done` を実行した場合、Flowは完了状態になります。
+AI、Executor、Automation Runtimeは `devflow done` を自動実行せず、Completion Contextを返して停止します。最後の工程で明示的に `devflow done` を実行した場合、Flowは完了状態になります。
 
 ### `devflow approve [--step <step>] [--note <note>]`
 
@@ -695,18 +705,26 @@ MVPでは、戻り操作の詳細な状態遷移は設計書で定義します�
 
 終了には理由を記録します。
 
+## 現行のAutomation Runtime境界
+
+Automation Runtime（`devflow-runner`）は、指定された現在のStepとcurrent/active Attemptだけを対象にExecutorを一回実行します。WorkPackageを渡し、ExecutorのExecutionReportを記録し、指定時はArtifact EvidenceとRequiredChecksを記録し、`--completion-context` 指定時はCompletion Contextを取得します。
+
+Completion Contextは指定AttemptのArtifact、RequiredChecks、Approval、Completion Gate、blockerを返す読み取り専用の結果です。RuntimeはCompletion Gateを再評価して遷移せず、completable stateで停止します。次Stepへの遷移、次Attemptの作成、retry判断、`approve`、`done` はRuntimeの責務ではありません。
+
+Attempt、Artifact Evidence、RequiredChecksはcurrent/active Attemptに束縛されます。Artifact EvidenceはFlowで宣言されたArtifactについて記録し、RequiredChecksはFlow定義順に処理します。保存済みのReport、Evidence、Checkは再実行で壊さず、同一内容へ収束させます。
+
 ## 完了条件
 
 MVPは、次の状態になったら完了とします。
 
 * Flow定義を読み込める
 * 利用可能なFlowを `devflow list` で確認できる
-* 現在地を `.devflow/state.json` に保存できる
-* `.devflow/state.json` をGit管理対象外にできる
+* `.devflow/current.json` と `.devflow/runs/<flow-run-id>/state.json` に現在地を保存できる
+* `current.json` と `runs/` をGit管理対象外にできる
 * `devflow status` で現在のFlow、現在の工程、完了済み工程、承認状態を確認できる
 * `devflow prompt` で現在の工程の指示を表示できる
-* `devflow done` で次の工程へ進める
-* 最後の工程で `devflow done` した場合、Flowを完了状態にできる
+* `devflow done` を明示的に実行した場合に次の工程へ進める
+* 最後の工程で明示的に `devflow done` した場合、Flowを完了状態にできる
 * 成果物がない場合に完了を止められる
 * 不足している成果物を表示できる
 * 承認がない場合に完了を止められる
