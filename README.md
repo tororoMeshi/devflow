@@ -1,27 +1,26 @@
 # devflow
 
-devflowは、AI支援開発で固定すると安定する工程契約と進行状態を管理するCLIです。
-Coreが工程と状態を管理し、Automation Runtime（`devflow-runner`）がその契約を使って外部Executorを一回実行します。**固定はdevflow、流動は外部ExecutorやAI。**
+devflowは、AI支援開発の工程契約、現在地、Gateを管理するCLIです。AIを実行するツールそのものではありません。調査、設計、実装、レビューは人間、AI、または外部Executorが行います。**固定はdevflow、流動は人間・AI・外部Executor。**
 
-CoreはFlow、State、Attempt、Gate、Artifact Evidence、CheckResult、Approval、lifecycle transitionを管理します。Automation RuntimeはCore CLIの呼出し、Executorの実行、Artifactの記録、Check Adapterの実行、Completion Contextの取得、runtime resultの出力を担当します。
+CoreはFlow、State、Attempt、Gate、Artifact Evidence、CheckResult、Approval、lifecycle transitionを管理します。Automation Runtime（`devflow-runner`）は、その契約を使って外部Executorを一回実行し、結果を記録するための補助です。初めて使う場合は、Automation Runtimeを使わずCoreから始めてください。
 
 ## Build
 
 ```bash
 go build -o /tmp/devflow ./cmd/devflow
-go build -o /tmp/devflow-runner ./cmd/devflow-runner
 ```
 
-以降の例では、この2つのバイナリを使用します。
+初回チュートリアルでは`devflow`だけを使います。`devflow-runner`はAutomation Runtimeを試すときにbuildしてください。
 
-## Core Quick Start
+## 初めて使う方へ
 
-`init`で標準Flowを配置し、`list`で利用可能なFlowを確認します。`start`にはタスク内容を保存したファイルを指定します。
+Coreだけで標準Flowの`post-task-review`を最初から最後まで完走する手順は、[Getting Started](docs/getting-started.md)にあります。`init`の後、`prompt`で工程契約を確認し、Artifact Evidence、Approval、`done`までを実際に実行します。
+
+短い開始例だけ確認したい場合は、次のとおりです。`--task-file`はプロジェクトルートからの相対パスで指定します。絶対パスと`..`を含むパスは使えません。
 
 ```bash
 mkdir -p docs
-printf '%s\n' '実装対象と完了条件を書く' > docs/task-request.md
-
+printf '%s\n' 'サンプルタスクを確認し、レビュー結果を docs/code-review.md に残す。' > docs/task-request.md
 /tmp/devflow init
 /tmp/devflow list
 /tmp/devflow start post-task-review --task-file docs/task-request.md
@@ -29,14 +28,7 @@ printf '%s\n' '実装対象と完了条件を書く' > docs/task-request.md
 /tmp/devflow prompt
 ```
 
-`prompt`の工程契約に従って作業し、必要な成果物・Check・Approvalを満たしたうえで完了します。
-
-`--task-file`はプロジェクトルートからの相対パスです。絶対パス、および`..`を含むパスは受理されません。
-
-```bash
-/tmp/devflow approve --step <step-id> --attempt <attempt-id> --note "確認済み"
-/tmp/devflow done
-```
+`status`と`prompt`には、現在のStepと、それに紐づくAttempt IDが表示されます。Artifact Evidenceの記録やApprovalには、このIDを`--attempt`に指定します。
 
 現在の工程を戻す、スキップする、Flowを終了する操作には理由が必要です。
 
@@ -50,6 +42,12 @@ printf '%s\n' '実装対象と完了条件を書く' > docs/task-request.md
 `status`は進行状況、`prompt`は現在工程の指示を表示します。`context`は外部Executor向けの読み取り専用の現在文脈JSONを出力します。
 
 ## Automation Runtime
+
+Automation Runtimeを試す場合は、次のコマンドでbuildします。
+
+```bash
+go build -o /tmp/devflow-runner ./cmd/devflow-runner
+```
 
 `devflow-runner execute`は、指定したStepとAttemptに対して次の順で処理します。
 

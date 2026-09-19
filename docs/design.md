@@ -1,5 +1,7 @@
 # devflow MVP 設計書
 
+> この文書はMVP期の設計記録です。現行の動作は実装と関連テストを基準とし、READMEは現在の利用者向け入口、初回利用は[Getting Started](getting-started.md)を参照してください。特にここにある`.devflow/state.json`や`instruction`の記述は現行仕様ではありません。
+
 ## 概要
 
 この文書は、`devflow MVP 要件定義書` をもとに、MVP実装に必要な設計を整理するものです。

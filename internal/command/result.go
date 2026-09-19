@@ -50,6 +50,7 @@ type StatusResult struct {
 	FlowTitle        string
 	CurrentStepID    string
 	CurrentStepTitle string
+	CurrentAttemptID string
 	CompletedSteps   []string
 	SkippedSteps     map[string]SkippedStepResult
 	Approval         *ApprovalResult
@@ -93,6 +94,7 @@ type PromptResult struct {
 	TaskContent          string
 	CurrentStepID        string
 	CurrentStepTitle     string
+	CurrentAttemptID     string
 	CurrentStepObjective string
 	RequiredArtifacts    []ArtifactResult
 	OptionalArtifacts    []ArtifactResult

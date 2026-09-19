@@ -27,6 +27,7 @@ func Prompt(ctx Context) CommandResult {
 			TaskContent:          active.State.TaskSnapshot.Content,
 			CurrentStepID:        active.CurrentStep.ID,
 			CurrentStepTitle:     active.CurrentStep.Title,
+			CurrentAttemptID:     active.State.CurrentAttemptID,
 			CurrentStepObjective: active.CurrentStep.Objective,
 			RequiredArtifacts:    requiredArtifacts,
 			OptionalArtifacts:    optionalArtifacts,

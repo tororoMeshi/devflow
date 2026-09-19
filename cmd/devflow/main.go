@@ -456,6 +456,9 @@ func writeFlows(stdout io.Writer, flows []command.FlowListItem) {
 func writeStatus(stdout io.Writer, status command.StatusResult) {
 	_, _ = fmt.Fprintf(stdout, "Flow: %s - %s\n", status.FlowID, status.FlowTitle)
 	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", status.CurrentStepID, status.CurrentStepTitle)
+	if status.CurrentAttemptID != "" {
+		_, _ = fmt.Fprintf(stdout, "Current attempt: %s\n", status.CurrentAttemptID)
+	}
 	if status.EntrySequence > 0 {
 		_, _ = fmt.Fprintf(stdout, "Entry sequence: %d\n", status.EntrySequence)
 	}
@@ -508,6 +511,9 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 		_, _ = io.WriteString(stdout, "\n\n")
 	}
 	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", prompt.CurrentStepID, prompt.CurrentStepTitle)
+	if prompt.CurrentAttemptID != "" {
+		_, _ = fmt.Fprintf(stdout, "Current attempt: %s\n", prompt.CurrentAttemptID)
+	}
 	_, _ = fmt.Fprintf(stdout, "Objective:\n%s\n", prompt.CurrentStepObjective)
 	_, _ = fmt.Fprintln(stdout, "Current Step contract rules:")
 	_, _ = fmt.Fprintln(stdout, "- Execute only the current Step.")

@@ -107,6 +107,9 @@ func TestStatusReturnsActiveFlowState(t *testing.T) {
 	if got.Status.CurrentStepTitle != "Current" {
 		t.Fatalf("CurrentStepTitle = %q", got.Status.CurrentStepTitle)
 	}
+	if got.Status.CurrentAttemptID != st.CurrentAttemptID {
+		t.Fatalf("CurrentAttemptID = %q, want %q", got.Status.CurrentAttemptID, st.CurrentAttemptID)
+	}
 	if len(got.Status.CompletedSteps) != 1 || got.Status.CompletedSteps[0] != "first" {
 		t.Fatalf("CompletedSteps = %#v", got.Status.CompletedSteps)
 	}
@@ -228,6 +231,9 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	}
 	if got.Prompt.CurrentStepTitle != "Current" {
 		t.Fatalf("CurrentStepTitle = %q", got.Prompt.CurrentStepTitle)
+	}
+	if got.Prompt.CurrentAttemptID != st.CurrentAttemptID {
+		t.Fatalf("CurrentAttemptID = %q, want %q", got.Prompt.CurrentAttemptID, st.CurrentAttemptID)
 	}
 	if got.Prompt.CurrentStepObjective != "Do current work." {
 		t.Fatalf("CurrentStepObjective = %q", got.Prompt.CurrentStepObjective)

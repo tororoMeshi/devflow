@@ -815,10 +815,11 @@ func TestWritePromptPreservesTaskContentAndSeparatesCurrentStep(t *testing.T) {
 		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
 			var stdout bytes.Buffer
 			writePrompt(&stdout, command.PromptResult{
-				FlowID:                 "flow",
-				TaskContent:            content,
-				CurrentStepID:          "step",
-				CurrentStepTitle:       "Step",
+				FlowID:               "flow",
+				TaskContent:          content,
+				CurrentStepID:        "step",
+				CurrentStepTitle:     "Step",
+				CurrentAttemptID:     "attempt_00000000000000000001",
 				CurrentStepObjective: "Objective",
 			})
 			wantPrefix := "Flow: flow\nTask:\n" + content
@@ -828,7 +829,48 @@ func TestWritePromptPreservesTaskContentAndSeparatesCurrentStep(t *testing.T) {
 			if !strings.Contains(stdout.String()[len(wantPrefix):], "\nCurrent step: step - Step\n") {
 				t.Fatalf("Current step is not separated: %q", stdout.String())
 			}
+			if !strings.Contains(stdout.String(), "Current attempt: attempt_00000000000000000001\n") {
+				t.Fatalf("Current attempt is not displayed: %q", stdout.String())
+			}
 		})
+	}
+}
+
+func TestWriteStatusDisplaysCurrentAttempt(t *testing.T) {
+	var stdout bytes.Buffer
+	writeStatus(&stdout, command.StatusResult{
+		FlowID:           "flow",
+		FlowTitle:        "Flow",
+		CurrentStepID:    "step",
+		CurrentStepTitle: "Step",
+		CurrentAttemptID: "attempt_00000000000000000001",
+	})
+	if !strings.Contains(stdout.String(), "Current attempt: attempt_00000000000000000001\n") {
+		t.Fatalf("Current attempt is not displayed: %q", stdout.String())
+	}
+}
+
+func TestWriteStatusAndPromptOmitEmptyCurrentAttempt(t *testing.T) {
+	var statusOutput bytes.Buffer
+	writeStatus(&statusOutput, command.StatusResult{
+		FlowID:           "flow",
+		FlowTitle:        "Flow",
+		CurrentStepID:    "step",
+		CurrentStepTitle: "Step",
+	})
+	if strings.Contains(statusOutput.String(), "Current attempt:") {
+		t.Fatalf("empty Current attempt is displayed in status: %q", statusOutput.String())
+	}
+
+	var promptOutput bytes.Buffer
+	writePrompt(&promptOutput, command.PromptResult{
+		FlowID:               "flow",
+		CurrentStepID:        "step",
+		CurrentStepTitle:     "Step",
+		CurrentStepObjective: "Objective",
+	})
+	if strings.Contains(promptOutput.String(), "Current attempt:") {
+		t.Fatalf("empty Current attempt is displayed in prompt: %q", promptOutput.String())
 	}
 }
 
