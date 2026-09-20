@@ -268,13 +268,13 @@ func recordCLIArtifact(t *testing.T, root, path string) {
 func TestArtifactStateHumanOutput(t *testing.T) {
 	var statusOutput bytes.Buffer
 	writeStatus(&statusOutput, command.StatusResult{
-		FlowID: "flow", FlowTitle: "Flow", Artifacts: []command.ArtifactStatusResult{
-			{Path: "out/report.md", State: "current"},
-			{Path: "out/summary.md", State: "missing_evidence"},
+		FlowID: "flow", FlowTitle: "Flow", FlowStatus: "running", CurrentStepID: "step", CurrentStepTitle: "Step", Artifacts: []command.ArtifactStatusResult{
+			{Path: "out/report.md", State: "current", Exists: true},
+			{Path: "out/summary.md", State: "missing_evidence", Exists: true},
 		},
 	})
 	statusText := statusOutput.String()
-	for _, want := range []string{"Artifacts:\n", "- out/report.md: current\n", "- out/summary.md: missing_evidence\n"} {
+	for _, want := range []string{"Required artifacts:\n", "- out/report.md exists and devflow's saved file record matches the current file.\n", "- out/summary.md exists, but devflow has no saved file record for it. Record it:\n"} {
 		if !strings.Contains(statusText, want) {
 			t.Fatalf("status output = %q, missing %q", statusText, want)
 		}
@@ -822,21 +822,21 @@ func TestWritePromptPreservesTaskContentAndSeparatesCurrentStep(t *testing.T) {
 				CurrentAttemptID:     "attempt_00000000000000000001",
 				CurrentStepObjective: "Objective",
 			})
-			wantPrefix := "Flow: flow\nTask:\n" + content
+			wantPrefix := "Task:\n" + content
 			if !strings.HasPrefix(stdout.String(), wantPrefix) {
 				t.Fatalf("output changed Task content: %q", stdout.String())
 			}
-			if !strings.Contains(stdout.String()[len(wantPrefix):], "\nCurrent step: step - Step\n") {
+			if !strings.Contains(stdout.String()[len(wantPrefix):], "\nCurrent step: Step (step)\n") {
 				t.Fatalf("Current step is not separated: %q", stdout.String())
 			}
-			if !strings.Contains(stdout.String(), "Current attempt: attempt_00000000000000000001\n") {
-				t.Fatalf("Current attempt is not displayed: %q", stdout.String())
+			if strings.Contains(stdout.String(), "Current attempt:") {
+				t.Fatalf("Prompt must not include attempt details: %q", stdout.String())
 			}
 		})
 	}
 }
 
-func TestWriteStatusDisplaysCurrentAttempt(t *testing.T) {
+func TestWriteStatusHidesCurrentAttemptWhenNoCommandNeedsIt(t *testing.T) {
 	var stdout bytes.Buffer
 	writeStatus(&stdout, command.StatusResult{
 		FlowID:           "flow",
@@ -845,8 +845,8 @@ func TestWriteStatusDisplaysCurrentAttempt(t *testing.T) {
 		CurrentStepTitle: "Step",
 		CurrentAttemptID: "attempt_00000000000000000001",
 	})
-	if !strings.Contains(stdout.String(), "Current attempt: attempt_00000000000000000001\n") {
-		t.Fatalf("Current attempt is not displayed: %q", stdout.String())
+	if strings.Contains(stdout.String(), "attempt_00000000000000000001") {
+		t.Fatalf("status must not expose an attempt ID without a command that needs it: %q", stdout.String())
 	}
 }
 
@@ -1136,6 +1136,155 @@ func TestRunWritesNormalResultToStdout(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Task:\nok\n\nCurrent step:") {
 		t.Fatalf("stdout = %q, want separated Task and Current step sections", stdout.String())
+	}
+}
+
+func TestWriteStatusExplainsHumanNextActions(t *testing.T) {
+	base := command.StatusResult{
+		FlowID:               "review",
+		FlowTitle:            "Review",
+		FlowStatus:           "running",
+		CurrentStepID:        "write_review",
+		CurrentStepTitle:     "Write review",
+		CurrentStepObjective: "Create the review document.",
+		CurrentAttemptID:     "attempt_00000000000000000004",
+	}
+
+	tests := []struct {
+		name   string
+		status command.StatusResult
+		want   []string
+		avoid  []string
+	}{
+		{
+			name: "step without gates",
+			status: command.StatusResult{
+				FlowID: "review", FlowTitle: "Review", FlowStatus: "running",
+				CurrentStepID: "check_changes", CurrentStepTitle: "Check changes",
+				CurrentStepObjective: "Organize changed files.",
+			},
+			want:  []string{"None are declared for this Step.", "Complete the Objective outside devflow.", "devflow done", "does not perform the Objective"},
+			avoid: []string{"Attempt ID", "Step entry", "Completed steps", "(check_changes)"},
+		},
+		{
+			name:   "missing artifact file",
+			status: withStatusArtifacts(base, command.ArtifactStatusResult{Path: "docs/code-review.md", State: command.ArtifactStatusMissingEvidence}),
+			want:   []string{"does not exist", "Create it, then record it", "devflow artifact record --step write_review --attempt attempt_00000000000000000004 --path docs/code-review.md"},
+			avoid:  []string{"  devflow done"},
+		},
+		{
+			name:   "artifact exists without evidence",
+			status: withStatusArtifacts(base, command.ArtifactStatusResult{Path: "docs/code-review.md", State: command.ArtifactStatusMissingEvidence, Exists: true}),
+			want:   []string{"exists, but devflow has no saved file record", "devflow artifact record --step write_review --attempt attempt_00000000000000000004 --path docs/code-review.md"},
+			avoid:  []string{"does not exist", "  devflow done"},
+		},
+		{
+			name:   "artifact evidence current",
+			status: withStatusCompletionReady(withStatusArtifacts(base, command.ArtifactStatusResult{Path: "docs/code-review.md", State: command.ArtifactStatusCurrent, Exists: true})),
+			want:   []string{"saved file record matches the current file", "All declared completion requirements are satisfied.", "  devflow done"},
+		},
+		{
+			name:   "recorded artifact is missing",
+			status: withStatusArtifacts(base, command.ArtifactStatusResult{Path: "docs/code-review.md", State: command.ArtifactStatusMissingFile}),
+			want:   []string{"was recorded before but is no longer present", "Restore the recorded version", "devflow back --reason \"Artifact changed after evidence was recorded\""},
+			avoid:  []string{"devflow artifact record --step write_review"},
+		},
+		{
+			name:   "artifact evidence is current",
+			status: withStatusArtifacts(base, command.ArtifactStatusResult{Path: "docs/code-review.md", State: command.ArtifactStatusCurrent, Exists: true}),
+			want:   []string{"exists and devflow's saved file record matches the current file"},
+		},
+		{
+			name:   "artifact changed after evidence",
+			status: withStatusArtifacts(base, command.ArtifactStatusResult{Path: "docs/code-review.md", State: command.ArtifactStatusChanged, Exists: true}),
+			want:   []string{"changed after devflow saved its file record", "record cannot be replaced while this Step is in progress", "devflow back --reason \"Artifact changed after evidence was recorded\""},
+			avoid:  []string{"devflow artifact record --step write_review", "  devflow done"},
+		},
+		{
+			name:   "approval pending",
+			status: withStatusApproval(base, &command.ApprovalResult{StepID: "human_approval"}),
+			want:   []string{"Waiting for approval of this Step's Objective", "devflow approve --step human_approval --attempt attempt_00000000000000000004 --note \"<approval note>\""},
+			avoid:  []string{"  devflow done"},
+		},
+		{
+			name:   "approval recorded",
+			status: withStatusCompletionReady(withStatusApproval(base, &command.ApprovalResult{StepID: "human_approval", Approved: true, Note: "looks good"})),
+			want:   []string{"Approved for this Step. Note: looks good", "devflow done"},
+		},
+		{
+			name:   "terminal flow",
+			status: command.StatusResult{FlowID: "review", FlowTitle: "Review", FlowStatus: "completed", CurrentAttemptID: "attempt_01"},
+			want:   []string{"Flow status: completed", "no longer active", "No devflow transition is needed."},
+			avoid:  []string{"Completion requirements checked by devflow", "devflow done", "attempt_01"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			writeStatus(&stdout, tt.status)
+			for _, want := range tt.want {
+				assertContains(t, stdout.String(), want)
+			}
+			for _, avoid := range tt.avoid {
+				if strings.Contains(stdout.String(), avoid) {
+					t.Fatalf("status output = %q, must not contain %q", stdout.String(), avoid)
+				}
+			}
+		})
+	}
+}
+
+func withStatusArtifacts(status command.StatusResult, artifacts ...command.ArtifactStatusResult) command.StatusResult {
+	status.Artifacts = artifacts
+	return status
+}
+
+func withStatusApproval(status command.StatusResult, approval *command.ApprovalResult) command.StatusResult {
+	status.Approval = approval
+	return status
+}
+
+func withStatusCompletionReady(status command.StatusResult) command.StatusResult {
+	status.CompletionReady = true
+	return status
+}
+
+func TestWritePromptKeepsOnlyCurrentStepContract(t *testing.T) {
+	var stdout bytes.Buffer
+	writePrompt(&stdout, command.PromptResult{
+		FlowID:               "review",
+		TaskContent:          "Review the implementation.\n",
+		CurrentStepID:        "write_review",
+		CurrentStepTitle:     "Write review",
+		CurrentAttemptID:     "attempt_00000000000000000004",
+		CurrentStepObjective: "Create docs/code-review.md.",
+		RequiredInputs:       []command.ArtifactResult{{Path: "docs/request.md"}},
+		RequiredArtifacts:    []command.ArtifactResult{{Path: "docs/code-review.md"}},
+		OptionalArtifacts:    []command.ArtifactResult{{Path: "docs/notes.md"}},
+		RequiredApproval:     &command.RequiredApprovalResult{StepID: "write_review", AttemptID: "attempt_00000000000000000004"},
+		RequiredChecks:       []string{"go-test"},
+	})
+
+	got := stdout.String()
+	for _, want := range []string{
+		"Task:\nReview the implementation.",
+		"Current step: Write review (write_review)",
+		"Objective:\nCreate docs/code-review.md.",
+		"Required inputs:\n- docs/request.md",
+		"Required artifacts:\n- docs/code-review.md",
+		"Approval:\n- required from a human or external operation",
+		"Required checks:\n- go-test",
+		"Boundary:\n- Work only on the current Step.",
+		"- Do not run lifecycle commands or advance the Flow.",
+		"- When the Objective and declared requirements are satisfied, stop and report completion to the caller.",
+	} {
+		assertContains(t, got, want)
+	}
+	for _, avoid := range []string{"Flow: review", "Current attempt:", "Optional artifacts", "Completed steps", "devflow done"} {
+		if strings.Contains(got, avoid) {
+			t.Fatalf("prompt output = %q, must not contain %q", got, avoid)
+		}
 	}
 }
 

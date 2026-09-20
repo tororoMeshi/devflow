@@ -1,6 +1,7 @@
 package command
 
 import (
+	"github.com/tororoMeshi/devflow/internal/flow"
 	"github.com/tororoMeshi/devflow/internal/gate"
 )
 
@@ -10,7 +11,8 @@ func Prompt(ctx Context) CommandResult {
 		return CommandResult{ExitCode: 1, Diagnostics: diagnostics}
 	}
 
-	requiredArtifacts, optionalArtifacts := promptArtifacts(active)
+	requiredInputs, optionalInputs := promptArtifactList(active.CurrentStep.Inputs)
+	requiredArtifacts, optionalArtifacts := promptArtifactList(active.CurrentStep.Artifacts)
 	requiredApproval := promptRequiredApproval(active)
 	attempt, _, ok := active.State.CurrentAttempt()
 	if !ok {
@@ -29,6 +31,8 @@ func Prompt(ctx Context) CommandResult {
 			CurrentStepTitle:     active.CurrentStep.Title,
 			CurrentAttemptID:     active.State.CurrentAttemptID,
 			CurrentStepObjective: active.CurrentStep.Objective,
+			RequiredInputs:       requiredInputs,
+			OptionalInputs:       optionalInputs,
 			RequiredArtifacts:    requiredArtifacts,
 			OptionalArtifacts:    optionalArtifacts,
 			RequiredApproval:     requiredApproval,
@@ -40,11 +44,11 @@ func Prompt(ctx Context) CommandResult {
 	}
 }
 
-func promptArtifacts(active ActiveFlow) ([]ArtifactResult, []ArtifactResult) {
+func promptArtifactList(artifacts []flow.Artifact) ([]ArtifactResult, []ArtifactResult) {
 	required := []ArtifactResult{}
 	var optional []ArtifactResult
 
-	for _, artifact := range active.CurrentStep.Artifacts {
+	for _, artifact := range artifacts {
 		result := ArtifactResult{Path: artifact.Path}
 		if artifact.Required {
 			required = append(required, result)

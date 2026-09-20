@@ -46,17 +46,20 @@ type FlowListItem struct {
 }
 
 type StatusResult struct {
-	FlowID           string
-	FlowTitle        string
-	CurrentStepID    string
-	CurrentStepTitle string
-	CurrentAttemptID string
-	CompletedSteps   []string
-	SkippedSteps     map[string]SkippedStepResult
-	Approval         *ApprovalResult
-	EntrySequence    uint64
-	Checks           []CheckStatusResult
-	Artifacts        []ArtifactStatusResult `json:"artifacts"`
+	FlowID               string
+	FlowTitle            string
+	FlowStatus           string
+	CurrentStepID        string
+	CurrentStepTitle     string
+	CurrentStepObjective string
+	CurrentAttemptID     string
+	CompletedSteps       []string
+	SkippedSteps         map[string]SkippedStepResult
+	Approval             *ApprovalResult
+	EntrySequence        uint64
+	Checks               []CheckStatusResult
+	Artifacts            []ArtifactStatusResult `json:"artifacts"`
+	CompletionReady      bool                   `json:"-"`
 }
 
 type SkippedStepResult struct {
@@ -77,8 +80,9 @@ type CheckStatusResult struct {
 }
 
 type ArtifactStatusResult struct {
-	Path  string `json:"path"`
-	State string `json:"state"`
+	Path   string `json:"path"`
+	State  string `json:"state"`
+	Exists bool   `json:"-"`
 }
 
 const (
@@ -96,6 +100,8 @@ type PromptResult struct {
 	CurrentStepTitle     string
 	CurrentAttemptID     string
 	CurrentStepObjective string
+	RequiredInputs       []ArtifactResult
+	OptionalInputs       []ArtifactResult
 	RequiredArtifacts    []ArtifactResult
 	OptionalArtifacts    []ArtifactResult
 	RequiredApproval     *RequiredApprovalResult

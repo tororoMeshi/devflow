@@ -26,27 +26,33 @@ func Status(ctx Context) CommandResult {
 	}
 
 	artifacts := []ArtifactStatusResult{}
+	completionReady := false
 	if active.State.Status == state.StatusRunning {
 		attempt, _, ok := active.State.CurrentAttempt()
 		if !ok {
 			return commandFailure(CodeInvalidState)
 		}
-		artifacts = artifactStatusResults(gate.InspectArtifacts(ctx.ProjectRoot, active.CurrentStep, attempt, gate.NewInspectionSet()))
+		inspections := gate.NewInspectionSet()
+		artifacts = artifactStatusResults(gate.InspectArtifacts(ctx.ProjectRoot, active.CurrentStep, attempt, inspections))
+		completionReady = gate.InspectCompletionGate(ctx.ProjectRoot, active.State, active.CurrentStep, attempt, inspections).Ready
 	}
 	return CommandResult{
 		ExitCode: 0,
 		Status: &StatusResult{
-			FlowID:           active.Flow.ID,
-			FlowTitle:        active.Flow.Title,
-			CurrentStepID:    active.CurrentStep.ID,
-			CurrentStepTitle: active.CurrentStep.Title,
-			CurrentAttemptID: active.State.CurrentAttemptID,
-			CompletedSteps:   append([]string(nil), active.State.CompletedSteps...),
-			SkippedSteps:     skippedStepResults(active),
-			Approval:         approvalResult(active),
-			EntrySequence:    active.State.EntrySequence(),
-			Checks:           checkStatusResults(active),
-			Artifacts:        artifacts,
+			FlowID:               active.Flow.ID,
+			FlowTitle:            active.Flow.Title,
+			FlowStatus:           string(active.State.Status),
+			CurrentStepID:        active.CurrentStep.ID,
+			CurrentStepTitle:     active.CurrentStep.Title,
+			CurrentStepObjective: active.CurrentStep.Objective,
+			CurrentAttemptID:     active.State.CurrentAttemptID,
+			CompletedSteps:       append([]string(nil), active.State.CompletedSteps...),
+			SkippedSteps:         skippedStepResults(active),
+			Approval:             approvalResult(active),
+			EntrySequence:        active.State.EntrySequence(),
+			Checks:               checkStatusResults(active),
+			Artifacts:            artifacts,
+			CompletionReady:      completionReady,
 		},
 	}
 }
@@ -57,7 +63,7 @@ func artifactStatusResults(inspections []gate.ArtifactInspection) []ArtifactStat
 		if !inspection.Required {
 			continue
 		}
-		results = append(results, ArtifactStatusResult{Path: inspection.Path, State: artifactStatusState(inspection.Problem)})
+		results = append(results, ArtifactStatusResult{Path: inspection.Path, State: artifactStatusState(inspection.Problem), Exists: inspection.Exists})
 	}
 	return results
 }
@@ -107,9 +113,15 @@ func skippedStepResults(active ActiveFlow) map[string]SkippedStepResult {
 }
 
 func approvalResult(active ActiveFlow) *ApprovalResult {
-	attempt, _, ok := active.State.CurrentAttempt()
-	if !ok || attempt.Status != state.StepAttemptActive || attempt.Approval == nil {
+	if active.CurrentStep.Approval == nil || !active.CurrentStep.Approval.Required {
 		return nil
+	}
+	attempt, _, ok := active.State.CurrentAttempt()
+	if !ok || attempt.Status != state.StepAttemptActive {
+		return nil
+	}
+	if attempt.Approval == nil {
+		return &ApprovalResult{StepID: attempt.StepID}
 	}
 	return &ApprovalResult{StepID: attempt.StepID, Approved: true, Note: attempt.Approval.Note}
 }

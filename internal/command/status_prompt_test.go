@@ -34,7 +34,7 @@ func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {
 	if got := artifactStatusState(gate.CompletionBlockerKind("unknown")); got != "unavailable" {
 		t.Fatalf("unknown artifact state = %q", got)
 	}
-	data, err := json.Marshal(StatusResult{Artifacts: []ArtifactStatusResult{}})
+	data, err := json.Marshal(StatusResult{Artifacts: []ArtifactStatusResult{{Path: "current", State: "current", Exists: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,8 +43,11 @@ func TestStatusArtifactsJSONContractAndAllStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	artifacts, exists := value["artifacts"]
-	if !exists || artifacts == nil || len(artifacts.([]any)) != 0 {
+	if !exists || artifacts == nil || len(artifacts.([]any)) != 1 {
 		t.Fatalf("status JSON = %s", data)
+	}
+	if _, exists := artifacts.([]any)[0].(map[string]any)["exists"]; exists {
+		t.Fatalf("human-only artifact existence leaked into status JSON: %s", data)
 	}
 	if _, exists := value["Artifacts"]; exists {
 		t.Fatalf("legacy field name present: %s", data)
@@ -152,7 +155,7 @@ func TestStatusDoesNotExposePastAttemptApproval(t *testing.T) {
 	}
 	got := Status(Context{ProjectRoot: root})
 	assertCommandSuccess(t, got)
-	if got.Status == nil || got.Status.Approval != nil {
+	if got.Status == nil || got.Status.Approval == nil || got.Status.Approval.Approved || got.Status.Approval.Note != "" {
 		t.Fatalf("Status = %#v", got.Status)
 	}
 	if !reflect.DeepEqual(got.Status.Artifacts, []ArtifactStatusResult{{Path: "docs/required.md", State: "missing_evidence"}}) {
@@ -180,11 +183,11 @@ func TestStatusReportsCurrentArtifactState(t *testing.T) {
 	if err := saveCommandState(t, root, st); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "current"}}) {
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "current", Exists: true}}) {
 		t.Fatalf("current artifacts = %#v", got)
 	}
 	writeCommandTestFile(t, filepath.Join(root, "docs", "required.md"), "changed")
-	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "changed"}}) {
+	if got := Status(Context{ProjectRoot: root}).Status.Artifacts; !reflect.DeepEqual(got, []ArtifactStatusResult{{Path: "docs/required.md", State: "changed", Exists: true}}) {
 		t.Fatalf("changed artifacts = %#v", got)
 	}
 	blockedPrompt := Prompt(Context{ProjectRoot: root})
@@ -238,8 +241,13 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.CurrentStepObjective != "Do current work." {
 		t.Fatalf("CurrentStepObjective = %q", got.Prompt.CurrentStepObjective)
 	}
+	assertArtifactPaths(t, got.Prompt.RequiredInputs, []string{"docs/request.md"})
+	assertArtifactPaths(t, got.Prompt.OptionalInputs, []string{"docs/optional-input.md"})
 	assertArtifactPaths(t, got.Prompt.RequiredArtifacts, []string{"docs/required.md"})
 	assertArtifactPaths(t, got.Prompt.OptionalArtifacts, []string{"docs/optional.md"})
+	if !reflect.DeepEqual(got.Prompt.RequiredChecks, []string{"go-test"}) {
+		t.Fatalf("RequiredChecks = %#v", got.Prompt.RequiredChecks)
+	}
 	if got.Prompt.RequiredApproval == nil {
 		t.Fatalf("RequiredApproval = nil")
 	}
@@ -446,6 +454,13 @@ func statusPromptTestFlow() string {
 			id: "current"
 			title: "Current"
 			objective: "Do current work."
+			inputs: [{
+				path: "docs/request.md"
+				required: true
+			}, {
+				path: "docs/optional-input.md"
+				required: false
+			}]
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
@@ -456,6 +471,7 @@ func statusPromptTestFlow() string {
 			approval: {
 				required: true
 			}
+			required_checks: ["go-test"]
 		}, {
 			id: "no_approval"
 			title: "No Approval"

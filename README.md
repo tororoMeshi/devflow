@@ -28,7 +28,15 @@ printf '%s\n' 'サンプルタスクを確認し、レビュー結果を docs/co
 /tmp/devflow prompt
 ```
 
-`status`と`prompt`には、現在のStepと、それに紐づくAttempt IDが表示されます。Artifact Evidenceの記録やApprovalには、このIDを`--attempt`に指定します。
+`status`は人間向けの現在地と次の操作、`prompt`はAI向けの現在Step契約です。Artifact Evidenceの記録やApprovalに必要なAttempt IDは、`status`の具体的なコマンド例に埋め込まれます。
+
+## CLI出力の責務
+
+同じCore State / Gate / Evidence / Attemptを、用途別に投影します。意味論やJSON契約は出力ごとに分岐させません。
+
+- `devflow status`: Human。現在地、不足している条件、次にdevflowで行う操作を説明します。
+- `devflow prompt`: AI。現在StepだけのTask、Objective、入力、成果物、Check、承認要件と停止境界を示します。
+- `devflow context`、`devflow work-package`、`devflow completion-context`: Machine。安定したJSONの状態・Executor入力・完了判定契約です。
 
 現在の工程を戻す、スキップする、Flowを終了する操作には理由が必要です。
 

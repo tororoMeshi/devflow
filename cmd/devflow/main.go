@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/tororoMeshi/devflow/internal/command"
@@ -454,80 +453,124 @@ func writeFlows(stdout io.Writer, flows []command.FlowListItem) {
 }
 
 func writeStatus(stdout io.Writer, status command.StatusResult) {
-	_, _ = fmt.Fprintf(stdout, "Flow: %s - %s\n", status.FlowID, status.FlowTitle)
-	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", status.CurrentStepID, status.CurrentStepTitle)
-	if status.CurrentAttemptID != "" {
-		_, _ = fmt.Fprintf(stdout, "Current attempt: %s\n", status.CurrentAttemptID)
-	}
-	if status.EntrySequence > 0 {
-		_, _ = fmt.Fprintf(stdout, "Entry sequence: %d\n", status.EntrySequence)
-	}
-	writeStringList(stdout, "Completed steps", status.CompletedSteps)
-
-	_, _ = fmt.Fprintln(stdout, "Skipped steps:")
-	for _, stepID := range sortedSkippedStepKeys(status.SkippedSteps) {
-		_, _ = fmt.Fprintf(stdout, "- %s: %s\n", stepID, status.SkippedSteps[stepID].Reason)
-	}
-	if len(status.SkippedSteps) == 0 {
-		_, _ = fmt.Fprintln(stdout, "- none")
+	_, _ = fmt.Fprintf(stdout, "Flow: %s\n", status.FlowTitle)
+	if status.FlowStatus == "completed" || status.FlowStatus == "finished" {
+		_, _ = fmt.Fprintf(stdout, "Flow status: %s\n", status.FlowStatus)
+		_, _ = fmt.Fprintln(stdout, "This Flow is no longer active. No devflow transition is needed.")
+		return
 	}
 
-	_, _ = fmt.Fprintln(stdout, "Approvals:")
-	if status.Approval == nil {
-		_, _ = fmt.Fprintln(stdout, "- none")
+	_, _ = fmt.Fprintf(stdout, "Current step: %s\n", status.CurrentStepTitle)
+	_, _ = fmt.Fprintf(stdout, "Objective: %s\n\n", status.CurrentStepObjective)
+	_, _ = fmt.Fprintln(stdout, "Completion requirements checked by devflow:")
+	if !hasCompletionRequirements(status) {
+		_, _ = fmt.Fprintln(stdout, "- None are declared for this Step.")
+		_, _ = fmt.Fprintln(stdout, "- Complete the Objective outside devflow. When you judge it is complete, request the transition:")
+		_, _ = fmt.Fprintln(stdout, "  devflow done")
+		_, _ = fmt.Fprintln(stdout, "- `done` does not perform the Objective; it only checks declared requirements and advances the Flow.")
 	} else {
-		_, _ = fmt.Fprintf(stdout, "- %s: approved=%t note=%s\n", status.Approval.StepID, status.Approval.Approved, status.Approval.Note)
-	}
-
-	_, _ = fmt.Fprintln(stdout, "Checks:")
-	if len(status.Checks) == 0 {
-		_, _ = fmt.Fprintln(stdout, "- none")
-	}
-	for _, check := range status.Checks {
-		if check.ExitCode == nil {
-			_, _ = fmt.Fprintf(stdout, "- %s: pending\n", check.CheckID)
-			continue
-		}
-		_, _ = fmt.Fprintf(stdout, "- %s: %s exit=%d", check.CheckID, check.Status, *check.ExitCode)
-		if check.LogPath != "" {
-			_, _ = fmt.Fprintf(stdout, " log=%s", check.LogPath)
-		}
-		_, _ = fmt.Fprintln(stdout)
-	}
-	if len(status.Artifacts) > 0 {
-		_, _ = fmt.Fprintln(stdout, "Artifacts:")
-		for _, artifact := range status.Artifacts {
-			_, _ = fmt.Fprintf(stdout, "- %s: %s\n", artifact.Path, artifact.State)
+		writeHumanArtifactStatus(stdout, status)
+		writeHumanCheckStatus(stdout, status.Checks)
+		writeHumanApprovalStatus(stdout, status)
+		if status.CompletionReady {
+			_, _ = fmt.Fprintln(stdout, "All declared completion requirements are satisfied. Request the transition:")
+			_, _ = fmt.Fprintln(stdout, "  devflow done")
+		} else {
+			_, _ = fmt.Fprintln(stdout, "Resolve the unmet requirements above before requesting the transition with `devflow done`.")
 		}
 	}
 }
 
+func hasCompletionRequirements(status command.StatusResult) bool {
+	return len(status.Artifacts) > 0 || len(status.Checks) > 0 || status.Approval != nil
+}
+
+func writeHumanArtifactStatus(stdout io.Writer, status command.StatusResult) {
+	if len(status.Artifacts) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(stdout, "Required artifacts:")
+	for _, artifact := range status.Artifacts {
+		switch artifact.State {
+		case command.ArtifactStatusCurrent:
+			_, _ = fmt.Fprintf(stdout, "- %s exists and devflow's saved file record matches the current file.\n", artifact.Path)
+		case command.ArtifactStatusMissingEvidence:
+			if artifact.Exists {
+				_, _ = fmt.Fprintf(stdout, "- %s exists, but devflow has no saved file record for it. Record it:\n", artifact.Path)
+			} else {
+				_, _ = fmt.Fprintf(stdout, "- %s does not exist, and devflow has no saved file record for it. Create it, then record it:\n", artifact.Path)
+			}
+			writeArtifactRecordCommand(stdout, status, artifact.Path)
+		case command.ArtifactStatusMissingFile:
+			_, _ = fmt.Fprintf(stdout, "- %s was recorded before but is no longer present. Restore the recorded version to satisfy this Attempt.\n", artifact.Path)
+			_, _ = fmt.Fprintln(stdout, "  If it must be recreated with different contents, return to the previous Step to create a new Attempt:")
+			writeBackCommand(stdout)
+		case command.ArtifactStatusChanged:
+			_, _ = fmt.Fprintf(stdout, "- %s changed after devflow saved its file record. That record cannot be replaced while this Step is in progress.\n", artifact.Path)
+			_, _ = fmt.Fprintln(stdout, "  Return to the previous Step, then record the current file when this Step is entered again:")
+			writeBackCommand(stdout)
+		default:
+			_, _ = fmt.Fprintf(stdout, "- %s cannot be inspected safely. Resolve the file access problem before recording evidence.\n", artifact.Path)
+		}
+	}
+}
+
+func writeArtifactRecordCommand(stdout io.Writer, status command.StatusResult, path string) {
+	_, _ = fmt.Fprintf(stdout, "  devflow artifact record --step %s --attempt %s --path %s\n", status.CurrentStepID, status.CurrentAttemptID, path)
+}
+
+func writeBackCommand(stdout io.Writer) {
+	_, _ = fmt.Fprintln(stdout, "  devflow back --reason \"Artifact changed after evidence was recorded\"")
+}
+
+func writeHumanCheckStatus(stdout io.Writer, checks []command.CheckStatusResult) {
+	if len(checks) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(stdout, "Required checks:")
+	for _, check := range checks {
+		if check.ExitCode == nil {
+			_, _ = fmt.Fprintf(stdout, "- %s has not been recorded.\n", check.CheckID)
+			continue
+		}
+		if check.Status == "passed" {
+			_, _ = fmt.Fprintf(stdout, "- %s passed.\n", check.CheckID)
+			continue
+		}
+		_, _ = fmt.Fprintf(stdout, "- %s failed (exit code %d). Record a passing result before continuing.\n", check.CheckID, *check.ExitCode)
+	}
+}
+
+func writeHumanApprovalStatus(stdout io.Writer, status command.StatusResult) {
+	if status.Approval == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(stdout, "Human approval:")
+	if status.Approval.Approved {
+		_, _ = fmt.Fprintf(stdout, "- Approved for this Step. Note: %s\n", status.Approval.Note)
+		return
+	}
+	_, _ = fmt.Fprintf(stdout, "- Waiting for approval of this Step's Objective: %s\n", status.CurrentStepObjective)
+	_, _ = fmt.Fprintln(stdout, "  Record the approval with:")
+	_, _ = fmt.Fprintf(stdout, "  devflow approve --step %s --attempt %s --note \"<approval note>\"\n", status.Approval.StepID, status.CurrentAttemptID)
+}
+
 func writePrompt(stdout io.Writer, prompt command.PromptResult) {
-	_, _ = fmt.Fprintf(stdout, "Flow: %s\n", prompt.FlowID)
 	_, _ = fmt.Fprintf(stdout, "Task:\n%s", prompt.TaskContent)
 	if strings.HasSuffix(prompt.TaskContent, "\n") {
 		_, _ = io.WriteString(stdout, "\n")
 	} else {
 		_, _ = io.WriteString(stdout, "\n\n")
 	}
-	_, _ = fmt.Fprintf(stdout, "Current step: %s - %s\n", prompt.CurrentStepID, prompt.CurrentStepTitle)
-	if prompt.CurrentAttemptID != "" {
-		_, _ = fmt.Fprintf(stdout, "Current attempt: %s\n", prompt.CurrentAttemptID)
-	}
+	_, _ = fmt.Fprintf(stdout, "Current step: %s (%s)\n", prompt.CurrentStepTitle, prompt.CurrentStepID)
 	_, _ = fmt.Fprintf(stdout, "Objective:\n%s\n", prompt.CurrentStepObjective)
-	_, _ = fmt.Fprintln(stdout, "Current Step contract rules:")
-	_, _ = fmt.Fprintln(stdout, "- Execute only the current Step.")
-	_, _ = fmt.Fprintln(stdout, "- Do not advance the workflow to the next Step yourself.")
-	_, _ = fmt.Fprintln(stdout, "- Stop when the current Step is in a completable state.")
+	writeArtifactList(stdout, "Required inputs", prompt.RequiredInputs)
 	writeArtifactList(stdout, "Required artifacts", prompt.RequiredArtifacts)
-	if len(prompt.OptionalArtifacts) > 0 {
-		writeArtifactList(stdout, "Optional artifacts", prompt.OptionalArtifacts)
-	}
-	_, _ = fmt.Fprintln(stdout, "Required approval:")
+	_, _ = fmt.Fprintln(stdout, "Approval:")
 	if prompt.RequiredApproval == nil {
-		_, _ = fmt.Fprintln(stdout, "- none")
+		_, _ = fmt.Fprintln(stdout, "- not required")
 	} else {
-		_, _ = fmt.Fprintf(stdout, "- %s\n", prompt.RequiredApproval.StepID)
+		_, _ = fmt.Fprintln(stdout, "- required from a human or external operation")
 	}
 	writeStringList(stdout, "Required checks", prompt.RequiredChecks)
 	if len(prompt.ArtifactBlockers) > 0 {
@@ -537,8 +580,12 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 		writeStringList(stdout, "Check blockers", prompt.CheckBlockers)
 	}
 	if len(prompt.CompletionBlockers) > 0 {
-		writeStringList(stdout, "Completion blockers", prompt.CompletionBlockers)
+		writeStringList(stdout, "Current input blockers", prompt.CompletionBlockers)
 	}
+	_, _ = fmt.Fprintln(stdout, "Boundary:")
+	_, _ = fmt.Fprintln(stdout, "- Work only on the current Step.")
+	_, _ = fmt.Fprintln(stdout, "- Do not run lifecycle commands or advance the Flow.")
+	_, _ = fmt.Fprintln(stdout, "- When the Objective and declared requirements are satisfied, stop and report completion to the caller.")
 }
 
 func writeArtifactList(stdout io.Writer, label string, artifacts []command.ArtifactResult) {
@@ -561,13 +608,4 @@ func writeStringList(stdout io.Writer, label string, values []string) {
 	for _, value := range values {
 		_, _ = fmt.Fprintf(stdout, "- %s\n", value)
 	}
-}
-
-func sortedSkippedStepKeys(values map[string]command.SkippedStepResult) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

@@ -2,7 +2,7 @@
 
 このチュートリアルでは、devflowのCoreだけを使い、標準Flowの`post-task-review`を1回最後まで進めます。Automation Runtime、Executor、Check Adapterは使いません。
 
-devflowはAIを呼び出したり作業内容を決めたりしません。Flowが「何を成立させるか」を工程契約として管理し、人間またはAIがその工程の作業を行います。`status`は現在地、`prompt`は現在の工程契約を示します。`done`が確認するのはFlowで宣言されたGateであり、Objectiveの実施内容そのものではありません。
+devflowはAIを呼び出したり作業内容を決めたりしません。Flowが「何を成立させるか」を工程契約として管理し、人間またはAIがその工程の作業を行います。`status`は人間向けの現在地・不足条件・次の操作、`prompt`はAI向けの現在Step契約を示します。`context`、`work-package`、`completion-context`は外部運用向けのJSON契約です。`done`が確認するのはFlowで宣言されたGateであり、Objectiveの実施内容そのものではありません。
 
 ## 1. Coreをbuildする
 
@@ -37,7 +37,7 @@ printf '%s\n' 'このチュートリアルでレビューFlowの進め方を確�
 
 `list`に`post-task-review`が表示され、開始直後のStepは`check_changes`です。`prompt`に表示される`Objective`が、今のStepで成立させることです。Flowの次のStepを自分で進めず、現在のStepを完了可能な状態にしてから`done`を実行します。
 
-`status`と`prompt`には`Current attempt:`も表示されます。Attemptは、同じStepに入り直した場合でも記録を混同しないためのIDです。Artifact Evidenceの記録とApprovalでは、表示された現在のAttempt IDを使います。
+Attemptは、同じStepに入り直した場合でも記録を混同しないためのIDです。人間が直接実行するArtifact Evidenceの記録やApprovalでは、`status`に表示される具体的なコマンドを使うため、Attempt IDを手で転記する必要はありません。
 
 ## 4. Artifactがない3つのStepを完了する
 
@@ -64,19 +64,20 @@ printf '%s\n' 'このチュートリアルでレビューFlowの進め方を確�
 printf '%s\n' '# Code review' '' '- サンプル変更を確認した。' '' '## 結論' '' '問題なし。' > docs/code-review.md
 ```
 
-次に`status`または`prompt`の`Current attempt:`の値を確認し、下の`<write-review-attempt-id>`をその値で置き換えます。`artifact record`はファイルのdigestとsizeをArtifact Evidenceとして現在のAttemptに記録します。
+次に`status`に表示される`devflow artifact record ...`のコマンドを実行します。`artifact record`はファイルのdigestとsizeをArtifact Evidenceとして現在のAttemptに記録します。
 
 ```bash
 /tmp/devflow status
-/tmp/devflow artifact record \
-  --step write_review \
-  --attempt <write-review-attempt-id> \
-  --path docs/code-review.md
+```
+
+表示された`devflow artifact record ...`をそのまま実行してから、状態を確認してStepの完了を要求します。
+
+```bash
 /tmp/devflow status
 /tmp/devflow done
 ```
 
-記録後の`status`では、`docs/code-review.md`が`current`になります。ファイルを変更した場合は、`done`の前にもう一度`artifact record`を実行してEvidenceを更新します。
+記録後の`status`では、`docs/code-review.md`の現在ファイルと記録済みEvidenceが一致していることが説明されます。EvidenceはAttempt内でimmutableです。記録後にファイルを変更した場合は、`status`に表示される`back`で前のStepへ戻り、新しいAttemptでこのStepへ入り直してからEvidenceを記録します。
 
 ## 6. 人間が承認してFlowを完了する
 
@@ -86,13 +87,15 @@ printf '%s\n' '# Code review' '' '- サンプル変更を確認した。' '' '##
 /tmp/devflow prompt
 ```
 
-表示された`Current attempt:`の値を`<approval-attempt-id>`に入れて承認し、最後のStepを完了します。
+次に`status`を実行します。承認待ちであること、承認対象のObjective、承認を記録する具体的なコマンドが表示されます。
 
 ```bash
-/tmp/devflow approve \
-  --step human_approval \
-  --attempt <approval-attempt-id> \
-  --note "レビュー結果を確認し、承認する"
+/tmp/devflow status
+```
+
+表示された`devflow approve ...`をそのまま実行してから、最後のStepを完了します。
+
+```bash
 /tmp/devflow done
 ```
 
