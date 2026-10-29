@@ -34,8 +34,8 @@ func testTaskSnapshot() task.TaskSnapshot {
 }
 
 func testSnapshotForStep(id, stepID string) flow.FlowSnapshot {
-	steps := []flow.Step{{ID: stepID, Title: stepID, Objective: "test objective"}}
-	snapshot, err := flow.BuildSnapshot(flow.Flow{ID: id, Title: fmt.Sprintf("%s title", id), Steps: steps}, flow.FlowSource{})
+	steps := []flow.Step{{ID: stepID, Title: stepID, Outcome: "test objective"}}
+	snapshot, err := flow.BuildSnapshot(flow.Flow{Purpose: "Test flow purpose", ID: id, Title: fmt.Sprintf("%s title", id), Steps: steps}, flow.FlowSource{})
 	if err != nil {
 		panic(err)
 	}

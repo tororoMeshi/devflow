@@ -4,13 +4,14 @@ import "testing"
 
 func TestNormalizeMakesMissingArtifactsEmptySlice(t *testing.T) {
 	flow := Flow{
-		ID:    "test-flow",
-		Title: "Test Flow",
+		Purpose: "Test flow purpose",
+		ID:      "test-flow",
+		Title:   "Test Flow",
 		Steps: []Step{
 			{
-				ID:          "first",
-				Title:       "First",
-				Objective: "Do first thing.",
+				ID:      "first",
+				Title:   "First",
+				Outcome: "Do first thing.",
 			},
 		},
 	}
@@ -24,12 +25,13 @@ func TestNormalizeMakesMissingArtifactsEmptySlice(t *testing.T) {
 
 func TestLoadDefaultsArtifactRequiredToTrue(t *testing.T) {
 	got := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			artifacts: [{path: "README.md"}]
 		}]
 	}`)
@@ -41,12 +43,13 @@ func TestLoadDefaultsArtifactRequiredToTrue(t *testing.T) {
 
 func TestLoadKeepsArtifactRequiredFalse(t *testing.T) {
 	got := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			artifacts: [{path: "README.md", required: false}]
 		}]
 	}`)
@@ -58,12 +61,13 @@ func TestLoadKeepsArtifactRequiredFalse(t *testing.T) {
 
 func TestLoadDefaultsApprovalRequiredToFalse(t *testing.T) {
 	got := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			approval: {}
 		}]
 	}`)
@@ -78,12 +82,13 @@ func TestLoadDefaultsApprovalRequiredToFalse(t *testing.T) {
 
 func TestLoadKeepsMissingApprovalNil(t *testing.T) {
 	got := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 		}]
 	}`)
 
@@ -111,8 +116,8 @@ func assertFlowEqual(t *testing.T, got Flow, want Flow) {
 	if got.Title != want.Title {
 		t.Fatalf("Title = %q, want %q", got.Title, want.Title)
 	}
-	if got.Description != want.Description {
-		t.Fatalf("Description = %q, want %q", got.Description, want.Description)
+	if got.Purpose != want.Purpose {
+		t.Fatalf("Purpose = %q, want %q", got.Purpose, want.Purpose)
 	}
 	if len(got.Steps) != len(want.Steps) {
 		t.Fatalf("len(Steps) = %d, want %d", len(got.Steps), len(want.Steps))
@@ -131,8 +136,11 @@ func assertStepEqual(t *testing.T, got Step, want Step) {
 	if got.Title != want.Title {
 		t.Fatalf("Step.Title = %q, want %q", got.Title, want.Title)
 	}
-	if got.Objective != want.Objective {
-		t.Fatalf("Step.Objective = %q, want %q", got.Objective, want.Objective)
+	if got.Purpose != want.Purpose {
+		t.Fatalf("Step.Purpose = %q, want %q", got.Purpose, want.Purpose)
+	}
+	if got.Outcome != want.Outcome {
+		t.Fatalf("Step.Outcome = %q, want %q", got.Outcome, want.Outcome)
 	}
 	if len(got.Artifacts) != len(want.Artifacts) {
 		t.Fatalf("len(Step.Artifacts) = %d, want %d", len(got.Artifacts), len(want.Artifacts))

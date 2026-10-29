@@ -10,7 +10,7 @@ import (
 	"github.com/tororoMeshi/devflow/internal/flow"
 )
 
-func TestStateV8JSONContract(t *testing.T) {
+func TestStateV9JSONContract(t *testing.T) {
 	value := testStateWithRequiredCheck(t, "unused")
 	value.Attempts[0].CheckResults["unused"] = CheckResult{ExitCode: 0}
 	if err := validateState(value); err != nil {
@@ -24,8 +24,8 @@ func TestStateV8JSONContract(t *testing.T) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if value.SchemaVersion != 8 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
-		t.Fatalf("v8 fields missing: %s", data)
+	if value.SchemaVersion != 9 || value.FlowSnapshot.SchemaVersion != 3 || raw["attempts"] == nil || raw["current_attempt_id"] == nil {
+		t.Fatalf("v9 fields missing: %s", data)
 	}
 	if _, ok := raw["approvals"]; ok {
 		t.Fatal("top-level approvals must not be present")

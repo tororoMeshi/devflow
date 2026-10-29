@@ -248,16 +248,17 @@ func TestDoneRequiresActiveFlow(t *testing.T) {
 
 func approveDoneTestFlow() string {
 	return `flow: {
+		purpose: "Test flow purpose"
 		id: "approve-done-flow"
 		title: "Approve Done Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}, {
 			id: "artifact"
 			title: "Artifact"
-			objective: "Create artifact."
+			outcome: "Create artifact."
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
@@ -274,14 +275,14 @@ func approveDoneTestFlow() string {
 		}, {
 			id: "approval"
 			title: "Approval"
-			objective: "Get approval."
+			outcome: "Get approval."
 			approval: {
 				required: true
 			}
 		}, {
 			id: "final"
 			title: "Final"
-			objective: "Finish."
+			outcome: "Finish."
 		}]
 	}`
 }

@@ -408,7 +408,7 @@ func TestRunCheckRequestWritesOnlyJSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: {purpose: "Test flow purpose",  id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", outcome: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runSuccess(t, root, []string{"start", "check-flow"})
@@ -451,7 +451,7 @@ func TestRunCheckRecordWritesExactHumanSuccess(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: {purpose: "Test flow purpose",  id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", outcome: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runSuccess(t, root, []string{"start", "check-flow"})
@@ -480,7 +480,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", objective: "Design.", inputs: [{path: "docs/request.md"}] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: {purpose: "Test flow purpose",  id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", outcome: "Design.", inputs: [{path: "docs/request.md"}] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
@@ -529,7 +529,7 @@ func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(flowPath, []byte(`flow: { id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", objective: "Design." }] }`), 0o644); err != nil {
+			if err := os.WriteFile(flowPath, []byte(`flow: {purpose: "Test flow purpose",  id: "context-flow", title: "Context", steps: [{ id: "design", title: "Design", outcome: "Design." }] }`), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			runSuccess(t, root, []string{"start", "context-flow"})
@@ -560,7 +560,7 @@ func TestRunCheckRequestRejectsLegacyStateWithoutOutput(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(flowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(flowPath, []byte(`flow: { id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
+	if err := os.WriteFile(flowPath, []byte(`flow: {purpose: "Test flow purpose",  id: "check-flow", title: "Check", steps: [{ id: "quality", title: "Quality", outcome: "Check.", required_checks: ["go-test"] }] }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(root, ".devflow", "state.json")

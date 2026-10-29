@@ -12,28 +12,28 @@ const (
 	postTaskReviewFlowContent = `flow: {
 	id: "post-task-review"
 	title: "タスク後レビュー"
-	description: "AIによる実装や修正が完了した後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
+	purpose: "AIによる実装や修正が完了した後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
 
 	steps: [
 		{
 			id: "check_changes"
 			title: "変更ファイル確認"
-			objective: "変更されたファイルを整理する。"
+			outcome: "変更されたファイルを整理する。"
 		},
 		{
 			id: "summarize_changes"
 			title: "変更内容の要約"
-			objective: "変更内容を要約する。"
+			outcome: "変更内容を要約する。"
 		},
 		{
 			id: "check_quality"
 			title: "品質確認"
-			objective: "必要な確認結果を整理する。"
+			outcome: "必要な確認結果を整理する。"
 		},
 		{
 			id: "write_review"
 			title: "レビュー結果作成"
-			objective: "レビュー結果を docs/code-review.md にまとめる。"
+			outcome: "レビュー結果を docs/code-review.md にまとめる。"
 			artifacts: [
 				{
 					path: "docs/code-review.md"
@@ -44,7 +44,7 @@ const (
 		{
 			id: "human_approval"
 			title: "人間承認"
-			objective: "レビュー結果について人間の承認を得る。"
+			outcome: "レビュー結果について人間の承認を得る。"
 			approval: {
 				required: true
 			}

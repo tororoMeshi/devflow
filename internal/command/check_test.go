@@ -282,12 +282,13 @@ func TestCheckRecordSaveFailureHasNoSuccess(t *testing.T) {
 func TestCheckRecordAfterApprovalPreservesApprovalAndEvidence(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "approved-check-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "approved-check-flow"
 		title: "Approved Check Flow"
 		steps: [{
 			id: "quality"
 			title: "Quality"
-			objective: "Check."
+			outcome: "Check."
 			approval: {required: true}
 			required_checks: ["go-test"]
 		}]
@@ -324,12 +325,13 @@ func TestCheckRecordAfterApprovalPreservesApprovalAndEvidence(t *testing.T) {
 func TestPromptCompoundCheckArtifactApprovalState(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "compound-check-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "compound-check-flow"
 		title: "Compound Check Flow"
 		steps: [{
 			id: "quality"
 			title: "Quality"
-			objective: "Check."
+			outcome: "Check."
 			artifacts: [{path: "out/report.txt", required: true}]
 			approval: {required: true}
 			required_checks: ["check-a", "check-b", "check-c"]
@@ -376,7 +378,7 @@ func startCheckFlow(t *testing.T) (string, state.State) {
 }
 
 func checkTestFlow() string {
-	return `flow: { id: "check-flow", title: "Check Flow", steps: [{ id: "quality", title: "Quality", objective: "Check.", required_checks: ["go-test", "go-vet"] }, { id: "review", title: "Review", objective: "Review." }] }`
+	return `flow: {purpose: "Test flow purpose",  id: "check-flow", title: "Check Flow", steps: [{ id: "quality", title: "Quality", outcome: "Check.", required_checks: ["go-test", "go-vet"] }, { id: "review", title: "Review", outcome: "Review." }] }`
 }
 
 func validRecord(st state.State, checkID string, result state.CheckResult) string {

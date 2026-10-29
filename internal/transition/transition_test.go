@@ -62,14 +62,14 @@ func TestApplyStart(t *testing.T) {
 		got := ApplyStart(snapshot, taskSnapshot, nil, "run_test")
 		assertSuccess(t, got)
 
-		snapshot.Flow.Steps[0].Objective = "changed input"
+		snapshot.Flow.Steps[0].Outcome = "changed input"
 		snapshot.Flow.Steps[2].Approval.Required = false
-		if got.State.FlowSnapshot.Flow.Steps[0].Objective != "Do first." || !got.State.FlowSnapshot.Flow.Steps[2].Approval.Required {
+		if got.State.FlowSnapshot.Flow.Steps[0].Outcome != "Do first." || !got.State.FlowSnapshot.Flow.Steps[2].Approval.Required {
 			t.Fatal("State snapshot shares memory with input snapshot")
 		}
-		got.State.FlowSnapshot.Flow.Steps[0].Objective = "changed state"
+		got.State.FlowSnapshot.Flow.Steps[0].Outcome = "changed state"
 		got.State.FlowSnapshot.Flow.Steps[2].Approval.Required = true
-		if snapshot.Flow.Steps[0].Objective != "changed input" || snapshot.Flow.Steps[2].Approval.Required {
+		if snapshot.Flow.Steps[0].Outcome != "changed input" || snapshot.Flow.Steps[2].Approval.Required {
 			t.Fatal("input snapshot shares memory with State snapshot")
 		}
 		got.State.TaskSnapshot.Content = "changed state"
@@ -89,7 +89,7 @@ func TestApplyStart(t *testing.T) {
 	})
 
 	t.Run("fails when flow has no steps", func(t *testing.T) {
-		got := ApplyStart(flow.FlowSnapshot{Flow: flow.Flow{ID: "empty"}}, transitionTaskSnapshot(), nil, "run_test")
+		got := ApplyStart(flow.FlowSnapshot{Flow: flow.Flow{Purpose: "Test flow purpose", ID: "empty"}}, transitionTaskSnapshot(), nil, "run_test")
 
 		assertFailure(t, got, CodeFlowHasNoSteps)
 	})
@@ -527,29 +527,30 @@ func TestApplyFinish(t *testing.T) {
 
 func testFlow() flow.Flow {
 	return flow.Flow{
-		ID:    "test-flow",
-		Title: "Test Flow",
+		Purpose: "Test flow purpose",
+		ID:      "test-flow",
+		Title:   "Test Flow",
 		Steps: []flow.Step{
 			{
-				ID:          "first",
-				Title:       "First",
-				Objective: "Do first.",
-				Artifacts:   []flow.Artifact{},
+				ID:        "first",
+				Title:     "First",
+				Outcome:   "Do first.",
+				Artifacts: []flow.Artifact{},
 			},
 			{
-				ID:          "second",
-				Title:       "Second",
-				Objective: "Do second.",
+				ID:      "second",
+				Title:   "Second",
+				Outcome: "Do second.",
 				Artifacts: []flow.Artifact{
 					{Path: "docs/code-review.md", Required: true},
 				},
 			},
 			{
-				ID:          "approval",
-				Title:       "Approval",
-				Objective: "Approve.",
-				Artifacts:   []flow.Artifact{},
-				Approval:    &flow.Approval{Required: true},
+				ID:        "approval",
+				Title:     "Approval",
+				Outcome:   "Approve.",
+				Artifacts: []flow.Artifact{},
+				Approval:  &flow.Approval{Required: true},
 			},
 		},
 	}

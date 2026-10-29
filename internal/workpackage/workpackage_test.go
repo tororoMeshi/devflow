@@ -340,7 +340,7 @@ func testPackage(t *testing.T) WorkPackage {
 		TaskContent:        taskSnapshot.Content,
 		WorkingRoot:        ".",
 		Step: StepContract{
-			Title:       "Build",
+			Title:     "Build",
 			Objective: "Implement & verify.",
 			Inputs: []ArtifactContract{
 				{Path: "docs/spec.md", Required: true},
@@ -356,10 +356,11 @@ func testPackage(t *testing.T) WorkPackage {
 func testState(t *testing.T, attempts int, current string) state.State {
 	t.Helper()
 	fl := flow.Flow{
-		ID: "flow", Title: "Flow",
+		Purpose: "Test flow purpose",
+		ID:      "flow", Title: "Flow",
 		Steps: []flow.Step{
-			{ID: "build", Title: "Build", Objective: "Build <it>", Inputs: []flow.Artifact{}, Artifacts: []flow.Artifact{{Path: "out/component.bin", Required: true}}, RequiredChecks: []string{"go-test"}, Approval: &flow.Approval{Required: true}},
-			{ID: "review", Title: "Review", Objective: "Review", Inputs: []flow.Artifact{}, Artifacts: []flow.Artifact{}, RequiredChecks: []string{}},
+			{ID: "build", Title: "Build", Outcome: "Build <it>", Inputs: []flow.Artifact{}, Artifacts: []flow.Artifact{{Path: "out/component.bin", Required: true}}, RequiredChecks: []string{"go-test"}, Approval: &flow.Approval{Required: true}},
+			{ID: "review", Title: "Review", Outcome: "Review", Inputs: []flow.Artifact{}, Artifacts: []flow.Artifact{}, RequiredChecks: []string{}},
 		},
 	}
 	fs, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: "/private/flow.yaml"})

@@ -384,24 +384,25 @@ func TestFinishRequiresActiveFlow(t *testing.T) {
 
 func backSkipFinishTestFlow() string {
 	return `flow: {
+		purpose: "Test flow purpose"
 		id: "back-skip-finish-flow"
 		title: "Back Skip Finish Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}, {
 			id: "second"
 			title: "Second"
-			objective: "Do second."
+			outcome: "Do second."
 		}, {
 			id: "third"
 			title: "Third"
-			objective: "Do third."
+			outcome: "Do third."
 		}, {
 			id: "artifact"
 			title: "Artifact"
-			objective: "Create artifact."
+			outcome: "Create artifact."
 			artifacts: [{
 				path: "docs/required.md"
 				required: true
@@ -409,14 +410,14 @@ func backSkipFinishTestFlow() string {
 		}, {
 			id: "approval"
 			title: "Approval"
-			objective: "Get approval."
+			outcome: "Get approval."
 			approval: {
 				required: true
 			}
 		}, {
 			id: "final_approval"
 			title: "Final Approval"
-			objective: "Get final approval."
+			outcome: "Get final approval."
 			approval: {
 				required: true
 			}

@@ -454,11 +454,62 @@ func TestStorePreservesStateSchemaAndSnapshotValidation(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			store := testStore(t)
 			value := testState(t, status, "first")
+			if err := Validate(value); err != nil {
+				t.Fatal(err)
+			}
 			if err := store.CreateRun(value); err != nil {
 				t.Fatal(err)
 			}
-			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != CurrentSchemaVersion {
+			if got := store.LoadCurrent(); got.Status != LoadOK || got.State.SchemaVersion != 9 || got.State.FlowSnapshot.SchemaVersion != 3 {
 				t.Fatalf("LoadCurrent = %#v", got)
+			}
+		})
+	}
+}
+
+func TestStateAndStoreRejectUnsupportedSchemaVersions(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		stateVersion    int
+		snapshotVersion int
+	}{
+		{"state v8", 8, 3},
+		{"state v8 with snapshot v2", 8, 2},
+		{"state v9 with snapshot v2", 9, 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			value := testState(t, StatusRunning, "first")
+			value.SchemaVersion = tt.stateVersion
+			value.FlowSnapshot.SchemaVersion = tt.snapshotVersion
+			assertUnsupported := func(err error) {
+				t.Helper()
+				if tt.stateVersion == 8 {
+					var target *UnsupportedSchemaVersionError
+					if !errors.As(err, &target) || target.Actual != 8 {
+						t.Fatalf("error = %v, want unsupported state schema version 8", err)
+					}
+					if err.Error() != "unsupported state schema version 8 (supported: 9)" {
+						t.Fatalf("unexpected schema error: %v", err)
+					}
+				} else if !errors.Is(err, flow.ErrUnsupportedSnapshotSchema) {
+					t.Fatalf("error = %v, want unsupported flow snapshot schema version", err)
+				}
+			}
+			assertUnsupported(Validate(value))
+
+			store := testStore(t)
+			assertUnsupported(store.CreateRun(value))
+			path, err := store.RunStatePath(value.FlowRunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeJSON(t, path, value)
+			writePointer(t, store, value.FlowRunID)
+			for _, got := range []LoadResult{store.LoadRun(value.FlowRunID), store.LoadCurrent()} {
+				if got.Status != LoadInvalid || got.State != nil {
+					t.Fatalf("load result = %#v, want invalid state", got)
+				}
+				assertUnsupported(got.Err)
 			}
 		})
 	}
@@ -611,7 +662,7 @@ func TestStoreLoadStrictApprovalEvidenceSetDigestV8(t *testing.T) {
 
 func testState(t testing.TB, status Status, currentStepID string) State {
 	t.Helper()
-	fl := flow.Flow{ID: "post-task-review", Title: "Post Task Review", Steps: []flow.Step{{ID: "first", Title: "First", Objective: "Do first."}, {ID: "second", Title: "Second", Objective: "Do second."}}}
+	fl := flow.Flow{Purpose: "Test flow purpose", ID: "post-task-review", Title: "Post Task Review", Steps: []flow.Step{{ID: "first", Title: "First", Outcome: "Do first."}, {ID: "second", Title: "Second", Outcome: "Do second."}}}
 	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{Path: ".devflow/flows/post-task-review.cue"})
 	if err != nil {
 		t.Fatal(err)

@@ -16,12 +16,13 @@ import (
 func TestCurrentContextBuildsDeterministicBlockersWithoutChangingState(t *testing.T) {
 	root := t.TempDir()
 	writeExecutionFlow(t, root, "context-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "context-flow"
 		title: "Context Flow"
 		steps: [{
 			id: "design"
 			title: "Design"
-			objective: "Create the design."
+			outcome: "Create the design."
 			inputs: [
 				{path: "docs/request.md"},
 				{path: "docs/optional-input.md", required: false},
@@ -106,11 +107,12 @@ func TestCurrentContextReturnsTerminalState(t *testing.T) {
 func TestCurrentContextUsesCurrentAttemptForReenteredStep(t *testing.T) {
 	root := t.TempDir()
 	writeExecutionFlow(t, root, "context-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "context-flow"
 		title: "Context Flow"
 		steps: [
-			{id: "design", title: "Design", objective: "Create the design.", artifacts: [{path: "docs/design.md"}], required_checks: ["validate", "review"], approval: {required: true}},
-			{id: "review", title: "Review", objective: "Review the design."},
+			{id: "design", title: "Design", outcome: "Create the design.", artifacts: [{path: "docs/design.md"}], required_checks: ["validate", "review"], approval: {required: true}},
+			{id: "review", title: "Review", outcome: "Review the design."},
 		]
 	}`)
 	currentState := executionTestState(state.StatusRunning)
@@ -347,17 +349,18 @@ func TestCurrentContextUsesEmptyJSONArrays(t *testing.T) {
 func TestDoneRejectsMissingRequiredInputWithoutChangingState(t *testing.T) {
 	root := t.TempDir()
 	writeExecutionFlow(t, root, "context-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "context-flow"
 		title: "Context Flow"
 		steps: [{
 			id: "design"
 			title: "Design"
-			objective: "Create the design."
+			outcome: "Create the design."
 			inputs: [{path: "docs/request.md"}]
 		}, {
 			id: "review"
 			title: "Review"
-			objective: "Review the design."
+			outcome: "Review the design."
 		}]
 	}`)
 	saveExecutionState(t, root, executionTestState(state.StatusRunning))
@@ -459,14 +462,15 @@ func TestExecutionCompletionMapsAllArtifactEvidenceProblemsWithoutChangingSchema
 
 func executionTestFlow() string {
 	return `flow: {
+		purpose: "Test flow purpose"
 		id: "context-flow"
 		title: "Context Flow"
-		steps: [{id: "design", title: "Design", objective: "Create the design."}]
+		steps: [{id: "design", title: "Design", outcome: "Create the design."}]
 	}`
 }
 
 func executionTestState(status state.Status) state.State {
-	snapshot, err := flow.BuildSnapshot(flow.Flow{ID: "context-flow", Title: "Context Flow", Steps: []flow.Step{{ID: "design", Title: "Design", Objective: "Create the design.", RequiredChecks: []string{"validate", "review"}}, {ID: "review", Title: "Review", Objective: "Review the design."}}}, flow.FlowSource{})
+	snapshot, err := flow.BuildSnapshot(flow.Flow{Purpose: "Test flow purpose", ID: "context-flow", Title: "Context Flow", Steps: []flow.Step{{ID: "design", Title: "Design", Outcome: "Create the design.", RequiredChecks: []string{"validate", "review"}}, {ID: "review", Title: "Review", Outcome: "Review the design."}}}, flow.FlowSource{})
 	if err != nil {
 		panic(err)
 	}

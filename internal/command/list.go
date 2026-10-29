@@ -34,7 +34,7 @@ func flowListItem(result flow.FlowFileResult) FlowListItem {
 		return FlowListItem{
 			ID:          result.Flow.ID,
 			Title:       result.Flow.Title,
-			Description: result.Flow.Description,
+			Description: result.Flow.Purpose,
 			StepCount:   len(result.Flow.Steps),
 			FilePath:    result.FilePath,
 			Status:      FlowStatusValid,

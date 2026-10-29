@@ -92,16 +92,17 @@ func LoadDir(dir string) ([]FlowFileResult, error) {
 }
 
 type rawFlow struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Steps       []rawStep `json:"steps"`
+	ID      string    `json:"id"`
+	Title   string    `json:"title"`
+	Purpose string    `json:"purpose"`
+	Steps   []rawStep `json:"steps"`
 }
 
 type rawStep struct {
 	ID             string        `json:"id"`
 	Title          string        `json:"title"`
-	Objective      string        `json:"objective"`
+	Purpose        string        `json:"purpose"`
+	Outcome        string        `json:"outcome"`
 	Inputs         []rawArtifact `json:"inputs"`
 	Artifacts      []rawArtifact `json:"artifacts"`
 	Approval       *rawApproval  `json:"approval"`
@@ -124,10 +125,10 @@ func (f rawFlow) toFlow() Flow {
 	}
 
 	return Flow{
-		ID:          f.ID,
-		Title:       f.Title,
-		Description: f.Description,
-		Steps:       steps,
+		ID:      f.ID,
+		Title:   f.Title,
+		Purpose: f.Purpose,
+		Steps:   steps,
 	}
 }
 
@@ -150,7 +151,8 @@ func (s rawStep) toStep() Step {
 	return Step{
 		ID:             s.ID,
 		Title:          s.Title,
-		Objective:      s.Objective,
+		Purpose:        s.Purpose,
+		Outcome:        s.Outcome,
 		Inputs:         inputs,
 		Artifacts:      artifacts,
 		Approval:       approval,

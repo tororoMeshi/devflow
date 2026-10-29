@@ -83,7 +83,7 @@ func TestStartCreatesStateWhenNoStateExists(t *testing.T) {
 func TestStartCurrentStateRecognizesTypedUnsupportedVersion(t *testing.T) {
 	_, diagnostics := startCurrentState(state.LoadResult{
 		Status: state.LoadInvalid,
-		Err:    &state.UnsupportedSchemaVersionError{Actual: 3},
+		Err:    &state.UnsupportedSchemaVersionError{Actual: 8},
 	})
 	assertDiagnosticCodes(t, diagnostics, []string{CodeUnsupportedStateVersion})
 }
@@ -188,6 +188,7 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 	t.Run("invalid flow definition", func(t *testing.T) {
 		root := t.TempDir()
 		writeCommandFlow(t, root, "broken-flow", `flow: {
+			purpose: "Test flow purpose"
 			id: "broken-flow"
 			title: "Broken Flow"
 			steps: []
@@ -213,12 +214,13 @@ func TestStartRejectsMissingOrInvalidFlow(t *testing.T) {
 func TestStartDoesNotCheckArtifactsOrGate(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "artifact-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "artifact-flow"
 		title: "Artifact Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 			artifacts: [{
 				path: "docs/missing.md"
 				required: true
@@ -357,16 +359,17 @@ func TestStartRejectsInvalidFlowIDWithoutOverwritingState(t *testing.T) {
 
 func startTestFlow(id string) string {
 	return `flow: {
+		purpose: "Test flow purpose"
 		id: "` + id + `"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}, {
 			id: "second"
 			title: "Second"
-			objective: "Do second."
+			outcome: "Do second."
 		}]
 	}`
 }
@@ -389,8 +392,11 @@ func writeCommandTask(t testing.TB, root, path, content string) {
 func assertStartedState(t *testing.T, got state.State, flowID string, currentStepID string) {
 	t.Helper()
 
-	if got.SchemaVersion != state.CurrentSchemaVersion {
-		t.Fatalf("SchemaVersion = %d, want %d", got.SchemaVersion, state.CurrentSchemaVersion)
+	if got.SchemaVersion != 9 {
+		t.Fatalf("SchemaVersion = %d, want 9", got.SchemaVersion)
+	}
+	if got.FlowSnapshot.SchemaVersion != 3 {
+		t.Fatalf("FlowSnapshot.SchemaVersion = %d, want 3", got.FlowSnapshot.SchemaVersion)
 	}
 	if got.FlowSnapshot.Flow.ID != flowID {
 		t.Fatalf("FlowSnapshot.Flow.ID = %q, want %q", got.FlowSnapshot.Flow.ID, flowID)

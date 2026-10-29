@@ -44,7 +44,7 @@ func Status(ctx Context) CommandResult {
 			FlowStatus:           string(active.State.Status),
 			CurrentStepID:        active.CurrentStep.ID,
 			CurrentStepTitle:     active.CurrentStep.Title,
-			CurrentStepObjective: active.CurrentStep.Objective,
+			CurrentStepObjective: active.CurrentStep.Outcome,
 			CurrentAttemptID:     active.State.CurrentAttemptID,
 			CompletedSteps:       append([]string(nil), active.State.CompletedSteps...),
 			SkippedSteps:         skippedStepResults(active),

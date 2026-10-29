@@ -131,12 +131,13 @@ func TestCompletionContextApprovalNotRequiredReady(t *testing.T) {
 func completionContextTestState(t *testing.T) state.State {
 	t.Helper()
 	snapshot, err := flow.BuildSnapshot(flow.Flow{
-		ID:    "completion-flow",
-		Title: "Completion Flow",
+		Purpose: "Test flow purpose",
+		ID:      "completion-flow",
+		Title:   "Completion Flow",
 		Steps: []flow.Step{{
 			ID:             "design",
 			Title:          "Design",
-			Objective:    "Create design.",
+			Outcome:        "Create design.",
 			Artifacts:      []flow.Artifact{{Path: "docs/design.md", Required: true}, {Path: "docs/optional.md", Required: false}},
 			RequiredChecks: []string{"validate", "review"},
 			Approval:       &flow.Approval{Required: true},

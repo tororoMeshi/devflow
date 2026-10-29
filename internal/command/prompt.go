@@ -30,7 +30,7 @@ func Prompt(ctx Context) CommandResult {
 			CurrentStepID:        active.CurrentStep.ID,
 			CurrentStepTitle:     active.CurrentStep.Title,
 			CurrentAttemptID:     active.State.CurrentAttemptID,
-			CurrentStepObjective: active.CurrentStep.Objective,
+			CurrentStepObjective: active.CurrentStep.Outcome,
 			RequiredInputs:       requiredInputs,
 			OptionalInputs:       optionalInputs,
 			RequiredArtifacts:    requiredArtifacts,

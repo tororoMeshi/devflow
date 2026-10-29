@@ -10,7 +10,7 @@ import (
 	"regexp"
 )
 
-const FlowSnapshotSchemaVersion = 2
+const FlowSnapshotSchemaVersion = 3
 
 var (
 	ErrUnsupportedSnapshotSchema = errors.New("unsupported flow snapshot schema version")
@@ -103,16 +103,17 @@ type canonicalFlowSnapshot struct {
 }
 
 type canonicalFlow struct {
-	ID          string          `json:"id"`
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	Steps       []canonicalStep `json:"steps"`
+	ID      string          `json:"id"`
+	Title   string          `json:"title"`
+	Purpose string          `json:"purpose"`
+	Steps   []canonicalStep `json:"steps"`
 }
 
 type canonicalStep struct {
 	ID             string              `json:"id"`
 	Title          string              `json:"title"`
-	Objective      string              `json:"objective"`
+	Purpose        string              `json:"purpose"`
+	Outcome        string              `json:"outcome"`
 	Inputs         []canonicalArtifact `json:"inputs"`
 	Artifacts      []canonicalArtifact `json:"artifacts"`
 	Approval       *canonicalApproval  `json:"approval"`
@@ -149,7 +150,8 @@ func canonicalJSON(flow Flow) ([]byte, error) {
 		steps[i] = canonicalStep{
 			ID:             step.ID,
 			Title:          step.Title,
-			Objective:      step.Objective,
+			Purpose:        step.Purpose,
+			Outcome:        step.Outcome,
 			Inputs:         inputs,
 			Artifacts:      artifacts,
 			Approval:       approval,
@@ -160,19 +162,19 @@ func canonicalJSON(flow Flow) ([]byte, error) {
 	return json.Marshal(canonicalFlowSnapshot{
 		SchemaVersion: FlowSnapshotSchemaVersion,
 		Flow: canonicalFlow{
-			ID:          flow.ID,
-			Title:       flow.Title,
-			Description: flow.Description,
-			Steps:       steps,
+			ID:      flow.ID,
+			Title:   flow.Title,
+			Purpose: flow.Purpose,
+			Steps:   steps,
 		},
 	})
 }
 
 func copyFlow(flow Flow) Flow {
 	copy := Flow{
-		ID:          flow.ID,
-		Title:       flow.Title,
-		Description: flow.Description,
+		ID:      flow.ID,
+		Title:   flow.Title,
+		Purpose: flow.Purpose,
 	}
 	if flow.Steps != nil {
 		copy.Steps = make([]Step, len(flow.Steps))
@@ -180,9 +182,10 @@ func copyFlow(flow Flow) Flow {
 
 	for i, step := range flow.Steps {
 		copy.Steps[i] = Step{
-			ID:        step.ID,
-			Title:     step.Title,
-			Objective: step.Objective,
+			ID:      step.ID,
+			Title:   step.Title,
+			Purpose: step.Purpose,
+			Outcome: step.Outcome,
 		}
 		if step.Inputs != nil {
 			copy.Steps[i].Inputs = append([]Artifact{}, step.Inputs...)

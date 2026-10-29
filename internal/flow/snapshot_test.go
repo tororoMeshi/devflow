@@ -77,6 +77,7 @@ func TestValidateSnapshot(t *testing.T) {
 		want error
 	}{
 		{"schema", func(s *FlowSnapshot) { s.SchemaVersion++ }, ErrUnsupportedSnapshotSchema},
+		{"schema v2", func(s *FlowSnapshot) { s.SchemaVersion = 2 }, ErrUnsupportedSnapshotSchema},
 		{"digest format", func(s *FlowSnapshot) { s.Digest = "sha256:BAD" }, ErrInvalidSnapshotDigest},
 		{"digest mismatch", func(s *FlowSnapshot) { s.Digest = "sha256:" + strings.Repeat("0", 64) }, ErrSnapshotDigestMismatch},
 		{"flow changed", func(s *FlowSnapshot) { s.Flow.Title = "changed" }, ErrSnapshotDigestMismatch},
@@ -115,13 +116,15 @@ func TestCloneSnapshotDoesNotShareFlowMemory(t *testing.T) {
 
 func TestBuildSnapshotTreatsNilAndEmptySlicesEqually(t *testing.T) {
 	nilSlices := Flow{
-		ID: "test-flow", Title: "Test Flow",
-		Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}},
+		Purpose: "Test flow purpose",
+		ID:      "test-flow", Title: "Test Flow",
+		Steps: []Step{{ID: "first", Title: "First", Outcome: "Do first thing."}},
 	}
 	emptySlices := Flow{
-		ID: "test-flow", Title: "Test Flow",
+		Purpose: "Test flow purpose",
+		ID:      "test-flow", Title: "Test Flow",
 		Steps: []Step{{
-			ID: "first", Title: "First", Objective: "Do first thing.",
+			ID: "first", Title: "First", Outcome: "Do first thing.",
 			Inputs: []Artifact{}, Artifacts: []Artifact{}, RequiredChecks: []string{},
 		}},
 	}
@@ -141,8 +144,9 @@ func TestBuildSnapshotTreatsNilAndEmptySlicesEqually(t *testing.T) {
 
 func TestBuildSnapshotDoesNotModifyInput(t *testing.T) {
 	flow := Flow{
-		ID: "test-flow", Title: "Test Flow",
-		Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}},
+		Purpose: "Test flow purpose",
+		ID:      "test-flow", Title: "Test Flow",
+		Steps: []Step{{ID: "first", Title: "First", Outcome: "Do first thing."}},
 	}
 
 	if _, err := BuildSnapshot(flow, FlowSource{}); err != nil {
@@ -161,22 +165,24 @@ func TestBuildSnapshotDoesNotModifyInput(t *testing.T) {
 
 func TestBuildSnapshotCUEDefaultMatchesExplicitValue(t *testing.T) {
 	omitted := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			artifacts: [{path: "result.txt"}]
 		}]
 	}`)
 	explicit := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			artifacts: [{path: "result.txt", required: true}]
 		}]
 	}`)
@@ -202,10 +208,11 @@ func TestBuildSnapshotDigestChangesWithContractFields(t *testing.T) {
 	}{
 		{"flow ID", func(flow *Flow) { flow.ID = "other-flow" }},
 		{"flow title", func(flow *Flow) { flow.Title = "Other Flow" }},
-		{"flow description", func(flow *Flow) { flow.Description = "Other description." }},
+		{"flow purpose", func(flow *Flow) { flow.Purpose = "Enable a safe release." }},
 		{"step ID", func(flow *Flow) { flow.Steps[0].ID = "other-first" }},
 		{"step title", func(flow *Flow) { flow.Steps[0].Title = "Other First" }},
-		{"step objective", func(flow *Flow) { flow.Steps[0].Objective = "Other objective." }},
+		{"step purpose", func(flow *Flow) { flow.Steps[0].Purpose = "Verify the release independently." }},
+		{"step outcome", func(flow *Flow) { flow.Steps[0].Outcome = "Release verification has passed." }},
 		{"step order", func(flow *Flow) { flow.Steps[0], flow.Steps[1] = flow.Steps[1], flow.Steps[0] }},
 		{"input path", func(flow *Flow) { flow.Steps[0].Inputs[0].Path = "other-input.txt" }},
 		{"input required", func(flow *Flow) { flow.Steps[0].Inputs[0].Required = false }},
@@ -253,7 +260,7 @@ func TestBuildSnapshotDeepCopiesInput(t *testing.T) {
 	wantDigest := snapshot.Digest
 
 	flow.Steps[0].Title = "Changed title"
-	flow.Steps[0].Objective = "Changed objective"
+	flow.Steps[0].Outcome = "Changed outcome"
 	flow.Steps[0].Inputs[0] = Artifact{Path: "changed-input.txt", Required: false}
 	flow.Steps[0].Artifacts[0] = Artifact{Path: "changed-artifact.txt", Required: false}
 	flow.Steps[0].RequiredChecks[0] = "changed-check"
@@ -273,9 +280,9 @@ func TestBuildSnapshotRejectsInvalidFlow(t *testing.T) {
 		flow     Flow
 		wantCode ErrorCode
 	}{
-		{"invalid ID", Flow{ID: "invalid id", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}}}, ErrorInvalidFlowID},
-		{"no steps", Flow{ID: "test-flow", Title: "Test Flow"}, ErrorFlowHasNoSteps},
-		{"duplicate step ID", Flow{ID: "test-flow", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}, {ID: "first", Title: "Second", Objective: "Do second thing."}}}, ErrorDuplicateStepID},
+		{"invalid ID", Flow{Purpose: "Test flow purpose", ID: "invalid id", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Outcome: "Do first thing."}}}, ErrorInvalidFlowID},
+		{"no steps", Flow{Purpose: "Test flow purpose", ID: "test-flow", Title: "Test Flow"}, ErrorFlowHasNoSteps},
+		{"duplicate step ID", Flow{Purpose: "Test flow purpose", ID: "test-flow", Title: "Test Flow", Steps: []Step{{ID: "first", Title: "First", Outcome: "Do first thing."}, {ID: "first", Title: "Second", Outcome: "Do second thing."}}}, ErrorDuplicateStepID},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := BuildSnapshot(tt.flow, FlowSource{})
@@ -294,8 +301,8 @@ func TestBuildSnapshotSchemaVersionAndDigestFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.SchemaVersion != FlowSnapshotSchemaVersion {
-		t.Fatalf("SchemaVersion = %d, want %d", snapshot.SchemaVersion, FlowSnapshotSchemaVersion)
+	if snapshot.SchemaVersion != 3 {
+		t.Fatalf("SchemaVersion = %d, want 3", snapshot.SchemaVersion)
 	}
 	if !regexp.MustCompile(`^sha256:[0-9a-f]{64}$`).MatchString(snapshot.Digest) {
 		t.Fatalf("Digest = %q, want sha256:<64 lowercase hex characters>", snapshot.Digest)
@@ -304,15 +311,16 @@ func TestBuildSnapshotSchemaVersionAndDigestFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(canonical), `"schema_version":2`) {
+	if !strings.Contains(string(canonical), `"schema_version":3`) {
 		t.Fatalf("canonical payload does not include schema version: %s", canonical)
 	}
 }
 
 func TestFlowSnapshotJSON(t *testing.T) {
 	flow := Flow{
-		ID: "test-flow", Title: "Test Flow",
-		Steps: []Step{{ID: "first", Title: "First", Objective: "Do first thing."}},
+		Purpose: "Test flow purpose",
+		ID:      "test-flow", Title: "Test Flow",
+		Steps: []Step{{ID: "first", Title: "First", Outcome: "Do first thing."}},
 	}
 	snapshot, err := BuildSnapshot(flow, FlowSource{Path: ".devflow/flows/test-flow.cue"})
 	if err != nil {
@@ -323,7 +331,7 @@ func TestFlowSnapshotJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema_version":2,"digest":"` + snapshot.Digest + `","source":{"path":".devflow/flows/test-flow.cue"},"flow":{"id":"test-flow","title":"Test Flow","description":"","steps":[{"id":"first","title":"First","objective":"Do first thing.","inputs":[],"artifacts":[],"approval":null,"required_checks":[]}]}}`
+	want := `{"schema_version":3,"digest":"` + snapshot.Digest + `","source":{"path":".devflow/flows/test-flow.cue"},"flow":{"id":"test-flow","title":"Test Flow","purpose":"Test flow purpose","steps":[{"id":"first","title":"First","purpose":"","outcome":"Do first thing.","inputs":[],"artifacts":[],"approval":null,"required_checks":[]}]}}`
 	if string(data) != want {
 		t.Fatalf("snapshot JSON = %s\nwant %s", data, want)
 	}
@@ -331,9 +339,9 @@ func TestFlowSnapshotJSON(t *testing.T) {
 
 func TestCanonicalJSON(t *testing.T) {
 	flow := Flow{
-		ID: "test-flow", Title: "Test Flow", Description: "Test description.",
+		ID: "test-flow", Title: "Test Flow", Purpose: "Test purpose.",
 		Steps: []Step{{
-			ID: "first", Title: "First", Objective: "Do first thing.",
+			ID: "first", Title: "First", Purpose: "Verify readiness independently.", Outcome: "Do first thing.",
 			Inputs:    []Artifact{{Path: "input.txt", Required: true}},
 			Artifacts: []Artifact{{Path: "result.txt", Required: false}},
 			Approval:  &Approval{Required: true}, RequiredChecks: []string{"go-test"},
@@ -344,7 +352,7 @@ func TestCanonicalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema_version":2,"flow":{"id":"test-flow","title":"Test Flow","description":"Test description.","steps":[{"id":"first","title":"First","objective":"Do first thing.","inputs":[{"path":"input.txt","required":true}],"artifacts":[{"path":"result.txt","required":false}],"approval":{"required":true},"required_checks":["go-test"]}]}}`
+	want := `{"schema_version":3,"flow":{"id":"test-flow","title":"Test Flow","purpose":"Test purpose.","steps":[{"id":"first","title":"First","purpose":"Verify readiness independently.","outcome":"Do first thing.","inputs":[{"path":"input.txt","required":true}],"artifacts":[{"path":"result.txt","required":false}],"approval":{"required":true},"required_checks":["go-test"]}]}}`
 	if string(canonical) != want {
 		t.Fatalf("canonical JSON = %s\nwant %s", canonical, want)
 	}
@@ -352,7 +360,7 @@ func TestCanonicalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "sha256:3a2ad1163ab2f8b06129bc34dad4a258e538fc913992f321902d2fca0923a9c9"
+	const wantDigest = "sha256:2982a0f53b3290dc2c08cff989bc1e07879d190e4a56e88e3f76cef8ec1565c4"
 	if snapshot.Digest != wantDigest {
 		t.Fatalf("Digest = %q, want %q", snapshot.Digest, wantDigest)
 	}
@@ -360,15 +368,15 @@ func TestCanonicalJSON(t *testing.T) {
 
 func snapshotTestFlow() Flow {
 	return Flow{
-		ID: "test-flow", Title: "Test Flow", Description: "Test description.",
+		ID: "test-flow", Title: "Test Flow", Purpose: "Test purpose.",
 		Steps: []Step{
 			{
-				ID: "first", Title: "First", Objective: "Do first thing.",
+				ID: "first", Title: "First", Outcome: "Do first thing.",
 				Inputs:    []Artifact{{Path: "input.txt", Required: true}},
 				Artifacts: []Artifact{{Path: "artifact.txt", Required: true}},
 				Approval:  &Approval{Required: true}, RequiredChecks: []string{"go-test"},
 			},
-			{ID: "second", Title: "Second", Objective: "Do second thing."},
+			{ID: "second", Title: "Second", Outcome: "Do second thing."},
 		},
 	}
 }

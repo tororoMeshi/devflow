@@ -42,12 +42,13 @@ func TestListIncludesInitFlow(t *testing.T) {
 func TestListReturnsValidFlows(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "minimal-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "minimal-flow"
 		title: "Minimal Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}]
 	}`)
 
@@ -63,8 +64,8 @@ func TestListReturnsValidFlows(t *testing.T) {
 	if item.ID != "minimal-flow" {
 		t.Fatalf("ID = %q", item.ID)
 	}
-	if item.Description != "" {
-		t.Fatalf("Description = %q, want empty", item.Description)
+	if item.Description != "Test flow purpose" {
+		t.Fatalf("Description = %q, want Flow Purpose", item.Description)
 	}
 	if item.StepCount != 1 {
 		t.Fatalf("StepCount = %d, want 1", item.StepCount)
@@ -77,15 +78,17 @@ func TestListReturnsValidFlows(t *testing.T) {
 func TestListKeepsValidFlowsWhenInvalidFlowExists(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "valid-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "valid-flow"
 		title: "Valid Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}]
 	}`)
 	writeCommandFlow(t, root, "broken-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "broken-flow"
 		title: "Broken Flow"
 		steps: []
@@ -106,12 +109,13 @@ func TestListKeepsValidFlowsWhenInvalidFlowExists(t *testing.T) {
 func TestListDoesNotDependOnState(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "valid-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "valid-flow"
 		title: "Valid Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}]
 	}`)
 

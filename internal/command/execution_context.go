@@ -178,7 +178,7 @@ func executionStep(step flow.Step, current state.State, projectRoot string, insp
 	return &ExecutionStepResult{
 		ID:        step.ID,
 		Title:     step.Title,
-		Objective: step.Objective,
+		Objective: step.Outcome,
 		Inputs:    executionInputArtifacts(step.Inputs, projectRoot, inspectionSet),
 		Artifacts: executionArtifacts(inspections),
 		Checks:    executionChecks(step.RequiredChecks, current),

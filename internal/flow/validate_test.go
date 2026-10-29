@@ -34,6 +34,16 @@ func TestValidate(t *testing.T) {
 			wantCode: ErrorMissingFlowTitle,
 		},
 		{
+			name:     "missing flow purpose",
+			flow:     validFlow(func(flow *Flow) { flow.Purpose = "" }),
+			wantCode: ErrorMissingFlowPurpose,
+		},
+		{
+			name:     "blank flow purpose",
+			flow:     validFlow(func(flow *Flow) { flow.Purpose = " \t\n " }),
+			wantCode: ErrorMissingFlowPurpose,
+		},
+		{
 			name:     "flow has no steps",
 			flow:     validFlow(func(flow *Flow) { flow.Steps = nil }),
 			wantCode: ErrorFlowHasNoSteps,
@@ -74,20 +84,25 @@ func TestValidate(t *testing.T) {
 			wantCode: ErrorMissingStepTitle,
 		},
 		{
-			name: validFlowName("missing step objective"),
+			name: validFlowName("missing step outcome"),
 			flow: validFlow(func(flow *Flow) {
-				flow.Steps[0].Objective = ""
+				flow.Steps[0].Outcome = ""
 			}),
-			wantCode: ErrorMissingStepObjective,
+			wantCode: ErrorMissingStepOutcome,
+		},
+		{
+			name:     "blank step outcome",
+			flow:     validFlow(func(flow *Flow) { flow.Steps[0].Outcome = " \t\n " }),
+			wantCode: ErrorMissingStepOutcome,
 		},
 		{
 			name: validFlowName("duplicate step id"),
 			flow: validFlow(func(flow *Flow) {
 				flow.Steps = append(flow.Steps, Step{
-					ID:          flow.Steps[0].ID,
-					Title:       "Duplicate",
-					Objective: "Duplicate objective.",
-					Artifacts:   []Artifact{},
+					ID:        flow.Steps[0].ID,
+					Title:     "Duplicate",
+					Outcome:   "Duplicate outcome.",
+					Artifacts: []Artifact{},
 				})
 			}),
 			wantCode: ErrorDuplicateStepID,
@@ -124,8 +139,13 @@ func TestValidate(t *testing.T) {
 }
 
 func TestValidateAcceptsValidFlow(t *testing.T) {
-	if err := Validate(validFlow(nil)); err != nil {
-		t.Fatal(err)
+	for _, purpose := range []string{"Record review findings separately from approval.", "", " \t\n "} {
+		t.Run(purpose, func(t *testing.T) {
+			flow := validFlow(func(flow *Flow) { flow.Steps[0].Purpose = purpose })
+			if err := Validate(flow); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -142,14 +162,15 @@ func TestValidateFilename(t *testing.T) {
 
 func validFlow(mutator func(*Flow)) Flow {
 	flow := Flow{
-		ID:    "test-flow",
-		Title: "Test Flow",
+		Purpose: "Test flow purpose",
+		ID:      "test-flow",
+		Title:   "Test Flow",
 		Steps: []Step{
 			{
-				ID:          "first_step",
-				Title:       "First Step",
-				Objective: "Do first thing.",
-				Artifacts:   []Artifact{},
+				ID:        "first_step",
+				Title:     "First Step",
+				Outcome:   "Do first thing.",
+				Artifacts: []Artifact{},
 			},
 		},
 	}

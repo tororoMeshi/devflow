@@ -15,12 +15,13 @@ import (
 func TestStartEntryGateFailureLeavesNoRunArtifactsAndCanRetry(t *testing.T) {
 	root := t.TempDir()
 	writeCommandFlow(t, root, "entry-flow", `flow: {
+		purpose: "Test flow purpose"
 		id: "entry-flow"
 		title: "Entry"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Work."
+			outcome: "Work."
 			inputs: [
 				{path: "inputs/missing.txt"}
 				{path: "inputs/unavailable"}
@@ -217,9 +218,9 @@ func TestCompletionGateDiagnosticsPreserveBlockerOrderAndInformationLimits(t *te
 
 func gateCommandState(t *testing.T, currentStepID string) state.State {
 	t.Helper()
-	fl := flow.Flow{ID: "gate-flow", Title: "Gate", Steps: []flow.Step{
-		{ID: "first", Title: "First", Objective: "First.", Inputs: []flow.Artifact{{Path: "first/input.txt", Required: true}}},
-		{ID: "second", Title: "Second", Objective: "Second.", Inputs: []flow.Artifact{{Path: "next/input.txt", Required: true}}},
+	fl := flow.Flow{Purpose: "Test flow purpose", ID: "gate-flow", Title: "Gate", Steps: []flow.Step{
+		{ID: "first", Title: "First", Outcome: "First.", Inputs: []flow.Artifact{{Path: "first/input.txt", Required: true}}},
+		{ID: "second", Title: "Second", Outcome: "Second.", Inputs: []flow.Artifact{{Path: "next/input.txt", Required: true}}},
 	}}
 	snapshot, err := flow.BuildSnapshot(fl, flow.FlowSource{})
 	if err != nil {

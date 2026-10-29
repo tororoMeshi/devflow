@@ -40,7 +40,7 @@ func TestActiveFlowFromLoadResult(t *testing.T) {
 	t.Run("returns unsupported version for typed schema error", func(t *testing.T) {
 		_, diagnostics := ActiveFlowFromLoadResult(Context{}, state.LoadResult{
 			Status: state.LoadInvalid,
-			Err:    &state.UnsupportedSchemaVersionError{Actual: 1},
+			Err:    &state.UnsupportedSchemaVersionError{Actual: 8},
 		})
 
 		assertDiagnosticCodes(t, diagnostics, []string{CodeUnsupportedStateVersion})

@@ -127,12 +127,13 @@ func validateStepContract(stepID string, contract StepContract) error {
 	}
 	approval := &flow.Approval{Required: contract.ApprovalRequired}
 	candidate := flow.Flow{
-		ID:    "work-package-validation",
-		Title: "WorkPackage",
+		ID:      "work-package-validation",
+		Title:   "WorkPackage",
+		Purpose: "Validate the WorkPackage step contract.",
 		Steps: []flow.Step{{
 			ID:             stepID,
 			Title:          contract.Title,
-			Objective:      contract.Objective,
+			Outcome:        contract.Objective,
 			Inputs:         inputs,
 			Artifacts:      artifacts,
 			Approval:       approval,

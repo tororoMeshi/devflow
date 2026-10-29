@@ -1,16 +1,17 @@
 package flow
 
 type Flow struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Steps       []Step `json:"steps"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Purpose string `json:"purpose"` // Why the Flow exists. Required.
+	Steps   []Step `json:"steps"`
 }
 
 type Step struct {
 	ID             string     `json:"id"`
 	Title          string     `json:"title"`
-	Objective      string     `json:"objective"`
+	Purpose        string     `json:"purpose"` // Why this Step exists independently. Optional.
+	Outcome        string     `json:"outcome"` // The state that must hold when this Step is complete. Required.
 	Inputs         []Artifact `json:"inputs"`
 	Artifacts      []Artifact `json:"artifacts"`
 	Approval       *Approval  `json:"approval"`

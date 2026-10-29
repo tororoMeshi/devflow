@@ -7,7 +7,7 @@ import (
 	"github.com/tororoMeshi/devflow/internal/task"
 )
 
-const CurrentSchemaVersion = 8
+const CurrentSchemaVersion = 9
 
 var flowRunIDPattern = regexp.MustCompile(`^run_[0-9a-f]{32}$`)
 

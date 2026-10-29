@@ -3,7 +3,7 @@ package flow
 import "testing"
 
 func TestNormalizeMakesMissingInputsEmptySlice(t *testing.T) {
-	got := Normalize(Flow{Steps: []Step{{}}})
+	got := Normalize(Flow{Purpose: "Test flow purpose", Steps: []Step{{}}})
 	if got.Steps[0].Inputs == nil {
 		t.Fatal("Inputs is nil")
 	}
@@ -14,12 +14,13 @@ func TestNormalizeMakesMissingInputsEmptySlice(t *testing.T) {
 
 func TestLoadInputsDefaultsRequiredToTrue(t *testing.T) {
 	got := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			inputs: [{path: "docs/request.md"}]
 		}]
 	}`)
@@ -30,12 +31,13 @@ func TestLoadInputsDefaultsRequiredToTrue(t *testing.T) {
 
 func TestLoadInputsKeepsRequiredFalse(t *testing.T) {
 	got := loadFlowFromString(t, `flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 			inputs: [{
 				path: "docs/optional-context.md"
 				required: false

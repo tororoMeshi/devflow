@@ -1075,11 +1075,11 @@ func TestIntegrationRealDevflow(t *testing.T) {
 const integrationArtifactFlow = `flow: {
 	id: "artifact-runtime-review"
 	title: "Artifact runtime review"
-	description: "Artifact runtime integration fixture."
+	purpose: "Artifact runtime integration fixture."
 	steps: [{
 		id: "build"
 		title: "Build"
-		objective: "Build artifacts."
+		outcome: "Build artifacts."
 		artifacts: [
 			{path: "out/a.txt", required: true},
 			{path: "out/b.txt", required: false},
@@ -1336,17 +1336,17 @@ func TestIntegrationRealDevflowArtifactMode(t *testing.T) {
 const integrationCheckFlow = `flow: {
   id: "check-runtime-review"
   title: "Check runtime review"
-  description: "Check runtime integration fixture."
+  purpose: "Check runtime integration fixture."
   steps: [{
     id: "build"
     title: "Build"
-    objective: "Build artifacts."
+    outcome: "Build artifacts."
     artifacts: [{path: "out/a.txt", required: true}, {path: "out/b.txt", required: false}]
     required_checks: ["check-a", "check-b"]
   }, {
     id: "verify"
     title: "Verify"
-    objective: "Verify the build."
+    outcome: "Verify the build."
   }]
 }`
 
@@ -1464,19 +1464,20 @@ func TestIntegrationRealDevflowCheckMode(t *testing.T) {
 }
 
 const integrationCompletionApprovalFlow = `flow: {
+  purpose: "Test flow purpose"
   id: "check-runtime-review"
   title: "Check runtime review"
   steps: [{
     id: "build"
     title: "Build"
-    objective: "Build artifacts."
+    outcome: "Build artifacts."
     artifacts: [{path: "out/a.txt", required: true}]
     approval: {required: true}
     required_checks: ["check-a", "check-b"]
   }, {
     id: "verify"
     title: "Verify"
-    objective: "Verify the build."
+    outcome: "Verify the build."
   }]
 }`
 

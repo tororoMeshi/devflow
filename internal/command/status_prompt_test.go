@@ -444,16 +444,17 @@ func TestPromptDoesNotCheckArtifactExistence(t *testing.T) {
 
 func statusPromptTestFlow() string {
 	return `flow: {
+		purpose: "Test flow purpose"
 		id: "status-flow"
 		title: "Status Prompt Flow"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first."
+			outcome: "Do first."
 		}, {
 			id: "current"
 			title: "Current"
-			objective: "Do current work."
+			outcome: "Do current work."
 			inputs: [{
 				path: "docs/request.md"
 				required: true
@@ -475,14 +476,14 @@ func statusPromptTestFlow() string {
 		}, {
 			id: "no_approval"
 			title: "No Approval"
-			objective: "Do work without approval."
+			outcome: "Do work without approval."
 			approval: {
 				required: false
 			}
 		}, {
 			id: "skipped"
 			title: "Skipped"
-			objective: "Skip me."
+			outcome: "Skip me."
 		}]
 	}`
 }

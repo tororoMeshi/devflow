@@ -15,10 +15,11 @@ type ErrorCode string
 const (
 	ErrorMissingFlowID            ErrorCode = "error_missing_flow_id"
 	ErrorMissingFlowTitle         ErrorCode = "error_missing_flow_title"
+	ErrorMissingFlowPurpose       ErrorCode = "error_missing_flow_purpose"
 	ErrorFlowHasNoSteps           ErrorCode = "error_flow_has_no_steps"
 	ErrorMissingStepID            ErrorCode = "error_missing_step_id"
 	ErrorMissingStepTitle         ErrorCode = "error_missing_step_title"
-	ErrorMissingStepObjective     ErrorCode = "error_missing_step_objective"
+	ErrorMissingStepOutcome       ErrorCode = "error_missing_step_outcome"
 	ErrorDuplicateStepID          ErrorCode = "error_duplicate_step_id"
 	ErrorMissingInputPath         ErrorCode = "error_missing_input_path"
 	ErrorInvalidInputPath         ErrorCode = "error_invalid_input_path"
@@ -66,6 +67,9 @@ func Validate(flow Flow) error {
 	if blank(flow.Title) {
 		return validationError(ErrorMissingFlowTitle, nil)
 	}
+	if blank(flow.Purpose) {
+		return validationError(ErrorMissingFlowPurpose, nil)
+	}
 	if len(flow.Steps) == 0 {
 		return validationError(ErrorFlowHasNoSteps, nil)
 	}
@@ -100,8 +104,8 @@ func Validate(flow Flow) error {
 		if blank(step.Title) {
 			return validationError(ErrorMissingStepTitle, nil)
 		}
-		if blank(step.Objective) {
-			return validationError(ErrorMissingStepObjective, nil)
+		if blank(step.Outcome) {
+			return validationError(ErrorMissingStepOutcome, nil)
 		}
 
 		if err := validateArtifacts(step.Inputs, ErrorMissingInputPath, ErrorInvalidInputPath, ErrorDuplicateInputPath, false); err != nil {

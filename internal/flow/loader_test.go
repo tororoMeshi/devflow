@@ -17,39 +17,41 @@ func TestLoadFile(t *testing.T) {
 			name:     "loads minimal flow",
 			fileName: "test-flow.cue",
 			cue: `flow: {
+				purpose: "Test flow purpose"
 				id: "test-flow"
 				title: "Test Flow"
 				steps: [{
 					id: "first"
 					title: "First"
-					objective: "Do first thing."
+					outcome: "Do first thing."
 				}]
 			}`,
 			wantFlow: Flow{
-				ID:    "test-flow",
-				Title: "Test Flow",
+				Purpose: "Test flow purpose",
+				ID:      "test-flow",
+				Title:   "Test Flow",
 				Steps: []Step{
 					{
 						ID:        "first",
 						Title:     "First",
-						Objective: "Do first thing.",
+						Outcome:   "Do first thing.",
 						Artifacts: []Artifact{},
 					},
 				},
 			},
 		},
 		{
-			name:     "loads description artifacts approvals and preserves step order",
+			name:     "loads purpose artifacts approvals and preserves step order",
 			fileName: "post-task-review.cue",
 			cue: `flow: {
 				id: "post-task-review"
 				title: "Post Task Review"
-				description: "Review after a task."
+				purpose: "Review after a task."
 				steps: [
 					{
 						id: "check_changes"
 						title: "Check Changes"
-						objective: "Check git status."
+						outcome: "Check git status."
 						artifacts: [
 							{path: "docs/code-review.md"},
 							{path: "docs/optional.md", required: false},
@@ -58,20 +60,20 @@ func TestLoadFile(t *testing.T) {
 					{
 						id: "human_approval"
 						title: "Human Approval"
-						objective: "Ask for approval."
+						outcome: "Ask for approval."
 						approval: {required: true}
 					},
 				]
 			}`,
 			wantFlow: Flow{
-				ID:          "post-task-review",
-				Title:       "Post Task Review",
-				Description: "Review after a task.",
+				ID:      "post-task-review",
+				Title:   "Post Task Review",
+				Purpose: "Review after a task.",
 				Steps: []Step{
 					{
-						ID:        "check_changes",
-						Title:     "Check Changes",
-						Objective: "Check git status.",
+						ID:      "check_changes",
+						Title:   "Check Changes",
+						Outcome: "Check git status.",
 						Artifacts: []Artifact{
 							{Path: "docs/code-review.md", Required: true},
 							{Path: "docs/optional.md", Required: false},
@@ -80,7 +82,7 @@ func TestLoadFile(t *testing.T) {
 					{
 						ID:        "human_approval",
 						Title:     "Human Approval",
-						Objective: "Ask for approval.",
+						Outcome:   "Ask for approval.",
 						Artifacts: []Artifact{},
 						Approval:  &Approval{Required: true},
 					},
@@ -103,8 +105,9 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsLegacyInstructionWithoutObjective(t *testing.T) {
+func TestLoadRejectsLegacyInstructionWithoutOutcome(t *testing.T) {
 	_, err := Load([]byte(`flow: {
+		purpose: "Test flow purpose"
 		id: "test-flow"
 		title: "Test Flow"
 		steps: [{
@@ -114,17 +117,18 @@ func TestLoadRejectsLegacyInstructionWithoutObjective(t *testing.T) {
 		}]
 	}`))
 
-	assertValidationErrorCode(t, err, ErrorMissingStepObjective)
+	assertValidationErrorCode(t, err, ErrorMissingStepOutcome)
 }
 
 func TestLoadFileReturnsErrorForFilenameMismatch(t *testing.T) {
 	path := writeFlowFile(t, "actual-file.cue", `flow: {
+		purpose: "Test flow purpose"
 		id: "different-id"
 		title: "Different"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 		}]
 	}`)
 
@@ -142,11 +146,12 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 		{
 			name: "missing flow id",
 			cue: `flow: {
+				purpose: "Test flow purpose"
 				title: "Test Flow"
 				steps: [{
 					id: "first"
 					title: "First"
-					objective: "Do first thing."
+					outcome: "Do first thing."
 				}]
 			}`,
 			wantCode: ErrorMissingFlowID,
@@ -154,11 +159,12 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 		{
 			name: "missing flow title",
 			cue: `flow: {
+				purpose: "Test flow purpose"
 				id: "test-flow"
 				steps: [{
 					id: "first"
 					title: "First"
-					objective: "Do first thing."
+					outcome: "Do first thing."
 				}]
 			}`,
 			wantCode: ErrorMissingFlowTitle,
@@ -166,6 +172,7 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 		{
 			name: "missing steps",
 			cue: `flow: {
+				purpose: "Test flow purpose"
 				id: "test-flow"
 				title: "Test Flow"
 			}`,
@@ -174,12 +181,13 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 		{
 			name: "missing artifact path",
 			cue: `flow: {
+				purpose: "Test flow purpose"
 				id: "test-flow"
 				title: "Test Flow"
 				steps: [{
 					id: "first"
 					title: "First"
-					objective: "Do first thing."
+					outcome: "Do first thing."
 					artifacts: [{}]
 				}]
 			}`,
@@ -188,12 +196,13 @@ func TestLoadFileReturnsValidationErrorCodes(t *testing.T) {
 		{
 			name: "invalid artifact path",
 			cue: `flow: {
+				purpose: "Test flow purpose"
 				id: "test-flow"
 				title: "Test Flow"
 				steps: [{
 					id: "first"
 					title: "First"
-					objective: "Do first thing."
+					outcome: "Do first thing."
 					artifacts: [{path: "../secret.md"}]
 				}]
 			}`,
@@ -216,15 +225,17 @@ func TestLoadDirContinuesWhenValidAndInvalidFlowsAreMixed(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".devflow", "flows")
 	writeFile(t, filepath.Join(dir, "valid-flow.cue"), `flow: {
+		purpose: "Test flow purpose"
 		id: "valid-flow"
 		title: "Valid"
 		steps: [{
 			id: "first"
 			title: "First"
-			objective: "Do first thing."
+			outcome: "Do first thing."
 		}]
 	}`)
 	writeFile(t, filepath.Join(dir, "invalid-flow.cue"), `flow: {
+		purpose: "Test flow purpose"
 		id: "invalid-flow"
 		title: "Invalid"
 		steps: []
