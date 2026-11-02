@@ -2,7 +2,7 @@ package workpackage
 
 import "errors"
 
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 const WorkingRoot = "."
 
@@ -24,6 +24,7 @@ var (
 	ErrInvalidEntrySequence  = errors.New("invalid entry sequence")
 	ErrInvalidSnapshotDigest = errors.New("invalid snapshot digest")
 	ErrInvalidWorkingRoot    = errors.New("invalid working root")
+	ErrInvalidFlowPurpose    = errors.New("invalid Flow purpose")
 	ErrNilContractCollection = errors.New("nil WorkPackage contract collection")
 	ErrInvalidStepContract   = errors.New("invalid Step contract")
 )
@@ -39,12 +40,14 @@ type WorkPackage struct {
 	TaskSnapshotDigest string       `json:"task_snapshot_digest"`
 	TaskContent        string       `json:"task_content"`
 	WorkingRoot        string       `json:"working_root"`
+	FlowPurpose        string       `json:"flow_purpose"`
 	Step               StepContract `json:"step"`
 }
 
 type StepContract struct {
 	Title            string             `json:"title"`
-	Objective        string             `json:"objective"`
+	Purpose          string             `json:"purpose"`
+	Outcome          string             `json:"outcome"`
 	Inputs           []ArtifactContract `json:"inputs"`
 	Artifacts        []ArtifactContract `json:"artifacts"`
 	RequiredChecks   []string           `json:"required_checks"`

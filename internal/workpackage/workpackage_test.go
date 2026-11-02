@@ -30,17 +30,17 @@ func TestWorkPackageJSONFieldContract(t *testing.T) {
 	assertFields(reflect.TypeOf(WorkPackage{}), []string{
 		"schema_version", "work_package_digest", "flow_run_id", "step_id", "attempt_id",
 		"entry_sequence", "flow_snapshot_digest", "task_snapshot_digest", "task_content",
-		"working_root", "step",
+		"working_root", "flow_purpose", "step",
 	})
 	assertFields(reflect.TypeOf(StepContract{}), []string{
-		"title", "objective", "inputs", "artifacts", "required_checks", "approval_required",
+		"title", "purpose", "outcome", "inputs", "artifacts", "required_checks", "approval_required",
 	})
 	assertFields(reflect.TypeOf(ArtifactContract{}), []string{"path", "required"})
 }
 
 func TestCanonicalPayloadAndDigestGolden(t *testing.T) {
 	pkg := testPackage(t)
-	const want = `{"schema_version":2,"flow_run_id":"run_0123456789abcdef0123456789abcdef","step_id":"build","attempt_id":"attempt_00000000000000000003","entry_sequence":3,"flow_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","task_snapshot_digest":"sha256:86c83594f69ce69c5586c05ba69cfe02668bbad87e28acedc05a324d30b5319a","task_content":"Build \u003ccomponent\u003e.\n日本語","working_root":".","step":{"title":"Build","objective":"Implement \u0026 verify.","inputs":[{"path":"docs/spec.md","required":true},{"path":"docs/optional.md","required":false}],"artifacts":[{"path":"out/component.bin","required":true}],"required_checks":["go-test","go-vet"],"approval_required":true}}`
+	const want = `{"schema_version":3,"flow_run_id":"run_0123456789abcdef0123456789abcdef","step_id":"build","attempt_id":"attempt_00000000000000000003","entry_sequence":3,"flow_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","task_snapshot_digest":"sha256:86c83594f69ce69c5586c05ba69cfe02668bbad87e28acedc05a324d30b5319a","task_content":"Build \u003ccomponent\u003e.\n日本語","working_root":".","flow_purpose":"Deliver the component.","step":{"title":"Build","purpose":"Build the implementation.","outcome":"Implement \u0026 verify.","inputs":[{"path":"docs/spec.md","required":true},{"path":"docs/optional.md","required":false}],"artifacts":[{"path":"out/component.bin","required":true}],"required_checks":["go-test","go-vet"],"approval_required":true}}`
 	canonical, err := canonicalJSON(pkg)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestCanonicalPayloadAndDigestGolden(t *testing.T) {
 	if got != wantDigest {
 		t.Fatalf("Digest() = %q, want independently calculated %q", got, wantDigest)
 	}
-	const wantDigestLiteral = "sha256:ab7b6c031a69fa3fbbc6bd97b67b5c93d4ebfdc671839ba229fd6b6e9f25d101"
+	const wantDigestLiteral = "sha256:5d928db21822487a0caff9a668461eaf241c79b0be6ae9508ff2466a99257aa3"
 	if got != wantDigestLiteral {
 		t.Fatalf("Digest() = %q, want literal vector %q", got, wantDigestLiteral)
 	}
@@ -69,7 +69,7 @@ func TestCanonicalPayloadAndDigestGolden(t *testing.T) {
 	if err != nil || again != got {
 		t.Fatalf("digest field affected Digest(): %q, %v", again, err)
 	}
-	pkg.Step.Objective += " changed"
+	pkg.Step.Outcome += " changed"
 	changed, err := Digest(pkg)
 	if err != nil || changed == got {
 		t.Fatalf("payload change did not change digest: %q, %v", changed, err)
@@ -78,14 +78,98 @@ func TestCanonicalPayloadAndDigestGolden(t *testing.T) {
 
 func TestWorkPackageFullJSONGolden(t *testing.T) {
 	pkg := testPackage(t)
-	pkg.WorkPackageDigest = "sha256:c630020bfbdb9e88609c8eedaaba3f8a09733c2e9ec5680941dc491458f42cd8"
-	const want = `{"schema_version":2,"work_package_digest":"sha256:c630020bfbdb9e88609c8eedaaba3f8a09733c2e9ec5680941dc491458f42cd8","flow_run_id":"run_0123456789abcdef0123456789abcdef","step_id":"build","attempt_id":"attempt_00000000000000000003","entry_sequence":3,"flow_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","task_snapshot_digest":"sha256:86c83594f69ce69c5586c05ba69cfe02668bbad87e28acedc05a324d30b5319a","task_content":"Build \u003ccomponent\u003e.\n日本語","working_root":".","step":{"title":"Build","objective":"Implement \u0026 verify.","inputs":[{"path":"docs/spec.md","required":true},{"path":"docs/optional.md","required":false}],"artifacts":[{"path":"out/component.bin","required":true}],"required_checks":["go-test","go-vet"],"approval_required":true}}`
+	pkg.WorkPackageDigest = "sha256:5d928db21822487a0caff9a668461eaf241c79b0be6ae9508ff2466a99257aa3"
+	const want = `{"schema_version":3,"work_package_digest":"sha256:5d928db21822487a0caff9a668461eaf241c79b0be6ae9508ff2466a99257aa3","flow_run_id":"run_0123456789abcdef0123456789abcdef","step_id":"build","attempt_id":"attempt_00000000000000000003","entry_sequence":3,"flow_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","task_snapshot_digest":"sha256:86c83594f69ce69c5586c05ba69cfe02668bbad87e28acedc05a324d30b5319a","task_content":"Build \u003ccomponent\u003e.\n日本語","working_root":".","flow_purpose":"Deliver the component.","step":{"title":"Build","purpose":"Build the implementation.","outcome":"Implement \u0026 verify.","inputs":[{"path":"docs/spec.md","required":true},{"path":"docs/optional.md","required":false}],"artifacts":[{"path":"out/component.bin","required":true}],"required_checks":["go-test","go-vet"],"approval_required":true}}`
 	data, err := json.Marshal(pkg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != want {
 		t.Fatalf("full JSON:\n%s\nwant:\n%s", data, want)
+	}
+}
+
+func TestDigestBindsPurposeAndOutcome(t *testing.T) {
+	pkg := testPackage(t)
+	before, err := Digest(pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name string
+		edit func(*WorkPackage)
+	}{
+		{"Flow purpose", func(p *WorkPackage) { p.FlowPurpose += " changed" }},
+		{"Step purpose", func(p *WorkPackage) { p.Step.Purpose += " changed" }},
+		{"Step outcome", func(p *WorkPackage) { p.Step.Outcome += " changed" }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			changed := clonePackage(pkg)
+			tt.edit(&changed)
+			after, err := Digest(changed)
+			if err != nil || after == before {
+				t.Fatalf("payload change did not change digest: %q, %v", after, err)
+			}
+			changed.WorkPackageDigest = before
+			if err := Validate(changed); !errors.Is(err, ErrDigestMismatch) {
+				t.Fatalf("Validate() = %v, want digest mismatch", err)
+			}
+		})
+	}
+}
+
+func TestValidatePurposeAndOutcome(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		edit func(*WorkPackage)
+		want error
+	}{
+		{"empty Flow purpose", func(p *WorkPackage) { p.FlowPurpose = "" }, ErrInvalidFlowPurpose},
+		{"blank Flow purpose", func(p *WorkPackage) { p.FlowPurpose = " \t\n\u3000" }, ErrInvalidFlowPurpose},
+		{"empty Step purpose", func(p *WorkPackage) { p.Step.Purpose = "" }, nil},
+		{"blank Step purpose", func(p *WorkPackage) { p.Step.Purpose = " \t\n\u3000" }, nil},
+		{"empty Step outcome", func(p *WorkPackage) { p.Step.Outcome = "" }, ErrInvalidStepContract},
+		{"blank Step outcome", func(p *WorkPackage) { p.Step.Outcome = " \t\n\u3000" }, ErrInvalidStepContract},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pkg := testPackage(t)
+			tt.edit(&pkg)
+			digest, err := Digest(pkg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkg.WorkPackageDigest = digest
+			if err := Validate(pkg); !errors.Is(err, tt.want) || (err != nil && !IsValidationError(err)) {
+				t.Fatalf("Validate() = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestGeneratePurposeAndOutcomeFromSnapshot(t *testing.T) {
+	for _, purpose := range []string{" Step reason B ", ""} {
+		t.Run("Step purpose="+purpose, func(t *testing.T) {
+			st := testState(t, 1, "build")
+			st.FlowSnapshot.Flow.Purpose = " Flow purpose A "
+			st.FlowSnapshot.Flow.Steps[0].Purpose = purpose
+			st.FlowSnapshot.Flow.Steps[0].Outcome = " Completion state C "
+			snapshot, err := flow.BuildSnapshot(st.FlowSnapshot.Flow, st.FlowSnapshot.Source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			st.FlowSnapshot = snapshot
+			pkg, err := Generate(st, "build", st.CurrentAttemptID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pkg.SchemaVersion != 3 || pkg.FlowPurpose != " Flow purpose A " ||
+				pkg.Step.Purpose != purpose || pkg.Step.Outcome != " Completion state C " {
+				t.Fatalf("unexpected WorkPackage projection: %#v", pkg)
+			}
+			if err := Validate(pkg); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -128,7 +212,8 @@ func TestValidateWorkPackage(t *testing.T) {
 		edit func(*WorkPackage)
 		want error
 	}{
-		{"schema", func(p *WorkPackage) { p.SchemaVersion = 3 }, ErrUnsupportedSchema},
+		{"schema v2", func(p *WorkPackage) { p.SchemaVersion = 2 }, ErrUnsupportedSchema},
+		{"schema future", func(p *WorkPackage) { p.SchemaVersion = 4 }, ErrUnsupportedSchema},
 		{"digest format", func(p *WorkPackage) { p.WorkPackageDigest = "bad" }, ErrInvalidDigest},
 		{"digest mismatch", func(p *WorkPackage) { p.TitleForTest() }, ErrDigestMismatch},
 		{"Run ID", func(p *WorkPackage) { p.FlowRunID = "run_bad" }, ErrInvalidFlowRunID},
@@ -330,7 +415,7 @@ func testPackage(t *testing.T) WorkPackage {
 		t.Fatal(err)
 	}
 	return WorkPackage{
-		SchemaVersion:      2,
+		SchemaVersion:      3,
 		FlowRunID:          "run_0123456789abcdef0123456789abcdef",
 		StepID:             "build",
 		AttemptID:          "attempt_00000000000000000003",
@@ -339,9 +424,11 @@ func testPackage(t *testing.T) WorkPackage {
 		TaskSnapshotDigest: taskSnapshot.Digest,
 		TaskContent:        taskSnapshot.Content,
 		WorkingRoot:        ".",
+		FlowPurpose:        "Deliver the component.",
 		Step: StepContract{
-			Title:     "Build",
-			Objective: "Implement & verify.",
+			Title:   "Build",
+			Purpose: "Build the implementation.",
+			Outcome: "Implement & verify.",
 			Inputs: []ArtifactContract{
 				{Path: "docs/spec.md", Required: true},
 				{Path: "docs/optional.md", Required: false},

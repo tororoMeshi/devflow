@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/tororoMeshi/devflow/internal/flow"
 	"github.com/tororoMeshi/devflow/internal/state"
@@ -25,6 +26,7 @@ type digestPayload struct {
 	TaskSnapshotDigest string       `json:"task_snapshot_digest"`
 	TaskContent        string       `json:"task_content"`
 	WorkingRoot        string       `json:"working_root"`
+	FlowPurpose        string       `json:"flow_purpose"`
 	Step               StepContract `json:"step"`
 }
 
@@ -47,6 +49,7 @@ func payload(pkg WorkPackage) digestPayload {
 		TaskSnapshotDigest: pkg.TaskSnapshotDigest,
 		TaskContent:        pkg.TaskContent,
 		WorkingRoot:        pkg.WorkingRoot,
+		FlowPurpose:        pkg.FlowPurpose,
 		Step:               pkg.Step,
 	}
 }
@@ -100,6 +103,9 @@ func Validate(pkg WorkPackage) error {
 	if pkg.WorkingRoot != WorkingRoot {
 		return ErrInvalidWorkingRoot
 	}
+	if strings.TrimSpace(pkg.FlowPurpose) == "" {
+		return ErrInvalidFlowPurpose
+	}
 	if pkg.Step.Inputs == nil || pkg.Step.Artifacts == nil || pkg.Step.RequiredChecks == nil {
 		return ErrNilContractCollection
 	}
@@ -133,7 +139,8 @@ func validateStepContract(stepID string, contract StepContract) error {
 		Steps: []flow.Step{{
 			ID:             stepID,
 			Title:          contract.Title,
-			Outcome:        contract.Objective,
+			Purpose:        contract.Purpose,
+			Outcome:        contract.Outcome,
 			Inputs:         inputs,
 			Artifacts:      artifacts,
 			Approval:       approval,
@@ -157,6 +164,7 @@ func IsValidationError(err error) bool {
 		errors.Is(err, ErrInvalidEntrySequence) ||
 		errors.Is(err, ErrInvalidSnapshotDigest) ||
 		errors.Is(err, ErrInvalidWorkingRoot) ||
+		errors.Is(err, ErrInvalidFlowPurpose) ||
 		errors.Is(err, ErrNilContractCollection) ||
 		errors.Is(err, ErrInvalidStepContract)
 }

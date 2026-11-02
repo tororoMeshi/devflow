@@ -60,6 +60,7 @@ func Generate(st state.State, stepID, attemptID string) (WorkPackage, error) {
 		TaskSnapshotDigest: st.TaskSnapshot.Digest,
 		TaskContent:        st.TaskSnapshot.Content,
 		WorkingRoot:        WorkingRoot,
+		FlowPurpose:        st.FlowSnapshot.Flow.Purpose,
 		Step:               contract,
 	}
 	digest, err := Digest(pkg)
@@ -94,7 +95,8 @@ func projectStep(step flow.Step) StepContract {
 	approvalRequired := step.Approval != nil && step.Approval.Required
 	return StepContract{
 		Title:            step.Title,
-		Objective:        step.Outcome,
+		Purpose:          step.Purpose,
+		Outcome:          step.Outcome,
 		Inputs:           inputs,
 		Artifacts:        artifacts,
 		RequiredChecks:   append([]string{}, step.RequiredChecks...),

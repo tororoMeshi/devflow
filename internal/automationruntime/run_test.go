@@ -69,7 +69,7 @@ func runHelper() int {
 			_, _ = os.Stdout.Write(make([]byte, MaxWorkPackageBytes+1))
 			return 0
 		case "max":
-			prefix := fmt.Sprintf(`{"schema_version":2,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"padding":"`, testDigest, args[2], args[4])
+			prefix := fmt.Sprintf(`{"schema_version":3,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"padding":"`, testDigest, args[2], args[4])
 			suffix := `"}`
 			_, _ = os.Stdout.Write([]byte(prefix + strings.Repeat("x", MaxWorkPackageBytes-len(prefix)-len(suffix)) + suffix))
 			return 0
@@ -80,9 +80,9 @@ func runHelper() int {
 		}
 		if artifacts := os.Getenv("HELPER_ARTIFACTS"); artifacts != "" {
 			checks := envDefault("HELPER_CHECKS", "[]")
-			fmt.Printf(`{"schema_version":2,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"step":{"artifacts":%s,"required_checks":%s}}`+"\n", testDigest, step, attempt, artifacts, checks)
+			fmt.Printf(`{"schema_version":3,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q,"step":{"artifacts":%s,"required_checks":%s}}`+"\n", testDigest, step, attempt, artifacts, checks)
 		} else {
-			fmt.Printf(`{"schema_version":2,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q}`+"\n", testDigest, step, attempt)
+			fmt.Printf(`{"schema_version":3,"work_package_digest":"%s","flow_run_id":"run_1","step_id":%q,"attempt_id":%q}`+"\n", testDigest, step, attempt)
 		}
 		return 0
 	}
