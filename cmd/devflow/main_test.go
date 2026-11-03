@@ -502,7 +502,7 @@ func TestRunContextWritesOnlyJSON(t *testing.T) {
 	stateValue := value["state"].(map[string]any)
 	_, hasTopLevelEntrySequence := value["entry_sequence"]
 	_, hasStateEntrySequence := stateValue["entry_sequence"]
-	if value["schema_version"].(float64) != 5 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != true {
+	if value["schema_version"].(float64) != 6 || !ok || len(attempt) != 2 || attempt["id"] == "" || attempt["entry_sequence"].(float64) != 1 || hasTopLevelEntrySequence || hasStateEntrySequence || value["completion"].(map[string]any)["ready"] != true {
 		t.Fatalf("context = %#v", value)
 	}
 }
@@ -547,7 +547,7 @@ func TestRunContextReturnsTerminalStateJSON(t *testing.T) {
 			attempt, hasAttempt := value["attempt"]
 			_, hasTopLevelEntrySequence := value["entry_sequence"]
 			_, hasStateEntrySequence := state["entry_sequence"]
-			if value["schema_version"].(float64) != 5 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
+			if value["schema_version"].(float64) != 6 || state["status"] != tt.want || !hasAttempt || attempt != nil || hasTopLevelEntrySequence || hasStateEntrySequence || value["step"] != nil || value["completion"] != nil {
 				t.Fatalf("context = %#v", value)
 			}
 		})
@@ -815,12 +815,12 @@ func TestWritePromptPreservesTaskContentAndSeparatesCurrentStep(t *testing.T) {
 		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
 			var stdout bytes.Buffer
 			writePrompt(&stdout, command.PromptResult{
-				FlowID:               "flow",
-				TaskContent:          content,
-				CurrentStepID:        "step",
-				CurrentStepTitle:     "Step",
-				CurrentAttemptID:     "attempt_00000000000000000001",
-				CurrentStepObjective: "Objective",
+				FlowID:             "flow",
+				TaskContent:        content,
+				CurrentStepID:      "step",
+				CurrentStepTitle:   "Step",
+				CurrentAttemptID:   "attempt_00000000000000000001",
+				CurrentStepOutcome: "Outcome",
 			})
 			wantPrefix := "Task:\n" + content
 			if !strings.HasPrefix(stdout.String(), wantPrefix) {
@@ -864,10 +864,10 @@ func TestWriteStatusAndPromptOmitEmptyCurrentAttempt(t *testing.T) {
 
 	var promptOutput bytes.Buffer
 	writePrompt(&promptOutput, command.PromptResult{
-		FlowID:               "flow",
-		CurrentStepID:        "step",
-		CurrentStepTitle:     "Step",
-		CurrentStepObjective: "Objective",
+		FlowID:             "flow",
+		CurrentStepID:      "step",
+		CurrentStepTitle:   "Step",
+		CurrentStepOutcome: "Outcome",
 	})
 	if strings.Contains(promptOutput.String(), "Current attempt:") {
 		t.Fatalf("empty Current attempt is displayed in prompt: %q", promptOutput.String())
@@ -1131,23 +1131,23 @@ func TestRunWritesNormalResultToStdout(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exitCode = %d, want 0; stderr = %q", exitCode, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Objective:") {
+	if !strings.Contains(stdout.String(), "Step Outcome:") {
 		t.Fatalf("stdout = %q, want prompt output", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Task:\nok\n\nCurrent step:") {
-		t.Fatalf("stdout = %q, want separated Task and Current step sections", stdout.String())
+	if !strings.Contains(stdout.String(), "Task:\nok\n\nFlow Purpose:") {
+		t.Fatalf("stdout = %q, want separated Task and Flow Purpose sections", stdout.String())
 	}
 }
 
 func TestWriteStatusExplainsHumanNextActions(t *testing.T) {
 	base := command.StatusResult{
-		FlowID:               "review",
-		FlowTitle:            "Review",
-		FlowStatus:           "running",
-		CurrentStepID:        "write_review",
-		CurrentStepTitle:     "Write review",
-		CurrentStepObjective: "Create the review document.",
-		CurrentAttemptID:     "attempt_00000000000000000004",
+		FlowID:             "review",
+		FlowTitle:          "Review",
+		FlowStatus:         "running",
+		CurrentStepID:      "write_review",
+		CurrentStepTitle:   "Write review",
+		CurrentStepOutcome: "Create the review document.",
+		CurrentAttemptID:   "attempt_00000000000000000004",
 	}
 
 	tests := []struct {
@@ -1161,9 +1161,9 @@ func TestWriteStatusExplainsHumanNextActions(t *testing.T) {
 			status: command.StatusResult{
 				FlowID: "review", FlowTitle: "Review", FlowStatus: "running",
 				CurrentStepID: "check_changes", CurrentStepTitle: "Check changes",
-				CurrentStepObjective: "Organize changed files.",
+				CurrentStepOutcome: "Organize changed files.",
 			},
-			want:  []string{"None are declared for this Step.", "Complete the Objective outside devflow.", "devflow done", "does not perform the Objective"},
+			want:  []string{"None are declared for this Step.", "Establish the Step Outcome outside devflow.", "devflow done", "does not establish the Step Outcome"},
 			avoid: []string{"Attempt ID", "Step entry", "Completed steps", "(check_changes)"},
 		},
 		{
@@ -1203,7 +1203,7 @@ func TestWriteStatusExplainsHumanNextActions(t *testing.T) {
 		{
 			name:   "approval pending",
 			status: withStatusApproval(base, &command.ApprovalResult{StepID: "human_approval"}),
-			want:   []string{"Waiting for approval of this Step's Objective", "devflow approve --step human_approval --attempt attempt_00000000000000000004 --note \"<approval note>\""},
+			want:   []string{"Waiting for approval of this Step's Outcome", "devflow approve --step human_approval --attempt attempt_00000000000000000004 --note \"<approval note>\""},
 			avoid:  []string{"  devflow done"},
 		},
 		{
@@ -1253,31 +1253,31 @@ func withStatusCompletionReady(status command.StatusResult) command.StatusResult
 func TestWritePromptKeepsOnlyCurrentStepContract(t *testing.T) {
 	var stdout bytes.Buffer
 	writePrompt(&stdout, command.PromptResult{
-		FlowID:               "review",
-		TaskContent:          "Review the implementation.\n",
-		CurrentStepID:        "write_review",
-		CurrentStepTitle:     "Write review",
-		CurrentAttemptID:     "attempt_00000000000000000004",
-		CurrentStepObjective: "Create docs/code-review.md.",
-		RequiredInputs:       []command.ArtifactResult{{Path: "docs/request.md"}},
-		RequiredArtifacts:    []command.ArtifactResult{{Path: "docs/code-review.md"}},
-		OptionalArtifacts:    []command.ArtifactResult{{Path: "docs/notes.md"}},
-		RequiredApproval:     &command.RequiredApprovalResult{StepID: "write_review", AttemptID: "attempt_00000000000000000004"},
-		RequiredChecks:       []string{"go-test"},
+		FlowID:             "review",
+		TaskContent:        "Review the implementation.\n",
+		CurrentStepID:      "write_review",
+		CurrentStepTitle:   "Write review",
+		CurrentAttemptID:   "attempt_00000000000000000004",
+		CurrentStepOutcome: "Create docs/code-review.md.",
+		RequiredInputs:     []command.ArtifactResult{{Path: "docs/request.md"}},
+		RequiredArtifacts:  []command.ArtifactResult{{Path: "docs/code-review.md"}},
+		OptionalArtifacts:  []command.ArtifactResult{{Path: "docs/notes.md"}},
+		RequiredApproval:   &command.RequiredApprovalResult{StepID: "write_review", AttemptID: "attempt_00000000000000000004"},
+		RequiredChecks:     []string{"go-test"},
 	})
 
 	got := stdout.String()
 	for _, want := range []string{
 		"Task:\nReview the implementation.",
 		"Current step: Write review (write_review)",
-		"Objective:\nCreate docs/code-review.md.",
+		"Step Outcome:\nCreate docs/code-review.md.",
 		"Required inputs:\n- docs/request.md",
 		"Required artifacts:\n- docs/code-review.md",
 		"Approval:\n- required from a human or external operation",
 		"Required checks:\n- go-test",
 		"Boundary:\n- Work only on the current Step.",
 		"- Do not run lifecycle commands or advance the Flow.",
-		"- When the Objective and declared requirements are satisfied, stop and report completion to the caller.",
+		"- When the Step Outcome and declared requirements are satisfied, stop and report completion to the caller.",
 	} {
 		assertContains(t, got, want)
 	}

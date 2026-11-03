@@ -8,21 +8,21 @@ import (
 	"github.com/tororoMeshi/devflow/internal/state"
 )
 
-func TestStartedRunIgnoresObjectiveAndGateChanges(t *testing.T) {
+func TestStartedRunIgnoresOutcomeAndGateChanges(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
-	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`outcome: "Original objective."`))
+	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`outcome: "Original outcome."`))
 	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 
 	writeCommandTestFile(t, flowPath, fixedFlow(`
-		outcome: "Changed objective."
+		outcome: "Changed outcome."
 		artifacts: [{path: "missing.txt", required: true}]
 		required_checks: ["changed-check"]`))
 
 	prompt := Prompt(Context{ProjectRoot: root})
 	assertCommandSuccess(t, prompt)
-	if prompt.Prompt.CurrentStepObjective != "Original objective." {
-		t.Fatalf("objective = %q", prompt.Prompt.CurrentStepObjective)
+	if prompt.Prompt.CurrentStepOutcome != "Original outcome." {
+		t.Fatalf("outcome = %q", prompt.Prompt.CurrentStepOutcome)
 	}
 	if len(prompt.Prompt.RequiredArtifacts) != 0 || len(prompt.Prompt.RequiredChecks) != 0 {
 		t.Fatalf("prompt uses changed gate: %#v", prompt.Prompt)
@@ -36,7 +36,7 @@ func TestStartedRunIgnoresObjectiveAndGateChanges(t *testing.T) {
 func TestStartedRunIgnoresStepOrderChanges(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
-	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`outcome: "Original objective."`))
+	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`outcome: "Original outcome."`))
 	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 
 	writeCommandTestFile(t, flowPath, `flow: {
@@ -65,7 +65,7 @@ func TestCommandsUseSnapshotAfterFlowDeletion(t *testing.T) {
 		steps: [{
 			id: "first"
 			title: "First"
-			outcome: "Original objective."
+			outcome: "Original outcome."
 			required_checks: ["verify"]
 		}]
 	}`)
@@ -88,7 +88,7 @@ func TestCommandsUseSnapshotAfterFlowDeletion(t *testing.T) {
 func TestStateTransitionUsesSnapshotAfterFlowDeletion(t *testing.T) {
 	root := t.TempDir()
 	flowPath := filepath.Join(FlowDir(root), "fixed-flow.cue")
-	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`outcome: "Original objective."`))
+	writeCommandFlow(t, root, "fixed-flow", fixedFlow(`outcome: "Original outcome."`))
 	assertCommandSuccess(t, startWithTestTask(t, root, "fixed-flow"))
 	if err := os.Remove(flowPath); err != nil {
 		t.Fatal(err)

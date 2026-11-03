@@ -2,7 +2,7 @@
 
 このチュートリアルでは、devflowのCoreだけを使い、標準Flowの`post-task-review`を1回最後まで進めます。Automation Runtime、Executor、Check Adapterは使いません。
 
-devflowはAIを呼び出したり作業内容を決めたりしません。Flowが「何を成立させるか」を工程契約として管理し、人間またはAIがその工程の作業を行います。`status`は人間向けの現在地・不足条件・次の操作、`prompt`はAI向けの現在Step契約を示します。`context`、`work-package`、`completion-context`は外部運用向けのJSON契約です。`done`が確認するのはFlowで宣言されたGateであり、Objectiveの実施内容そのものではありません。
+devflowはAIを呼び出したり作業内容を決めたりしません。Flowが「何を成立させるか」を工程契約として管理し、人間またはAIがその工程の作業を行います。`status`は人間向けの現在地・不足条件・次の操作、`prompt`はAI向けの現在Step契約を示します。どちらもFlow Purpose、Step Purpose（任意）、Step Outcomeを区別して表示します。`context`、`work-package`、`completion-context`は外部運用向けのJSON契約です。`done`が確認するのはFlowで宣言されたGateであり、Step Outcomeの成立そのものではありません。
 
 ## 1. Coreをbuildする
 
@@ -35,7 +35,7 @@ printf '%s\n' 'このチュートリアルでレビューFlowの進め方を確�
 /tmp/devflow prompt
 ```
 
-`list`に`post-task-review`が表示され、開始直後のStepは`check_changes`です。`prompt`に表示される`Objective`が、今のStepで成立させることです。Flowの次のStepを自分で進めず、現在のStepを完了可能な状態にしてから`done`を実行します。
+`list`に`post-task-review`とそのPurposeが表示され、開始直後のStepは`check_changes`です。`prompt`に表示される`Step Outcome`が、今のStepで成立させることです。Flowの次のStepを自分で進めず、現在のStepを完了可能な状態にしてから`done`を実行します。
 
 Attemptは、同じStepに入り直した場合でも記録を混同しないためのIDです。人間が直接実行するArtifact Evidenceの記録やApprovalでは、`status`に表示される具体的なコマンドを使うため、Attempt IDを手で転記する必要はありません。
 
@@ -87,7 +87,7 @@ printf '%s\n' '# Code review' '' '- サンプル変更を確認した。' '' '##
 /tmp/devflow prompt
 ```
 
-次に`status`を実行します。承認待ちであること、承認対象のObjective、承認を記録する具体的なコマンドが表示されます。
+次に`status`を実行します。承認待ちであること、承認対象のStep Outcome、承認を記録する具体的なコマンドが表示されます。
 
 ```bash
 /tmp/devflow status

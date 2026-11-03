@@ -34,9 +34,11 @@ printf '%s\n' 'サンプルタスクを確認し、レビュー結果を docs/co
 
 同じCore State / Gate / Evidence / Attemptを、用途別に投影します。意味論やJSON契約は出力ごとに分岐させません。
 
-- `devflow status`: Human。現在地、不足している条件、次にdevflowで行う操作を説明します。
-- `devflow prompt`: AI。現在StepだけのTask、Objective、入力、成果物、Check、承認要件と停止境界を示します。
+- `devflow status`: Human。Flow Purpose、現在StepのPurpose（任意）とOutcome、不足している条件、次にdevflowで行う操作を説明します。
+- `devflow prompt`: AI。Task、Flow Purpose、現在StepだけのPurpose（任意）とOutcome、入力、成果物、Check、承認要件と停止境界を示します。
 - `devflow context`、`devflow work-package`、`devflow completion-context`: Machine。安定したJSONの状態・Executor入力・完了判定契約です。
+
+Flow PurposeはFlow全体の存在理由、Step Purposeはその工程を独立して置く理由、Step Outcomeは工程完了時に成立すべき状態です。`list`はFlowの`purpose`を表示します。status / promptの結果モデルは`flow_purpose`、`current_step_purpose`、`current_step_outcome`を持ちます。`context`のexecution-context JSONはschema version 6で、`flow.purpose`、`step.purpose`、`step.outcome`を返します。Step Purposeが空の場合もJSONでは空文字列として保持し、Human / AI向けtextでは空のセクションを表示しません。
 
 現在の工程を戻す、スキップする、Flowを終了する操作には理由が必要です。
 

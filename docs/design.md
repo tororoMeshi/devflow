@@ -144,14 +144,15 @@ MVPでは、Flow定義をCUEで記述します。
 flow: {
 	id: string
 	title: string
-	description?: string
+	purpose: string
 	steps: [...#Step]
 }
 
 #Step: {
 	id: string
 	title: string
-	objective: string
+	purpose?: string
+	outcome: string
 	inputs?: [...#Artifact]
 	artifacts?: [...#Artifact]
 	approval?: #Approval
@@ -175,11 +176,8 @@ Flowは、開発作業の流れ全体を表します。
 
 * `id`
 * `title`
+* `purpose`（Flow全体が存在する理由）
 * `steps`
-
-任意項目は次の通りです。
-
-* `description`
 
 例:
 
@@ -187,13 +185,13 @@ Flowは、開発作業の流れ全体を表します。
 flow: {
 	id: "post-task-review"
 	title: "タスク後レビュー"
-	description: "実装や修正の完了後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
+	purpose: "実装や修正の完了後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
 
 	steps: [
 		{
 			id: "check_changes"
 			title: "変更ファイル確認"
-			objective: "変更されたファイルを整理する。"
+			outcome: "変更されたファイルを整理する。"
 		},
 	]
 }
@@ -207,10 +205,11 @@ flow: {
 
 * `id`
 * `title`
-* `objective`
+* `outcome`（工程完了時に成立すべき状態）
 
 任意項目は次の通りです。
 
+* `purpose`（その工程を独立して置く理由）
 * `inputs`
 * `artifacts`
 * `approval`
@@ -276,10 +275,11 @@ Flow定義では、最低限次を確認します。
 
 * `flow.id` が存在する
 * `flow.title` が存在する
+* `flow.purpose` が存在する
 * `flow.steps` が1件以上存在する
 * 各工程に `id` が存在する
 * 各工程に `title` が存在する
-* 各工程に `objective` が存在する
+* 各工程に `outcome` が存在する
 * 工程IDがFlow内で重複していない
 * artifact path が有効である
 
@@ -289,12 +289,13 @@ Flow定義では、最低限次を確認します。
 
 * `flow.id`
 * `flow.title`
+* `flow.purpose`
 * `step.id`
 * `step.title`
-* `step.objective`
+* `step.outcome`
 * `artifact.path`
 
-`description` は任意説明なので、空でも致命的なエラーにはしません。
+`step.purpose` は任意なので、省略できます。Flow PurposeとStep Outcomeは必須です。
 
 `flow.id` と `step.id` は、機械向けの識別子として扱います。
 MVPでは、英数字、ハイフン、アンダースコアのみ許可します。
@@ -403,11 +404,11 @@ Flow層のテストでは、次を扱います。
 * `.cue` ファイルの読み込み
 * `flow.id`
 * `flow.title`
-* `flow.description`
+* `flow.purpose`
 * `flow.steps`
 * `step.id`
 * `step.title`
-* `step.objective`
+* `step.outcome`
 * `step.artifacts`
 * `artifact.path`
 * `artifact.required`
@@ -433,9 +434,9 @@ Flow層が見るartifactは、pathの静的な妥当性だけです。
 
 読み込みテストでは、最低限次を確認します。
 
-* `id`、`title`、`steps` を持つ最小Flowを読み込める
-* `description` があるFlowを読み込める
-* `description` がないFlowも読み込める
+* `id`、`title`、`purpose`、`steps` を持つ最小Flowを読み込める
+* Step `purpose` があるFlowを読み込める
+* Step `purpose` がないFlowも読み込める
 * artifactがあるstepを読み込める
 * approvalがあるstepを読み込める
 * 複数stepを定義順に読み込める
@@ -448,10 +449,11 @@ Flow層が見るartifactは、pathの静的な妥当性だけです。
 
 * `flow.id` がない
 * `flow.title` がない
+* `flow.purpose` がない
 * `flow.steps` がない、または空配列
 * `step.id` がない
 * `step.title` がない
-* `step.objective` がない
+* `step.outcome` がない
 * step ID が重複している
 * `artifact.path` がない
 * `artifact.path` が不正
@@ -468,7 +470,7 @@ error_missing_flow_title
 error_flow_has_no_steps
 error_missing_step_id
 error_missing_step_title
-error_missing_step_objective
+error_missing_step_outcome
 error_duplicate_step_id
 error_missing_artifact_path
 error_invalid_artifact_path
@@ -1082,10 +1084,11 @@ active Flow が存在しない場合は、非0の終了コードを返し、acti
 最低限、次を表示します。
 
 ```text
-Flow: post-task-review
+Flow Purpose:
+実装や修正の完了後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。
 Step: check_changes - 変更ファイル確認
 
-Objective:
+Step Outcome:
 git status と diff を確認し、変更されたファイルを整理してください。
 
 Required artifacts:
@@ -1140,7 +1143,7 @@ Required approval:
 
 * Flow ID
 * Flow title
-* Flow description（存在する場合）
+* Flow purpose
 * 工程数
 
 例:
@@ -1150,7 +1153,7 @@ Available flows:
 
 - post-task-review
   Title: タスク後レビュー
-  Description: 実装や修正の完了後に確認を行うFlowです。
+  Purpose: 実装や修正の完了後に確認を行うFlowです。
   Steps: 5
   Status: valid
 ```
@@ -1183,28 +1186,28 @@ MVPでは、`devflow init` によって `post-task-review.cue` を作成しま�
 flow: {
 	id: "post-task-review"
 	title: "タスク後レビュー"
-	description: "AIによる実装や修正が完了した後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
+	purpose: "AIによる実装や修正が完了した後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
 
 	steps: [
 		{
 			id: "check_changes"
 			title: "変更ファイル確認"
-			objective: "変更されたファイルを整理する。"
+			outcome: "変更されたファイルを整理する。"
 		},
 		{
 			id: "summarize_changes"
 			title: "変更内容の要約"
-			objective: "変更内容を要約する。"
+			outcome: "変更内容を要約する。"
 		},
 		{
 			id: "check_quality"
 			title: "品質確認"
-			objective: "必要な確認結果を整理する。"
+			outcome: "必要な確認結果を整理する。"
 		},
 		{
 			id: "write_review"
 			title: "レビュー結果作成"
-			objective: "レビュー結果を docs/code-review.md にまとめる。"
+			outcome: "レビュー結果を docs/code-review.md にまとめる。"
 			artifacts: [
 				{
 					path: "docs/code-review.md"
@@ -1215,7 +1218,7 @@ flow: {
 		{
 			id: "human_approval"
 			title: "人間承認"
-			objective: "レビュー結果について人間の承認を得る。"
+			outcome: "レビュー結果について人間の承認を得る。"
 			approval: {
 				required: true
 			}
@@ -2184,7 +2187,7 @@ transition結果の保存条件は、次の通りです。
 既存ファイルがある場合は上書きしません。
 MVPでは、既存ファイルを保ったうえで `ExitCode = 0` とし、noticeを表示する方針とします。
 
-`list` では、有効なFlowのID、title、description、工程数、valid表示を確認します。
+`list` では、有効なFlowのID、title、purpose、工程数、valid表示を確認します。
 壊れたFlowがある場合は、そのFlowを `invalid` として表示し、有効なFlowも表示したうえで非0を返すことを確認します。
 
 `start` では、stateがない場合に有効なFlowを開始し、`state.json` が `running`、指定Flow ID、最初の工程ID、空collection、`finish = null` で作成されることを確認します。
@@ -2192,10 +2195,10 @@ active Flow が既にある場合は非0で終了し、`state.json` を変更し
 `completed` または `finished` のstateがある場合は、新しいFlowを開始できることを確認します。
 存在しないFlowを指定した場合は非0で終了し、`state.json` を作成しません。
 
-`status` では、active Flow のFlow ID、Flow title、current step ID、current step title、completed steps、skipped steps、approval stateが表示されることを確認します。
+`status` では、active Flow のFlow ID、Flow title、Flow Purpose、current step ID、current step title、Step Purpose（任意）、Step Outcome、completed steps、skipped steps、approval stateが表示されることを確認します。
 active Flow がない場合やstateが壊れている場合は非0で終了します。
 
-`prompt` では、現在工程のFlow、Step、Objective、current Step contract（Inputs、Artifacts、Required checks、Approval要否）が表示されることを確認します。
+`prompt` では、現在工程のFlow Purpose、Step Purpose（任意）、Step Outcome、current Step contract（Inputs、Artifacts、Required checks、Approval要否）が表示されることを確認します。
 required artifact や approval がある工程では、それらが表示されることを確認します。
 optional artifact がある工程では、`Optional artifacts` が表示されることを確認します。
 active Flow がない場合は非0で終了します。
@@ -2264,9 +2267,10 @@ command層では、表示文言の完全一致は避けます。
 `prompt` はAIが読む出力なので、最低限次の構造を確認します。
 
 ```text
-Flow:
+Flow Purpose:
 Step:
-Objective:
+Step Purpose: （空の場合は省略）
+Step Outcome:
 Required artifacts:
 Required approval:
 Current Step contract rules:

@@ -8,7 +8,7 @@ import (
 	"github.com/tororoMeshi/devflow/internal/transition"
 )
 
-const executionContextSchemaVersion = 5
+const executionContextSchemaVersion = 6
 
 type CheckStatus string
 
@@ -44,8 +44,9 @@ type ExecutionContextResult struct {
 }
 
 type ExecutionFlowResult struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Purpose string `json:"purpose"`
 }
 
 type ExecutionStateResult struct {
@@ -60,7 +61,8 @@ type ExecutionAttemptResult struct {
 type ExecutionStepResult struct {
 	ID        string                    `json:"id"`
 	Title     string                    `json:"title"`
-	Objective string                    `json:"objective"`
+	Purpose   string                    `json:"purpose"`
+	Outcome   string                    `json:"outcome"`
 	Inputs    []ExecutionArtifactResult `json:"inputs"`
 	Artifacts []ExecutionArtifactResult `json:"artifacts"`
 	Checks    []ExecutionCheckResult    `json:"checks"`
@@ -119,8 +121,9 @@ func CurrentContext(ctx Context) CommandResult {
 		FlowRunID:     loaded.State.FlowRunID,
 		TaskSnapshot:  loaded.State.TaskSnapshot,
 		Flow: ExecutionFlowResult{
-			ID:    loaded.Flow.ID,
-			Title: loaded.Flow.Title,
+			ID:      loaded.Flow.ID,
+			Title:   loaded.Flow.Title,
+			Purpose: loaded.Flow.Purpose,
 		},
 		State: ExecutionStateResult{
 			Status: loaded.State.Status,
@@ -178,7 +181,8 @@ func executionStep(step flow.Step, current state.State, projectRoot string, insp
 	return &ExecutionStepResult{
 		ID:        step.ID,
 		Title:     step.Title,
-		Objective: step.Outcome,
+		Purpose:   step.Purpose,
+		Outcome:   step.Outcome,
 		Inputs:    executionInputArtifacts(step.Inputs, projectRoot, inspectionSet),
 		Artifacts: executionArtifacts(inspections),
 		Checks:    executionChecks(step.RequiredChecks, current),

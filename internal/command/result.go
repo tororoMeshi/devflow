@@ -36,30 +36,32 @@ const (
 )
 
 type FlowListItem struct {
-	ID          string
-	Title       string
-	Description string
-	StepCount   int
-	FilePath    string
-	Status      string
-	Err         error
+	ID        string
+	Title     string
+	Purpose   string `json:"purpose"`
+	StepCount int
+	FilePath  string
+	Status    string
+	Err       error
 }
 
 type StatusResult struct {
-	FlowID               string
-	FlowTitle            string
-	FlowStatus           string
-	CurrentStepID        string
-	CurrentStepTitle     string
-	CurrentStepObjective string
-	CurrentAttemptID     string
-	CompletedSteps       []string
-	SkippedSteps         map[string]SkippedStepResult
-	Approval             *ApprovalResult
-	EntrySequence        uint64
-	Checks               []CheckStatusResult
-	Artifacts            []ArtifactStatusResult `json:"artifacts"`
-	CompletionReady      bool                   `json:"-"`
+	FlowID             string
+	FlowTitle          string
+	FlowPurpose        string `json:"flow_purpose"`
+	FlowStatus         string
+	CurrentStepID      string
+	CurrentStepTitle   string
+	CurrentStepPurpose string `json:"current_step_purpose"`
+	CurrentStepOutcome string `json:"current_step_outcome"`
+	CurrentAttemptID   string
+	CompletedSteps     []string
+	SkippedSteps       map[string]SkippedStepResult
+	Approval           *ApprovalResult
+	EntrySequence      uint64
+	Checks             []CheckStatusResult
+	Artifacts          []ArtifactStatusResult `json:"artifacts"`
+	CompletionReady    bool                   `json:"-"`
 }
 
 type SkippedStepResult struct {
@@ -94,21 +96,23 @@ const (
 )
 
 type PromptResult struct {
-	FlowID               string
-	TaskContent          string
-	CurrentStepID        string
-	CurrentStepTitle     string
-	CurrentAttemptID     string
-	CurrentStepObjective string
-	RequiredInputs       []ArtifactResult
-	OptionalInputs       []ArtifactResult
-	RequiredArtifacts    []ArtifactResult
-	OptionalArtifacts    []ArtifactResult
-	RequiredApproval     *RequiredApprovalResult
-	RequiredChecks       []string
-	ArtifactBlockers     []string
-	CheckBlockers        []string
-	CompletionBlockers   []string
+	FlowID             string
+	FlowPurpose        string `json:"flow_purpose"`
+	TaskContent        string
+	CurrentStepID      string
+	CurrentStepTitle   string
+	CurrentAttemptID   string
+	CurrentStepPurpose string `json:"current_step_purpose"`
+	CurrentStepOutcome string `json:"current_step_outcome"`
+	RequiredInputs     []ArtifactResult
+	OptionalInputs     []ArtifactResult
+	RequiredArtifacts  []ArtifactResult
+	OptionalArtifacts  []ArtifactResult
+	RequiredApproval   *RequiredApprovalResult
+	RequiredChecks     []string
+	ArtifactBlockers   []string
+	CheckBlockers      []string
+	CompletionBlockers []string
 }
 
 type ArtifactResult struct {

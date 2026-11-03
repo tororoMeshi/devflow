@@ -274,11 +274,8 @@ Flowは次の情報を必須で持ちます。
 
 * `id`
 * `title`
+* `purpose`（Flow全体が存在する理由）
 * `steps`
-
-Flowは、必要に応じて次の情報を持ちます。
-
-* `description`
 
 ### 工程（step）
 
@@ -286,10 +283,11 @@ Flowは、必要に応じて次の情報を持ちます。
 
 * `id`
 * `title`
-* `objective`（現在工程で達成する目的）
+* `outcome`（工程完了時に成立すべき状態）
 
 工程は、必要に応じて次の情報を持ちます。
 
+* `purpose`（その工程を独立して置く理由）
 * `artifacts`
 * `approval`
 
@@ -379,7 +377,7 @@ devflow は、利用可能なFlowを一覧表示できます。
 
 * Flow ID
 * Flow title
-* Flow description（存在する場合）
+* Flow purpose
 * 工程数
 * 現在実行中のFlow
 
@@ -388,7 +386,7 @@ devflow は、利用可能なFlowを一覧表示できます。
 devflow は、`.devflow/flows/` 配下の Flow 定義を読み込めるようにします。
 
 Flow定義は、英語のIDと設定キーを使います。
-説明文、表示名、`objective` は日本語で書けます。
+表示名、`purpose`、`outcome` は日本語で書けます。
 
 ### 現在地を保存できること
 
@@ -412,7 +410,7 @@ devflow は、現在の工程を表示できます。
 
 ### AIへの作業指示を表示できること
 
-devflow は、現在の工程の `objective` と、完了に必要な条件を表示できます。
+devflow は、Flow Purpose、現在工程のPurpose（任意）とOutcome、完了に必要な条件を表示できます。
 
 AIは、作業の節目で `devflow prompt` を確認し、その出力に従って作業します。
 
@@ -422,7 +420,9 @@ AIは、作業の節目で `devflow prompt` を確認し、その出力に従っ
 * Flow title
 * 現在の工程ID
 * 現在の工程title
-* 現在工程の `objective`
+* Flow Purpose
+* 現在工程のPurpose（任意）
+* 現在工程のOutcome
 * 必要な成果物
 * 承認の要否
 * 必須Checkと現在のCompletion Gateの状態
@@ -522,7 +522,8 @@ MVPでは、主に次の項目を確認します。
 * 工程の存在
 * 工程ID
 * 工程title
-* 工程objective
+* Flow Purpose
+* 工程Outcome
 
 ## コマンドの成功・失敗方針
 
@@ -651,11 +652,11 @@ activeなFlowが存在する状態で実行した場合はエラーにします�
 
 ### `devflow status`
 
-現在のFlow、現在の工程、完了済み工程、承認状態を表示します。
+現在のFlowとそのPurpose、現在工程のPurpose（任意）とOutcome、完了済み工程、承認状態を表示します。
 
 ### `devflow prompt`
 
-現在の工程の `objective`、成果物、RequiredChecks、承認、Completion Gateの状態を表示します。
+Flow Purpose、現在工程のPurpose（任意）とOutcome、成果物、RequiredChecks、承認、Completion Gateの状態を表示します。
 作業後の遷移コマンドをAIへ指示するものではありません。
 
 ### `devflow done`

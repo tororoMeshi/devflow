@@ -209,7 +209,7 @@ func TestCurrentContextJSONAttemptContract(t *testing.T) {
 			if err := json.Unmarshal(data, &value); err != nil {
 				t.Fatal(err)
 			}
-			if value["schema_version"] != float64(5) {
+			if value["schema_version"] != float64(6) {
 				t.Fatalf("schema_version = %#v", value["schema_version"])
 			}
 			attempt, exists := value["attempt"]

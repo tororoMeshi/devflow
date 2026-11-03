@@ -32,12 +32,12 @@ func List(ctx Context) CommandResult {
 func flowListItem(result flow.FlowFileResult) FlowListItem {
 	if result.Status == flow.FlowFileValid && result.Flow != nil {
 		return FlowListItem{
-			ID:          result.Flow.ID,
-			Title:       result.Flow.Title,
-			Description: result.Flow.Purpose,
-			StepCount:   len(result.Flow.Steps),
-			FilePath:    result.FilePath,
-			Status:      FlowStatusValid,
+			ID:        result.Flow.ID,
+			Title:     result.Flow.Title,
+			Purpose:   result.Flow.Purpose,
+			StepCount: len(result.Flow.Steps),
+			FilePath:  result.FilePath,
+			Status:    FlowStatusValid,
 		}
 	}
 

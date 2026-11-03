@@ -31,8 +31,8 @@ func TestListIncludesInitFlow(t *testing.T) {
 	if item.Title != "タスク後レビュー" {
 		t.Fatalf("Title = %q", item.Title)
 	}
-	if item.Description == "" {
-		t.Fatalf("Description is empty")
+	if item.Purpose == "" {
+		t.Fatalf("Purpose is empty")
 	}
 	if item.StepCount != 5 {
 		t.Fatalf("StepCount = %d, want 5", item.StepCount)
@@ -64,8 +64,8 @@ func TestListReturnsValidFlows(t *testing.T) {
 	if item.ID != "minimal-flow" {
 		t.Fatalf("ID = %q", item.ID)
 	}
-	if item.Description != "Test flow purpose" {
-		t.Fatalf("Description = %q, want Flow Purpose", item.Description)
+	if item.Purpose != "Test flow purpose" {
+		t.Fatalf("Purpose = %q, want Flow Purpose", item.Purpose)
 	}
 	if item.StepCount != 1 {
 		t.Fatalf("StepCount = %d, want 1", item.StepCount)

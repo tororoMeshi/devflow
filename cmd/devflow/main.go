@@ -446,7 +446,7 @@ func writeFlows(stdout io.Writer, flows []command.FlowListItem) {
 		}
 		_, _ = fmt.Fprintf(stdout, "id: %s\n", flow.ID)
 		_, _ = fmt.Fprintf(stdout, "title: %s\n", flow.Title)
-		_, _ = fmt.Fprintf(stdout, "description: %s\n", flow.Description)
+		_, _ = fmt.Fprintf(stdout, "purpose: %s\n", flow.Purpose)
 		_, _ = fmt.Fprintf(stdout, "steps: %d\n", flow.StepCount)
 		_, _ = fmt.Fprintf(stdout, "status: %s\n\n", flow.Status)
 	}
@@ -454,6 +454,7 @@ func writeFlows(stdout io.Writer, flows []command.FlowListItem) {
 
 func writeStatus(stdout io.Writer, status command.StatusResult) {
 	_, _ = fmt.Fprintf(stdout, "Flow: %s\n", status.FlowTitle)
+	_, _ = fmt.Fprintf(stdout, "Flow Purpose: %s\n", status.FlowPurpose)
 	if status.FlowStatus == "completed" || status.FlowStatus == "finished" {
 		_, _ = fmt.Fprintf(stdout, "Flow status: %s\n", status.FlowStatus)
 		_, _ = fmt.Fprintln(stdout, "This Flow is no longer active. No devflow transition is needed.")
@@ -461,13 +462,16 @@ func writeStatus(stdout io.Writer, status command.StatusResult) {
 	}
 
 	_, _ = fmt.Fprintf(stdout, "Current step: %s\n", status.CurrentStepTitle)
-	_, _ = fmt.Fprintf(stdout, "Objective: %s\n\n", status.CurrentStepObjective)
+	if status.CurrentStepPurpose != "" {
+		_, _ = fmt.Fprintf(stdout, "Step Purpose: %s\n", status.CurrentStepPurpose)
+	}
+	_, _ = fmt.Fprintf(stdout, "Step Outcome: %s\n\n", status.CurrentStepOutcome)
 	_, _ = fmt.Fprintln(stdout, "Completion requirements checked by devflow:")
 	if !hasCompletionRequirements(status) {
 		_, _ = fmt.Fprintln(stdout, "- None are declared for this Step.")
-		_, _ = fmt.Fprintln(stdout, "- Complete the Objective outside devflow. When you judge it is complete, request the transition:")
+		_, _ = fmt.Fprintln(stdout, "- Establish the Step Outcome outside devflow. When you judge it is satisfied, request the transition:")
 		_, _ = fmt.Fprintln(stdout, "  devflow done")
-		_, _ = fmt.Fprintln(stdout, "- `done` does not perform the Objective; it only checks declared requirements and advances the Flow.")
+		_, _ = fmt.Fprintln(stdout, "- `done` does not establish the Step Outcome; it only checks declared requirements and advances the Flow.")
 	} else {
 		writeHumanArtifactStatus(stdout, status)
 		writeHumanCheckStatus(stdout, status.Checks)
@@ -550,7 +554,7 @@ func writeHumanApprovalStatus(stdout io.Writer, status command.StatusResult) {
 		_, _ = fmt.Fprintf(stdout, "- Approved for this Step. Note: %s\n", status.Approval.Note)
 		return
 	}
-	_, _ = fmt.Fprintf(stdout, "- Waiting for approval of this Step's Objective: %s\n", status.CurrentStepObjective)
+	_, _ = fmt.Fprintf(stdout, "- Waiting for approval of this Step's Outcome: %s\n", status.CurrentStepOutcome)
 	_, _ = fmt.Fprintln(stdout, "  Record the approval with:")
 	_, _ = fmt.Fprintf(stdout, "  devflow approve --step %s --attempt %s --note \"<approval note>\"\n", status.Approval.StepID, status.CurrentAttemptID)
 }
@@ -562,8 +566,12 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	} else {
 		_, _ = io.WriteString(stdout, "\n\n")
 	}
+	_, _ = fmt.Fprintf(stdout, "Flow Purpose:\n%s\n", prompt.FlowPurpose)
 	_, _ = fmt.Fprintf(stdout, "Current step: %s (%s)\n", prompt.CurrentStepTitle, prompt.CurrentStepID)
-	_, _ = fmt.Fprintf(stdout, "Objective:\n%s\n", prompt.CurrentStepObjective)
+	if prompt.CurrentStepPurpose != "" {
+		_, _ = fmt.Fprintf(stdout, "Step Purpose:\n%s\n", prompt.CurrentStepPurpose)
+	}
+	_, _ = fmt.Fprintf(stdout, "Step Outcome:\n%s\n", prompt.CurrentStepOutcome)
 	writeArtifactList(stdout, "Required inputs", prompt.RequiredInputs)
 	writeArtifactList(stdout, "Required artifacts", prompt.RequiredArtifacts)
 	_, _ = fmt.Fprintln(stdout, "Approval:")
@@ -585,7 +593,7 @@ func writePrompt(stdout io.Writer, prompt command.PromptResult) {
 	_, _ = fmt.Fprintln(stdout, "Boundary:")
 	_, _ = fmt.Fprintln(stdout, "- Work only on the current Step.")
 	_, _ = fmt.Fprintln(stdout, "- Do not run lifecycle commands or advance the Flow.")
-	_, _ = fmt.Fprintln(stdout, "- When the Objective and declared requirements are satisfied, stop and report completion to the caller.")
+	_, _ = fmt.Fprintln(stdout, "- When the Step Outcome and declared requirements are satisfied, stop and report completion to the caller.")
 }
 
 func writeArtifactList(stdout io.Writer, label string, artifacts []command.ArtifactResult) {

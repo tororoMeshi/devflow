@@ -238,8 +238,8 @@ func TestPromptReturnsCurrentStepDetails(t *testing.T) {
 	if got.Prompt.CurrentAttemptID != st.CurrentAttemptID {
 		t.Fatalf("CurrentAttemptID = %q, want %q", got.Prompt.CurrentAttemptID, st.CurrentAttemptID)
 	}
-	if got.Prompt.CurrentStepObjective != "Do current work." {
-		t.Fatalf("CurrentStepObjective = %q", got.Prompt.CurrentStepObjective)
+	if got.Prompt.CurrentStepOutcome != "Do current work." {
+		t.Fatalf("CurrentStepOutcome = %q", got.Prompt.CurrentStepOutcome)
 	}
 	assertArtifactPaths(t, got.Prompt.RequiredInputs, []string{"docs/request.md"})
 	assertArtifactPaths(t, got.Prompt.OptionalInputs, []string{"docs/optional-input.md"})
