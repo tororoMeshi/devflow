@@ -147,6 +147,23 @@ Flowは、次の3分類で整理します。
 
 MVPの必須実装対象は、公開サンプルFlowである `post-task-review` を中心にします。
 
+標準`post-task-review` v0.4のtitleは「タスク後レビュー」、Purposeは次の文言です。
+
+> 実装や修正の結果を、変更内容・影響・品質の根拠に基づいて、人間が受け入れてよいか判断できるようにする。
+
+工程は`describe_changes` → `assess_changes` → `verify_quality` → `human_approval`の直線4 Stepです。
+
+| Step | 役割 | required Input | required Artifact | Approval |
+| --- | --- | --- | --- | --- |
+| `describe_changes` | 何が変わったかを記録 | なし | `docs/code-review.md` | なし |
+| `assess_changes` | 目的・要求との対応、影響する場面や条件、互換性への影響と維持範囲、および懸念を評価 | `docs/code-review.md` | `docs/code-review.md` | なし |
+| `verify_quality` | 受入判断に必要な品質確認を独立して検討・実施し、結果と判断に影響する未確認・未解決事項、レビュー判断を記録 | `docs/code-review.md` | `docs/code-review.md` | なし |
+| `human_approval` | レビュー結果と固定されたArtifact versionを人間が承認 | `docs/code-review.md` | `docs/code-review.md` | required |
+
+各Stepの正確なPurpose / Outcomeは[設計書の標準Flow定義](design.md#post-task-review-サンプルflow)に示します。全Stepで通常Artifactと既存のArtifact Evidenceを使います。`human_approval`のApprovalは、そのAttemptで固定したrequired Artifact Evidence setに結び付きます。受け入れる場合は`artifact record` → `approve` → `done`で完了し、承認しない場合はGate未充足のまま進みません。その後の修正や要件の見直し、中止などはFlow外で判断します。
+
+`verify_quality`は前工程の懸念だけに限定せず、見落とされた品質上の論点、外部利用者視点、互換性、必要なテストなどを改めて検討します。すべての懸念の解消はOutcomeにせず、判断に影響する未確認・未解決事項もレビュー判断に含めます。標準Flowに技術固有のRequired Checkは固定しません。この標準Flowは新しいプロジェクトで`devflow init`した場合に生成され、既存の同名Flowファイルは上書き・自動移行しません。
+
 `purpose-driven-development` は、公開サンプルとして前面に出すのではなく、開発者自身のdogfooding用Flowとして扱います。
 
 MVP後に追加できるFlow候補は、MVPの必須実装対象には含めません。

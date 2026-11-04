@@ -28,6 +28,10 @@ printf '%s\n' 'サンプルタスクを確認し、レビュー結果を docs/co
 /tmp/devflow prompt
 ```
 
+標準`post-task-review` v0.4は、`describe_changes`（何が変わったかを記録）→ `assess_changes`（目的・要求との対応、影響、互換性、懸念を評価）→ `verify_quality`（受入判断に必要な品質確認を独立して検討・実施し、レビュー判断を記録）→ `human_approval`（レビュー結果と固定されたArtifact versionを人間が承認）の4 Stepです。全Stepで`docs/code-review.md`をrequired Artifactとし、最初のStep以外では同じ文書をrequired Inputとして読みます。各StepでEvidenceを記録し、最後は`artifact record` → `approve` → `done`で完了します。
+
+この標準Flowは新しいプロジェクトの`devflow init`で生成されます。既存のFlowファイルは上書き・自動移行しません。
+
 `status`は人間向けの現在地と次の操作、`prompt`はAI向けの現在Step契約です。Artifact Evidenceの記録やApprovalに必要なAttempt IDは、`status`の具体的なコマンド例に埋め込まれます。
 
 ## CLI出力の責務
@@ -197,7 +201,7 @@ Artifact状態、Check状態、Approval状態、Completion Gate、blockerを返�
 
 Completion ContextはExecutorの成功を単独で判断する結果ではありません。Runtime resultには、Executorの`ExecutionReport`に基づく`report_outcome`と、要求した場合の`completion_context`が含まれます。両者を確認して完了を判断してください。
 
-標準Flowの`check_quality`は、テスト、lint、型チェックなどを確認するようExecutorへ指示する工程です。標準Flowには`required_checks`が定義されていないため、これは作業指示であり、RequiredChecksによる機械的な強制ではありません。テスト結果をCompletion Gateで必須にする場合は、プロジェクト固有Flowへ`required_checks`を定義してください。
+標準Flowの`verify_quality`は、前工程の評価に依存せず、変更を受け入れてよいか判断するために必要な品質確認を検討・実施する工程です。前工程の懸念だけでなく、見落とされた論点や外部利用者視点、互換性、プロジェクトに必要なテスト、lint、型チェック、buildなども検討し、確認結果、判断に影響する未確認・未解決事項とレビュー判断を`docs/code-review.md`に記録します。標準Flowに技術固有の`required_checks`は定義しません。確認結果をCompletion Gateで必須にする場合は、プロジェクト固有Flowへ`required_checks`を定義してください。
 
 ## 再実行と部分適用
 

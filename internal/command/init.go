@@ -12,39 +12,53 @@ const (
 	postTaskReviewFlowContent = `flow: {
 	id: "post-task-review"
 	title: "タスク後レビュー"
-	purpose: "AIによる実装や修正が完了した後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
+	purpose: "実装や修正の結果を、変更内容・影響・品質の根拠に基づいて、人間が受け入れてよいか判断できるようにする。"
 
 	steps: [
 		{
-			id: "check_changes"
-			title: "変更ファイル確認"
-			outcome: "変更されたファイルを整理する。"
-		},
-		{
-			id: "summarize_changes"
-			title: "変更内容の要約"
-			outcome: "変更内容を要約する。"
-		},
-		{
-			id: "check_quality"
-			title: "品質確認"
-			outcome: "必要な確認結果を整理する。"
-		},
-		{
-			id: "write_review"
-			title: "レビュー結果作成"
-			outcome: "レビュー結果を docs/code-review.md にまとめる。"
+			id: "describe_changes"
+			title: "変更内容の記述"
+			purpose: "後続の評価を、実際に何が変わったかという共通の前提に基づいて行えるようにする。"
+			outcome: "変更されたファイル・パスと、それぞれで何が変わったかが \u0060docs/code-review.md\u0060 に記録されている。"
 			artifacts: [
-				{
-					path: "docs/code-review.md"
-					required: true
-				},
+				{path: "docs/code-review.md", required: true},
+			]
+		},
+		{
+			id: "assess_changes"
+			title: "変更影響の評価"
+			purpose: "変更による影響と懸念を整理し、後続の品質確認と人間の判断がそれらを踏まえて行えるようにする。"
+			outcome: "変更がタスクの目的・要求にどう対応しているか、変更が影響する場面や条件、互換性への影響とその維持が必要な範囲、およびそこで生じる影響・懸念が \u0060docs/code-review.md\u0060 に記録されている。"
+			inputs: [
+				{path: "docs/code-review.md", required: true},
+			]
+			artifacts: [
+				{path: "docs/code-review.md", required: true},
+			]
+		},
+		{
+			id: "verify_quality"
+			title: "品質確認"
+			purpose: "変更を受け入れてよいか判断するために必要な品質上の確認を、前工程の評価に依存せず検討・実施し、その結果に基づくレビュー判断を人間の最終判断の根拠として残す。"
+			outcome: "レビュー判断に必要な確認とその結果、判断に影響する未確認・未解決の事項、およびそれらに基づくレビュー判断が \u0060docs/code-review.md\u0060 に記録されている。"
+			inputs: [
+				{path: "docs/code-review.md", required: true},
+			]
+			artifacts: [
+				{path: "docs/code-review.md", required: true},
 			]
 		},
 		{
 			id: "human_approval"
 			title: "人間承認"
-			outcome: "レビュー結果について人間の承認を得る。"
+			purpose: "レビュー結果と実際の運用条件を踏まえ、変更を受け入れるかを人間が最終判断できるようにする。"
+			outcome: "\u0060docs/code-review.md\u0060 のレビュー結果を踏まえ、変更を受け入れる判断が人間によって記録されている。"
+			inputs: [
+				{path: "docs/code-review.md", required: true},
+			]
+			artifacts: [
+				{path: "docs/code-review.md", required: true},
+			]
 			approval: {
 				required: true
 			}

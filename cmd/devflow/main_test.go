@@ -265,6 +265,26 @@ func recordCLIArtifact(t *testing.T, root, path string) {
 	runSuccess(t, root, []string{"artifact", "record", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID, "--path", path})
 }
 
+func completeCLIReviewStep(t *testing.T, root string) {
+	t.Helper()
+	recordCLIArtifact(t, root, "docs/code-review.md")
+	runSuccess(t, root, []string{"done"})
+}
+
+func advanceCLIReviewToApproval(t *testing.T, root string) {
+	t.Helper()
+	writeCLITestFile(t, root, "docs/code-review.md")
+	for _, stepID := range []string{"describe_changes", "assess_changes", "verify_quality"} {
+		if got := loadCLIState(t, root).CurrentStepID; got != stepID {
+			t.Fatalf("CurrentStepID = %q, want %q", got, stepID)
+		}
+		completeCLIReviewStep(t, root)
+	}
+	if got := loadCLIState(t, root).CurrentStepID; got != "human_approval" {
+		t.Fatalf("CurrentStepID = %q, want human_approval", got)
+	}
+}
+
 func TestArtifactStateHumanOutput(t *testing.T) {
 	var statusOutput bytes.Buffer
 	writeStatus(&statusOutput, command.StatusResult{
@@ -349,12 +369,8 @@ func TestRunApproveParsesStepAttemptAndNote(t *testing.T) {
 	runSuccess(t, root, []string{"init"})
 	runSuccess(t, root, []string{"start", "post-task-review"})
 
-	runSuccess(t, root, []string{"done"})
-	runSuccess(t, root, []string{"done"})
-	runSuccess(t, root, []string{"done"})
-	writeCLITestFile(t, root, "docs/code-review.md")
+	advanceCLIReviewToApproval(t, root)
 	recordCLIArtifact(t, root, "docs/code-review.md")
-	runSuccess(t, root, []string{"done"})
 	before := loadCLIState(t, root)
 	runSuccess(t, root, []string{"approve", "--step", "human_approval", "--attempt", before.CurrentAttemptID, "--note", "ok"})
 
@@ -390,9 +406,6 @@ func TestRunArtifactRecordWritesSuccess(t *testing.T) {
 	root := t.TempDir()
 	runSuccess(t, root, []string{"init"})
 	runSuccess(t, root, []string{"start", "post-task-review"})
-	runSuccess(t, root, []string{"done"})
-	runSuccess(t, root, []string{"done"})
-	runSuccess(t, root, []string{"done"})
 	writeCLITestFile(t, root, "docs/code-review.md")
 	st := loadCLIState(t, root)
 	stdout, stderr, exitCode := runCapture(root, []string{"artifact", "record", "--step", st.CurrentStepID, "--attempt", st.CurrentAttemptID, "--path", "docs/code-review.md"})
@@ -681,13 +694,14 @@ func TestRunBackSkipFinishParseReason(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
-		runSuccess(t, root, []string{"done"})
+		writeCLITestFile(t, root, "docs/code-review.md")
+		completeCLIReviewStep(t, root)
 
 		runSuccess(t, root, []string{"back", "--reason", "revise"})
 
 		st := loadCLIState(t, root)
-		if st.CurrentStepID != "check_changes" {
-			t.Fatalf("CurrentStepID = %q, want check_changes", st.CurrentStepID)
+		if st.CurrentStepID != "describe_changes" {
+			t.Fatalf("CurrentStepID = %q, want describe_changes", st.CurrentStepID)
 		}
 		if len(st.BackHistory) != 1 || st.BackHistory[0].Reason != "revise" {
 			t.Fatalf("BackHistory = %#v", st.BackHistory)
@@ -698,19 +712,20 @@ func TestRunBackSkipFinishParseReason(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
-		runSuccess(t, root, []string{"done"})
-		runSuccess(t, root, []string{"done"})
+		writeCLITestFile(t, root, "docs/code-review.md")
+		completeCLIReviewStep(t, root)
+		completeCLIReviewStep(t, root)
 
-		runSuccess(t, root, []string{"back", "--reason", "revise", "--to", "check_changes"})
+		runSuccess(t, root, []string{"back", "--reason", "revise", "--to", "describe_changes"})
 
 		st := loadCLIState(t, root)
-		if st.CurrentStepID != "check_changes" {
-			t.Fatalf("CurrentStepID = %q, want check_changes", st.CurrentStepID)
+		if st.CurrentStepID != "describe_changes" {
+			t.Fatalf("CurrentStepID = %q, want describe_changes", st.CurrentStepID)
 		}
 		if len(st.BackHistory) != 1 {
 			t.Fatalf("BackHistory = %#v", st.BackHistory)
 		}
-		wantInvalidated := []string{"check_changes", "summarize_changes", "check_quality"}
+		wantInvalidated := []string{"describe_changes", "assess_changes", "verify_quality"}
 		if !reflect.DeepEqual(st.BackHistory[0].InvalidatedStepIDs, wantInvalidated) {
 			t.Fatalf("InvalidatedStepIDs = %#v, want %#v", st.BackHistory[0].InvalidatedStepIDs, wantInvalidated)
 		}
@@ -720,14 +735,15 @@ func TestRunBackSkipFinishParseReason(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
+		writeCLITestFile(t, root, "docs/code-review.md")
 
 		runSuccess(t, root, []string{"skip", "--reason", "omit"})
 
 		st := loadCLIState(t, root)
-		if st.CurrentStepID != "summarize_changes" {
-			t.Fatalf("CurrentStepID = %q, want summarize_changes", st.CurrentStepID)
+		if st.CurrentStepID != "assess_changes" {
+			t.Fatalf("CurrentStepID = %q, want assess_changes", st.CurrentStepID)
 		}
-		if st.SkippedSteps["check_changes"].Reason != "omit" {
+		if st.SkippedSteps["describe_changes"].Reason != "omit" {
 			t.Fatalf("SkippedSteps = %#v", st.SkippedSteps)
 		}
 	})
@@ -752,8 +768,8 @@ func TestRunBackSkipFinishParseReason(t *testing.T) {
 func TestRunBackRejectsInvalidOptions(t *testing.T) {
 	for _, args := range [][]string{
 		{"back", "--to"},
-		{"back", "--to", "check_changes"},
-		{"back", "--reason", "revise", "--to", "check_changes", "--to", "summarize_changes"},
+		{"back", "--to", "describe_changes"},
+		{"back", "--reason", "revise", "--to", "describe_changes", "--to", "assess_changes"},
 		{"back", "--reason", "revise", "--unknown", "value"},
 	} {
 		root := t.TempDir()
@@ -983,9 +999,7 @@ func TestRunWritesWarningDiagnosticsToStderr(t *testing.T) {
 	root := t.TempDir()
 	runSuccess(t, root, []string{"init"})
 	runSuccess(t, root, []string{"start", "post-task-review"})
-	runSuccess(t, root, []string{"done"})
-	runSuccess(t, root, []string{"done"})
-	runSuccess(t, root, []string{"done"})
+	writeCLITestFile(t, root, "docs/code-review.md")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -1009,32 +1023,39 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 
 		assertExitCode(t, exitCode, 0, stderr)
 		assertContains(t, stdout, "Started flow: post-task-review")
-		assertContains(t, stdout, "Current step: check_changes")
+		assertContains(t, stdout, "Current step: describe_changes")
 	})
 
 	t.Run("done next step", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
+		writeCLITestFile(t, root, "docs/code-review.md")
+		recordCLIArtifact(t, root, "docs/code-review.md")
 
 		stdout, stderr, exitCode := runCapture(root, []string{"done"})
 
 		assertExitCode(t, exitCode, 0, stderr)
-		assertContains(t, stdout, "Completed step: check_changes")
-		assertContains(t, stdout, "Next step: summarize_changes")
+		assertContains(t, stdout, "Completed step: describe_changes")
+		assertContains(t, stdout, "Next step: assess_changes")
 	})
 
 	t.Run("done flow completed", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
-		runSuccess(t, root, []string{"done"})
-		runSuccess(t, root, []string{"done"})
-		runSuccess(t, root, []string{"done"})
-		writeCLITestFile(t, root, "docs/code-review.md")
-		recordCLIArtifact(t, root, "docs/code-review.md")
-		runSuccess(t, root, []string{"done"})
+		advanceCLIReviewToApproval(t, root)
 		st := loadCLIState(t, root)
+		if _, stderr, code := runCapture(root, []string{"done"}); code == 0 || !strings.Contains(stderr, transition.CodeMissingArtifactEvidence) {
+			t.Fatalf("done without current attempt evidence: code=%d stderr=%q", code, stderr)
+		}
+		if _, stderr, code := runCapture(root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"}); code == 0 || !strings.Contains(stderr, transition.CodeMissingArtifactEvidence) {
+			t.Fatalf("approve without current attempt evidence: code=%d stderr=%q", code, stderr)
+		}
+		recordCLIArtifact(t, root, "docs/code-review.md")
+		if _, stderr, code := runCapture(root, []string{"done"}); code == 0 || !strings.Contains(stderr, transition.CodeMissingRequiredApproval) {
+			t.Fatalf("done with evidence but without approval: code=%d stderr=%q", code, stderr)
+		}
 		runSuccess(t, root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"})
 
 		stdout, stderr, exitCode := runCapture(root, []string{"done"})
@@ -1042,26 +1063,35 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		assertExitCode(t, exitCode, 0, stderr)
 		assertContains(t, stdout, "Completed step: human_approval")
 		assertContains(t, stdout, "Flow completed: post-task-review")
+		completed := loadCLIState(t, root)
+		if completed.Status != state.StatusCompleted || !reflect.DeepEqual(completed.CompletedSteps, []string{"describe_changes", "assess_changes", "verify_quality", "human_approval"}) {
+			t.Fatalf("completed state = %#v", completed)
+		}
+		attempt := completed.Attempts[len(completed.Attempts)-1]
+		digest, err := state.ArtifactEvidenceSetDigest([]string{"docs/code-review.md"}, attempt.ArtifactEvidence)
+		if err != nil || attempt.Approval == nil || attempt.Approval.EvidenceSetDigest != digest {
+			t.Fatalf("approval is not bound to the current attempt evidence: %#v, err=%v", attempt, err)
+		}
 	})
 
 	t.Run("approve", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
-		runSuccess(t, root, []string{"done"})
-		runSuccess(t, root, []string{"done"})
-		runSuccess(t, root, []string{"done"})
-		writeCLITestFile(t, root, "docs/code-review.md")
+		advanceCLIReviewToApproval(t, root)
 		recordCLIArtifact(t, root, "docs/code-review.md")
-		runSuccess(t, root, []string{"done"})
 		st := loadCLIState(t, root)
+		digest, err := state.ArtifactEvidenceSetDigest([]string{"docs/code-review.md"}, st.Attempts[len(st.Attempts)-1].ArtifactEvidence)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		stdout, stderr, exitCode := runCapture(root, []string{"approve", "--step", "human_approval", "--attempt", st.CurrentAttemptID, "--note", "ok"})
 
 		assertExitCode(t, exitCode, 0, stderr)
 		want := "Approved step: human_approval\n" +
 			"Approved attempt: " + st.CurrentAttemptID + "\n" +
-			"Evidence set: sha256:d65728983c6fe0d4f09c0c18ad90370ea86c8b7e63e3367413abc99d88bda60f\n"
+			"Evidence set: " + digest + "\n"
 		if stdout != want {
 			t.Fatalf("stdout = %q, want %q", stdout, want)
 		}
@@ -1071,31 +1101,33 @@ func TestRunWritesSuccessMessages(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
-		runSuccess(t, root, []string{"done"})
+		writeCLITestFile(t, root, "docs/code-review.md")
+		completeCLIReviewStep(t, root)
 
 		stdout, stderr, exitCode := runCapture(root, []string{"back", "--reason", "revise"})
 
 		assertExitCode(t, exitCode, 0, stderr)
-		assertContains(t, stdout, "Moved back to: check_changes")
+		assertContains(t, stdout, "Moved back to: describe_changes")
 	})
 
 	t.Run("skip next step", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
+		writeCLITestFile(t, root, "docs/code-review.md")
 
 		stdout, stderr, exitCode := runCapture(root, []string{"skip", "--reason", "omit"})
 
 		assertExitCode(t, exitCode, 0, stderr)
-		assertContains(t, stdout, "Skipped step: check_changes")
-		assertContains(t, stdout, "Next step: summarize_changes")
+		assertContains(t, stdout, "Skipped step: describe_changes")
+		assertContains(t, stdout, "Next step: assess_changes")
 	})
 
 	t.Run("skip flow completed", func(t *testing.T) {
 		root := t.TempDir()
 		runSuccess(t, root, []string{"init"})
 		runSuccess(t, root, []string{"start", "post-task-review"})
-		runSuccess(t, root, []string{"skip", "--reason", "omit"})
+		writeCLITestFile(t, root, "docs/code-review.md")
 		runSuccess(t, root, []string{"skip", "--reason", "omit"})
 		runSuccess(t, root, []string{"skip", "--reason", "omit"})
 		runSuccess(t, root, []string{"skip", "--reason", "omit"})

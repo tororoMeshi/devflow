@@ -204,6 +204,11 @@ func setupExecutionReportFlow(t *testing.T) (string, state.State, workpackage.Wo
 	if loaded.Status != state.LoadOK || loaded.State == nil {
 		t.Fatal(loaded.Err)
 	}
+	// Satisfy the standard Flow's completion and next-entry requirements before
+	// testing that ExecutionReport does not add a completion requirement.
+	writeCommandTestFile(t, filepath.Join(root, "docs", "code-review.md"), "review")
+	assertCommandSuccess(t, RecordArtifact(Context{ProjectRoot: root}, loaded.State.CurrentStepID, loaded.State.CurrentAttemptID, "docs/code-review.md"))
+	loaded = NewStore(Context{ProjectRoot: root}).LoadCurrent()
 	pkg, err := workpackage.Generate(*loaded.State, loaded.State.CurrentStepID, loaded.State.CurrentAttemptID)
 	if err != nil {
 		t.Fatal(err)

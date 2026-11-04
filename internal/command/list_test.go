@@ -34,8 +34,8 @@ func TestListIncludesInitFlow(t *testing.T) {
 	if item.Purpose == "" {
 		t.Fatalf("Purpose is empty")
 	}
-	if item.StepCount != 5 {
-		t.Fatalf("StepCount = %d, want 5", item.StepCount)
+	if item.StepCount != 4 {
+		t.Fatalf("StepCount = %d, want 4", item.StepCount)
 	}
 }
 

@@ -179,19 +179,21 @@ Flowは、開発作業の流れ全体を表します。
 * `purpose`（Flow全体が存在する理由）
 * `steps`
 
-例:
+標準Flowの先頭Stepの抜粋（全体は「`post-task-review` サンプルFlow」を参照）:
 
 ```cue
 flow: {
 	id: "post-task-review"
 	title: "タスク後レビュー"
-	purpose: "実装や修正の完了後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
+	purpose: "実装や修正の結果を、変更内容・影響・品質の根拠に基づいて、人間が受け入れてよいか判断できるようにする。"
 
 	steps: [
 		{
-			id: "check_changes"
-			title: "変更ファイル確認"
-			outcome: "変更されたファイルを整理する。"
+			id: "describe_changes"
+			title: "変更内容の記述"
+			purpose: "後続の評価を、実際に何が変わったかという共通の前提に基づいて行えるようにする。"
+			outcome: "変更されたファイル・パスと、それぞれで何が変わったかが `docs/code-review.md` に記録されている。"
+			artifacts: [{path: "docs/code-review.md", required: true}]
 		},
 	]
 }
@@ -303,7 +305,7 @@ MVPでは、英数字、ハイフン、アンダースコアのみ許可しま�
 ```text
 OK:
 - post-task-review
-- check_changes
+- describe_changes
 - step1
 
 NG:
@@ -610,7 +612,7 @@ MVPでは、`state.json` を次の構造で保存します。
 {
   "flow_id": "post-task-review",
   "status": "running",
-  "current_step_id": "check_changes",
+  "current_step_id": "describe_changes",
   "completed_steps": [],
   "skipped_steps": {},
   "approvals": {},
@@ -739,7 +741,7 @@ MVPでは、`current_step_id` は `running`、`completed`、`finished` のすべ
   "back_history": [
     {
       "from_step_id": "human_approval",
-      "to_step_id": "write_review",
+      "to_step_id": "verify_quality",
       "reason": "レビュー結果に追記が必要になったため"
     }
   ]
@@ -847,7 +849,7 @@ invalid_state
 {
   "flow_id": "post-task-review",
   "status": "running",
-  "current_step_id": "check_changes",
+  "current_step_id": "describe_changes",
   "completed_steps": [],
   "skipped_steps": {},
   "approvals": {},
@@ -881,7 +883,7 @@ invalid_state
 ```json
 {
   "status": "running",
-  "current_step_id": "write_review"
+  "current_step_id": "verify_quality"
 }
 ```
 
@@ -1085,14 +1087,17 @@ active Flow が存在しない場合は、非0の終了コードを返し、acti
 
 ```text
 Flow Purpose:
-実装や修正の完了後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。
-Step: check_changes - 変更ファイル確認
+実装や修正の結果を、変更内容・影響・品質の根拠に基づいて、人間が受け入れてよいか判断できるようにする。
+Step: describe_changes - 変更内容の記述
+
+Step Purpose:
+後続の評価を、実際に何が変わったかという共通の前提に基づいて行えるようにする。
 
 Step Outcome:
-git status と diff を確認し、変更されたファイルを整理してください。
+変更されたファイル・パスと、それぞれで何が変わったかが `docs/code-review.md` に記録されている。
 
 Required artifacts:
-- none
+- docs/code-review.md
 
 Required approval:
 - none
@@ -1153,8 +1158,8 @@ Available flows:
 
 - post-task-review
   Title: タスク後レビュー
-  Purpose: 実装や修正の完了後に確認を行うFlowです。
-  Steps: 5
+  Purpose: 実装や修正の結果を、変更内容・影響・品質の根拠に基づいて、人間が受け入れてよいか判断できるようにする。
+  Steps: 4
   Status: valid
 ```
 
@@ -1180,45 +1185,45 @@ Flowファイル名と `flow.id` が一致しない場合も `invalid` として
 
 MVPでは、`devflow init` によって `post-task-review.cue` を作成します。
 
-初期サンプルは、次の工程を持ちます。
+標準Flow v0.4は、次の4 Stepを持ちます。新しいプロジェクトで`devflow init`した場合に生成され、既存の同名ファイルは上書き・自動移行しません。テンプレートは引き続き`internal/command/init.go`のGo raw stringで管理します。
 
 ```cue
 flow: {
 	id: "post-task-review"
 	title: "タスク後レビュー"
-	purpose: "AIによる実装や修正が完了した後に、変更内容、テスト、レビュー、人間承認を確認するFlowです。"
+	purpose: "実装や修正の結果を、変更内容・影響・品質の根拠に基づいて、人間が受け入れてよいか判断できるようにする。"
 
 	steps: [
 		{
-			id: "check_changes"
-			title: "変更ファイル確認"
-			outcome: "変更されたファイルを整理する。"
+			id: "describe_changes"
+			title: "変更内容の記述"
+			purpose: "後続の評価を、実際に何が変わったかという共通の前提に基づいて行えるようにする。"
+			outcome: "変更されたファイル・パスと、それぞれで何が変わったかが `docs/code-review.md` に記録されている。"
+			artifacts: [{path: "docs/code-review.md", required: true}]
 		},
 		{
-			id: "summarize_changes"
-			title: "変更内容の要約"
-			outcome: "変更内容を要約する。"
+			id: "assess_changes"
+			title: "変更影響の評価"
+			purpose: "変更による影響と懸念を整理し、後続の品質確認と人間の判断がそれらを踏まえて行えるようにする。"
+			outcome: "変更がタスクの目的・要求にどう対応しているか、変更が影響する場面や条件、互換性への影響とその維持が必要な範囲、およびそこで生じる影響・懸念が `docs/code-review.md` に記録されている。"
+			inputs: [{path: "docs/code-review.md", required: true}]
+			artifacts: [{path: "docs/code-review.md", required: true}]
 		},
 		{
-			id: "check_quality"
+			id: "verify_quality"
 			title: "品質確認"
-			outcome: "必要な確認結果を整理する。"
-		},
-		{
-			id: "write_review"
-			title: "レビュー結果作成"
-			outcome: "レビュー結果を docs/code-review.md にまとめる。"
-			artifacts: [
-				{
-					path: "docs/code-review.md"
-					required: true
-				},
-			]
+			purpose: "変更を受け入れてよいか判断するために必要な品質上の確認を、前工程の評価に依存せず検討・実施し、その結果に基づくレビュー判断を人間の最終判断の根拠として残す。"
+			outcome: "レビュー判断に必要な確認とその結果、判断に影響する未確認・未解決の事項、およびそれらに基づくレビュー判断が `docs/code-review.md` に記録されている。"
+			inputs: [{path: "docs/code-review.md", required: true}]
+			artifacts: [{path: "docs/code-review.md", required: true}]
 		},
 		{
 			id: "human_approval"
 			title: "人間承認"
-			outcome: "レビュー結果について人間の承認を得る。"
+			purpose: "レビュー結果と実際の運用条件を踏まえ、変更を受け入れるかを人間が最終判断できるようにする。"
+			outcome: "`docs/code-review.md` のレビュー結果を踏まえ、変更を受け入れる判断が人間によって記録されている。"
+			inputs: [{path: "docs/code-review.md", required: true}]
+			artifacts: [{path: "docs/code-review.md", required: true}]
 			approval: {
 				required: true
 			}
@@ -1226,6 +1231,10 @@ flow: {
 	]
 }
 ```
+
+`describe_changes`は何が変わったかを記録し、`assess_changes`は目的・要求との対応、影響する場面や条件、互換性とその維持範囲、および懸念を評価します。`verify_quality`は前工程の評価に依存せず、受入判断に必要な品質確認を改めて検討・実施します。前工程が見落とした論点、外部利用者視点、互換性、テストなども対象にでき、判断に影響する未確認・未解決事項とレビュー判断を文書に残します。すべての懸念の解消をOutcomeにはしません。標準Flowに技術固有の`required_checks`は固定しません。
+
+全Stepで通常Artifactの`docs/code-review.md`を使い、2 Step目以降では同じパスをInputとArtifactに指定します。各Attemptで更新後の文書をArtifact Evidenceとして記録します。`human_approval`でもrequired Artifactとして宣言することで、承認対象の具体的なversionをこのAttemptに固定します。既存契約の`docs/code-review.md` → Artifact Evidence → Evidence Set Digest → Human Approvalを使い、受け入れる場合は`artifact record` → `approve` → `done`で完了します。承認しない場合はGate未充足のまま進まず、その後の修正や要件の見直し、中止などはFlow外で判断します。
 
 ## dogfooding用Flow
 
@@ -1591,7 +1600,7 @@ reasonが空、空白のみ、`status` が `running` ではない場合はエラ
 Diagnostic{
 	Level: "warning",
 	Code: "warning_skipped_required_artifact",
-	StepID: "write_review",
+  StepID: "verify_quality",
 }
 ```
 
@@ -2839,11 +2848,16 @@ init
 list
 start post-task-review
 prompt
+docs/code-review.mdに変更内容を記録
+artifact record（describe_changesの現在Attempt）
 done
+同じ文書に変更影響の評価を追記・更新
+artifact record（assess_changesの現在Attempt）
 done
+同じ文書に品質確認結果・未確認未解決事項・レビュー判断を追記・更新
+artifact record（verify_qualityの現在Attempt）
 done
-artifact作成
-done
+artifact record（human_approvalの現在Attempt）
 approve
 done
 ```
@@ -2852,6 +2866,7 @@ done
 
 * 最後に `status = completed` になる
 * `docs/code-review.md` がない場合は `done` で止まる
+* 各Stepの現在AttemptにArtifact Evidenceがない場合は `done` で止まる
 * approval がない場合は `done` で止まる
 * `approve` 後に `done` できる
 * 手動配置された `purpose-driven-development` を `start` / `prompt` / `done` できる
