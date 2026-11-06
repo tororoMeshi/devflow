@@ -6,6 +6,8 @@ CoreはFlow、State、Attempt、Gate、Artifact Evidence、CheckResult、Approva
 
 ## Build
 
+Go 1.26以上が必要です。
+
 ```bash
 go build -o /tmp/devflow ./cmd/devflow
 ```
@@ -247,6 +249,6 @@ ExecutionReportは`.devflow/runs/<flow-run-id>/execution-reports/<attempt-id>.js
 
 ## State compatibility
 
-現在のState schema versionは8です。対応しないschema versionのState、schema versionを持たない旧State、旧来のState配置は利用できません。devflowはこれらを自動migration・削除しません。
+現在のState schema versionは9です。対応しないschema versionのState、schema versionを持たない旧State、旧来のState配置は利用できません。devflowはこれらを自動migration・削除しません。
 
 更新前に作業中のStateを確認し、必要なら退避してください。移行手順を提供していないため、旧Stateを使えない場合は新しいFlow runを開始してください。
